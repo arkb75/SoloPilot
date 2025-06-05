@@ -9,11 +9,14 @@ langchain-community==0.2.16
 openai==1.51.2
 
 # OCR and image processing
-pytesseract==0.3.13
-Pillow==10.4.0
+pytesseract>=0.3.10
+Pillow>=10.0.0
 
-# Vector similarity search
-faiss-cpu==1.8.0.post1
+# Vector similarity search (use conda-forge or brew version if faiss-cpu fails)
+# Option 1: Try faiss-cpu first
+faiss-cpu==1.8.0.post1; platform_system != "Darwin"
+# Option 2: For macOS, use scikit-learn as fallback for vector similarity
+scikit-learn==1.5.2; platform_system == "Darwin"
 
 # Configuration and environment
 python-dotenv==1.0.1

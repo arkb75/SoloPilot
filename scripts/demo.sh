@@ -114,16 +114,38 @@ echo "✅ Created additional requirements file"
 
 # Check if Python dependencies are installed
 echo "🔍 Checking Python dependencies..."
-if ! python -c "import agents.analyser" 2>/dev/null; then
+if ! python3 -c "import agents.analyser" 2>/dev/null; then
     echo "📦 Installing Python dependencies..."
-    pip install -r requirements.txt
+    
+    # Check if tesseract is installed (required for OCR)
+    if ! command -v tesseract &> /dev/null; then
+        echo "⚠️  Tesseract OCR not found. Installing via Homebrew..."
+        if command -v brew &> /dev/null; then
+            brew install tesseract
+        else
+            echo "❌ Homebrew not found. Please install tesseract manually:"
+            echo "   brew install tesseract"
+            echo "   or visit: https://github.com/tesseract-ocr/tesseract"
+            exit 1
+        fi
+    fi
+    
+    # Install Python packages
+    pip3 install -r requirements.txt --break-system-packages
+    
+    # If FAISS installation failed on macOS, suggest alternatives
+    if ! python3 -c "import faiss" 2>/dev/null && ! python3 -c "import sklearn" 2>/dev/null; then
+        echo "⚠️  Vector similarity search library not available."
+        echo "   Installing scikit-learn as fallback..."
+        pip3 install scikit-learn==1.5.2 --break-system-packages
+    fi
 else
     echo "✅ Dependencies already installed"
 fi
 
 # Run the analyser
 echo "🔧 Running requirement analysis..."
-python scripts/run_analyser.py --path sample_input --config config/model_config.yaml
+python3 scripts/run_analyser.py --path sample_input --config config/model_config.yaml
 
 # Check if analysis was successful
 if [ -d "analysis/output" ]; then
@@ -139,7 +161,7 @@ if [ -d "analysis/output" ]; then
         echo "🎯 Specification preview:"
         echo "========================"
         if [ -f "analysis/output/$LATEST_DIR/specification.json" ]; then
-            python -c "
+            python3 -c "
 import json
 with open('analysis/output/$LATEST_DIR/specification.json') as f:
     spec = json.load(f)

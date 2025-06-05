@@ -15,10 +15,35 @@ from typing import Dict, List, Any, Optional
 
 import pytesseract
 from PIL import Image
-from langchain.llms import Ollama
-from langchain.chat_models import ChatOpenAI
-from langchain.schema import HumanMessage
 import yaml
+
+# Try to import LangChain components with fallbacks
+try:
+    from langchain_community.llms import Ollama
+    from langchain_openai import ChatOpenAI
+    from langchain_core.messages import HumanMessage
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    try:
+        from langchain.llms import Ollama
+        from langchain.chat_models import ChatOpenAI
+        from langchain.schema import HumanMessage
+        LANGCHAIN_AVAILABLE = True
+    except ImportError:
+        LANGCHAIN_AVAILABLE = False
+        print("⚠️  LangChain not fully available. LLM features will be disabled.")
+
+# Vector similarity - try FAISS first, fallback to scikit-learn
+try:
+    import faiss
+    VECTOR_BACKEND = "faiss"
+except ImportError:
+    try:
+        from sklearn.metrics.pairwise import cosine_similarity
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        VECTOR_BACKEND = "sklearn"
+    except ImportError:
+        VECTOR_BACKEND = None
 
 
 class TextParser:
@@ -44,6 +69,11 @@ class TextParser:
     
     def _setup_llm(self):
         """Initialize LLM instances."""
+        if not LANGCHAIN_AVAILABLE:
+            self.primary_llm = None
+            self.fallback_llm = None
+            return
+            
         try:
             self.primary_llm = Ollama(model=self.config['llm']['ollama_model'])
         except Exception:
@@ -51,7 +81,7 @@ class TextParser:
         
         try:
             self.fallback_llm = ChatOpenAI(
-                model_name=self.config['llm']['openai_model'],
+                model=self.config['llm']['openai_model'],
                 temperature=0.1
             )
         except Exception:
@@ -86,12 +116,14 @@ class TextParser:
         raise NotImplementedError("DOCX parsing not yet implemented")
     
     def extract_requirements(self, text: str) -> Dict[str, Any]:
-        """Extract structured requirements from text using LLM."""
+        """Extract structured requirements from text using LLM or fallback."""
+        if not LANGCHAIN_AVAILABLE or (not self.primary_llm and not self.fallback_llm):
+            # Fallback to simple keyword extraction
+            return self._extract_requirements_fallback(text)
+        
         prompt = self._build_extraction_prompt(text)
         
         llm = self.primary_llm or self.fallback_llm
-        if not llm:
-            raise RuntimeError("No LLM available for processing")
         
         try:
             if hasattr(llm, 'invoke'):
@@ -107,7 +139,9 @@ class TextParser:
                     return self._parse_llm_response(response)
                 except Exception:
                     pass
-            raise RuntimeError(f"Failed to extract requirements: {e}")
+            # If LLM fails, use fallback
+            print(f"⚠️  LLM extraction failed ({e}), using keyword fallback")
+            return self._extract_requirements_fallback(text)
     
     def _build_extraction_prompt(self, text: str) -> str:
         """Build prompt for requirement extraction."""
@@ -153,6 +187,85 @@ Respond with ONLY the JSON object, no additional text:
             return json.loads(content)
         except json.JSONDecodeError:
             raise ValueError("Could not parse LLM response as JSON")
+    
+    def _extract_requirements_fallback(self, text: str) -> Dict[str, Any]:
+        """Fallback requirement extraction using keyword matching."""
+        import re
+        
+        text_lower = text.lower()
+        
+        # Extract title from headers or first line
+        title_match = re.search(r'^#\s+(.+)', text, re.MULTILINE)
+        if title_match:
+            title = title_match.group(1).strip()
+        else:
+            # Use first sentence as title
+            sentences = text.split('.')
+            title = sentences[0][:50] + "..." if len(sentences[0]) > 50 else sentences[0]
+        
+        # Extract features from bullet points or numbered lists
+        features = []
+        feature_patterns = [
+            r'[-*]\s+(.+)',  # Bullet points
+            r'\d+\.\s+(.+)',  # Numbered lists
+            r'##\s+(.+)',     # H2 headers
+        ]
+        
+        for pattern in feature_patterns:
+            matches = re.findall(pattern, text, re.MULTILINE)
+            for match in matches:
+                if len(match.strip()) > 5:  # Filter out very short matches
+                    features.append({
+                        "name": match.strip()[:30],
+                        "desc": match.strip()
+                    })
+        
+        # Extract constraints from key phrases
+        constraints = []
+        constraint_keywords = ['must', 'should', 'required', 'constraint', 'limitation', 'cannot']
+        sentences = text.split('.')
+        
+        for sentence in sentences:
+            sentence_lower = sentence.lower()
+            if any(keyword in sentence_lower for keyword in constraint_keywords):
+                clean_sentence = sentence.strip()
+                if len(clean_sentence) > 10:
+                    constraints.append(clean_sentence)
+        
+        # Extract tech stack from common technology names
+        tech_keywords = [
+            'react', 'angular', 'vue', 'node.js', 'python', 'java', 'php',
+            'mysql', 'postgresql', 'mongodb', 'redis', 'docker', 'kubernetes',
+            'aws', 'azure', 'gcp', 'typescript', 'javascript', 'html', 'css'
+        ]
+        
+        tech_stack = []
+        for keyword in tech_keywords:
+            if keyword in text_lower:
+                tech_stack.append(keyword.title())
+        
+        # Extract timeline information
+        timeline = None
+        timeline_patterns = [
+            r'(\d+)\s+(week|month|day)s?',
+            r'(week|month|day)s?\s*(\d+)'
+        ]
+        
+        for pattern in timeline_patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                timeline = match.group(0)
+                break
+        
+        return {
+            'title': title,
+            'summary': text[:200] + "..." if len(text) > 200 else text,
+            'features': features[:10],  # Limit to 10 features
+            'constraints': constraints[:5],  # Limit to 5 constraints
+            'tech_stack': list(set(tech_stack)),  # Remove duplicates
+            'timeline': timeline,
+            'budget': None  # Difficult to extract without LLM
+        }
 
 
 class ImageParser:
