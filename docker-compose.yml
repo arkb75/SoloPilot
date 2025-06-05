@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # Ollama service for local LLM inference
+  ollama:
+    image: ollama/ollama:latest
+    container_name: solopilot-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - solopilot-network
+
+  # SoloPilot analyser service
+  solopilot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: solopilot-analyser
+    depends_on:
+      ollama:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount input/output directories
+      - ./analysis:/app/analysis
+      - ./sample_input:/app/sample_input:ro
+      # Mount source code for development
+      - ./agents:/app/agents
+      - ./scripts:/app/scripts
+      - ./config:/app/config
+    environment:
+      - OLLAMA_HOST=ollama
+      - OLLAMA_PORT=11434
+      - PYTHONPATH=/app
+    env_file:
+      - .env
+    networks:
+      - solopilot-network
+    restart: unless-stopped
+    command: >
+      sh -c "
+        echo 'Waiting for Ollama to start...' &&
+        sleep 10 &&
+        echo 'Pulling Llama 3 model...' &&
+        curl -X POST http://ollama:11434/api/pull -d '{\"name\":\"llama3:8b-instruct\"}' &&
+        echo 'SoloPilot analyser ready!' &&
+        python scripts/run_analyser.py --path /app/sample_input
+      "
+
+  # Optional: Web interface (future enhancement)
+  # web:
+  #   build:
+  #     context: ./web
+  #     dockerfile: Dockerfile
+  #   container_name: solopilot-web
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - solopilot
+  #   networks:
+  #     - solopilot-network
+
+volumes:
+  ollama_data:
+    driver: local
+
+networks:
+  solopilot-network:
+    driver: bridge

@@ -1,0 +1,36 @@
+# SoloPilot Requirement Analyser Dependencies
+# Core ML and processing dependencies
+
+# LangChain for LLM orchestration (light usage)
+langchain==0.2.16
+langchain-community==0.2.16
+
+# OpenAI integration (fallback LLM)
+openai==1.51.2
+
+# OCR and image processing
+pytesseract==0.3.13
+Pillow==10.4.0
+
+# Vector similarity search
+faiss-cpu==1.8.0.post1
+
+# Configuration and environment
+python-dotenv==1.0.1
+PyYAML==6.0.2
+
+# HTTP client for API calls
+requests==2.32.3
+
+# Testing framework
+pytest==8.3.3
+
+# Additional parsing support (future DOCX support)
+# python-docx==1.1.2  # Uncomment when needed
+
+# Development dependencies
+black==24.8.0
+flake8==7.1.1
+
+# Optional: Jupyter for interactive development
+# jupyter==1.1.1  # Uncomment if needed for development

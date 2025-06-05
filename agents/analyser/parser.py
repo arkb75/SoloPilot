@@ -1,0 +1,370 @@
+"""
+Core parsing classes for the SoloPilot requirement analyser.
+
+This module contains the main components for processing client requirements:
+- TextParser: Handles text-based documents (MD, TXT, DOCX)
+- ImageParser: Processes images with OCR using pytesseract
+- SpecBuilder: Constructs structured JSON specifications and generates artifacts
+"""
+
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Any, Optional
+
+import pytesseract
+from PIL import Image
+from langchain.llms import Ollama
+from langchain.chat_models import ChatOpenAI
+from langchain.schema import HumanMessage
+import yaml
+
+
+class TextParser:
+    """Parses text-based client requirements from various formats."""
+    
+    def __init__(self, config_path: Optional[str] = None):
+        self.config = self._load_config(config_path)
+        self._setup_llm()
+    
+    def _load_config(self, config_path: Optional[str]) -> Dict[str, Any]:
+        """Load model configuration."""
+        if config_path and os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                return yaml.safe_load(f)
+        return {
+            'llm': {
+                'primary': 'ollama',
+                'fallback': 'openai',
+                'ollama_model': 'llama3:8b-instruct',
+                'openai_model': 'gpt-4o'
+            }
+        }
+    
+    def _setup_llm(self):
+        """Initialize LLM instances."""
+        try:
+            self.primary_llm = Ollama(model=self.config['llm']['ollama_model'])
+        except Exception:
+            self.primary_llm = None
+        
+        try:
+            self.fallback_llm = ChatOpenAI(
+                model_name=self.config['llm']['openai_model'],
+                temperature=0.1
+            )
+        except Exception:
+            self.fallback_llm = None
+    
+    def parse_file(self, file_path: str) -> str:
+        """Parse a single text file and extract content."""
+        path = Path(file_path)
+        
+        if path.suffix.lower() == '.md':
+            return self._parse_markdown(path)
+        elif path.suffix.lower() == '.txt':
+            return self._parse_text(path)
+        elif path.suffix.lower() == '.docx':
+            return self._parse_docx(path)
+        else:
+            raise ValueError(f"Unsupported file format: {path.suffix}")
+    
+    def _parse_markdown(self, path: Path) -> str:
+        """Parse markdown files."""
+        with open(path, 'r', encoding='utf-8') as f:
+            return f.read()
+    
+    def _parse_text(self, path: Path) -> str:
+        """Parse plain text files."""
+        with open(path, 'r', encoding='utf-8') as f:
+            return f.read()
+    
+    def _parse_docx(self, path: Path) -> str:
+        """Parse DOCX files (placeholder - requires python-docx)."""
+        # TODO: Implement DOCX parsing with python-docx
+        raise NotImplementedError("DOCX parsing not yet implemented")
+    
+    def extract_requirements(self, text: str) -> Dict[str, Any]:
+        """Extract structured requirements from text using LLM."""
+        prompt = self._build_extraction_prompt(text)
+        
+        llm = self.primary_llm or self.fallback_llm
+        if not llm:
+            raise RuntimeError("No LLM available for processing")
+        
+        try:
+            if hasattr(llm, 'invoke'):
+                response = llm.invoke(prompt)
+            else:
+                response = llm([HumanMessage(content=prompt)])
+            
+            return self._parse_llm_response(response)
+        except Exception as e:
+            if self.fallback_llm and llm != self.fallback_llm:
+                try:
+                    response = self.fallback_llm([HumanMessage(content=prompt)])
+                    return self._parse_llm_response(response)
+                except Exception:
+                    pass
+            raise RuntimeError(f"Failed to extract requirements: {e}")
+    
+    def _build_extraction_prompt(self, text: str) -> str:
+        """Build prompt for requirement extraction."""
+        return f"""
+Analyze the following client requirement text and extract structured information.
+Return a JSON object with these exact keys:
+
+{{
+  "title": "Brief project title",
+  "summary": "2-3 sentence project summary", 
+  "features": [
+    {{"name": "Feature name", "desc": "Feature description"}}
+  ],
+  "constraints": ["List of technical or business constraints"],
+  "tech_stack": ["Mentioned technologies or preferences"],
+  "timeline": "Estimated timeline if mentioned",
+  "budget": "Budget constraints if mentioned"
+}}
+
+Client Requirements:
+{text}
+
+Respond with ONLY the JSON object, no additional text:
+"""
+    
+    def _parse_llm_response(self, response) -> Dict[str, Any]:
+        """Parse LLM response into structured data."""
+        content = response.content if hasattr(response, 'content') else str(response)
+        
+        # Extract JSON from response
+        try:
+            # Find JSON block in response
+            start = content.find('{')
+            end = content.rfind('}') + 1
+            if start != -1 and end > start:
+                json_str = content[start:end]
+                return json.loads(json_str)
+        except json.JSONDecodeError:
+            pass
+        
+        # Fallback: try to parse entire response as JSON
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            raise ValueError("Could not parse LLM response as JSON")
+
+
+class ImageParser:
+    """Processes images using OCR to extract text requirements."""
+    
+    def __init__(self):
+        self.supported_formats = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff'}
+    
+    def parse_image(self, image_path: str) -> str:
+        """Extract text from image using OCR."""
+        path = Path(image_path)
+        
+        if path.suffix.lower() not in self.supported_formats:
+            raise ValueError(f"Unsupported image format: {path.suffix}")
+        
+        try:
+            image = Image.open(path)
+            # Configure pytesseract for better accuracy
+            config = '--oem 3 --psm 6'
+            text = pytesseract.image_to_string(image, config=config)
+            return text.strip()
+        except Exception as e:
+            raise RuntimeError(f"OCR processing failed: {e}")
+    
+    def batch_parse_images(self, image_paths: List[str]) -> Dict[str, str]:
+        """Parse multiple images and return text content."""
+        results = {}
+        for path in image_paths:
+            try:
+                results[path] = self.parse_image(path)
+            except Exception as e:
+                results[path] = f"Error: {e}"
+        return results
+
+
+class SpecBuilder:
+    """Builds structured specifications and generates helpful artifacts."""
+    
+    def __init__(self, output_dir: str = "analysis/output"):
+        self.output_dir = Path(output_dir)
+        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.session_dir = self.output_dir / self.timestamp
+    
+    def build_specification(self, 
+                          text_requirements: Dict[str, Any],
+                          image_texts: Dict[str, str],
+                          file_assets: List[str]) -> Dict[str, Any]:
+        """Build complete specification from parsed inputs."""
+        
+        # Merge image text into requirements if relevant
+        combined_text = self._combine_image_text(image_texts)
+        if combined_text:
+            text_requirements.setdefault('image_content', combined_text)
+        
+        # Build final spec
+        spec = {
+            "title": text_requirements.get('title', 'Untitled Project'),
+            "summary": text_requirements.get('summary', ''),
+            "features": text_requirements.get('features', []),
+            "constraints": text_requirements.get('constraints', []),
+            "assets": {
+                "images": list(image_texts.keys()),
+                "docs": file_assets
+            },
+            "metadata": {
+                "created_at": datetime.now().isoformat(),
+                "session_id": self.timestamp,
+                "tech_stack": text_requirements.get('tech_stack', []),
+                "timeline": text_requirements.get('timeline'),
+                "budget": text_requirements.get('budget')
+            }
+        }
+        
+        return spec
+    
+    def _combine_image_text(self, image_texts: Dict[str, str]) -> str:
+        """Combine text extracted from images."""
+        valid_texts = [text for text in image_texts.values() 
+                      if text and not text.startswith('Error:')]
+        return '\n\n'.join(valid_texts) if valid_texts else ''
+    
+    def generate_artifacts(self, spec: Dict[str, Any]) -> Dict[str, str]:
+        """Generate helpful artifacts for downstream agents."""
+        artifacts = {}
+        
+        # Generate component diagram
+        artifacts['component_diagram'] = self._generate_component_diagram(spec)
+        
+        # Generate task flow
+        artifacts['task_flow'] = self._generate_task_flow(spec)
+        
+        # Generate optional wireframe
+        if self._should_generate_wireframe(spec):
+            artifacts['wireframe'] = self._generate_wireframe(spec)
+        
+        return artifacts
+    
+    def _generate_component_diagram(self, spec: Dict[str, Any]) -> str:
+        """Generate Mermaid component diagram."""
+        features = spec.get('features', [])
+        
+        diagram = "```mermaid\ngraph TD\n"
+        diagram += "    A[User Interface] --> B[Business Logic]\n"
+        diagram += "    B --> C[Data Layer]\n"
+        
+        # Add feature-specific components
+        for i, feature in enumerate(features, 1):
+            component_id = f"F{i}"
+            component_name = feature.get('name', f'Feature {i}')
+            diagram += f"    B --> {component_id}[{component_name}]\n"
+        
+        diagram += "```"
+        return diagram
+    
+    def _generate_task_flow(self, spec: Dict[str, Any]) -> str:
+        """Generate Mermaid task flow diagram."""
+        features = spec.get('features', [])
+        
+        flow = "```mermaid\nflowchart TD\n"
+        flow += "    Start([Project Start]) --> Setup[Environment Setup]\n"
+        
+        for i, feature in enumerate(features, 1):
+            feature_id = f"F{i}"
+            feature_name = feature.get('name', f'Feature {i}')
+            prev_id = f"F{i-1}" if i > 1 else "Setup"
+            flow += f"    {prev_id} --> {feature_id}[{feature_name}]\n"
+        
+        last_feature = f"F{len(features)}" if features else "Setup"
+        flow += f"    {last_feature} --> Test[Testing & QA]\n"
+        flow += "    Test --> Deploy[Deployment]\n"
+        flow += "    Deploy --> End([Project Complete])\n"
+        flow += "```"
+        
+        return flow
+    
+    def _should_generate_wireframe(self, spec: Dict[str, Any]) -> bool:
+        """Determine if wireframe generation is beneficial."""
+        # Generate wireframe for UI-heavy projects
+        ui_keywords = ['interface', 'ui', 'frontend', 'web', 'app', 'dashboard']
+        text_content = (spec.get('summary', '') + ' ' + 
+                       ' '.join(f.get('desc', '') for f in spec.get('features', []))).lower()
+        
+        return any(keyword in text_content for keyword in ui_keywords)
+    
+    def _generate_wireframe(self, spec: Dict[str, Any]) -> str:
+        """Generate ASCII wireframe for UI projects."""
+        wireframe = """
+ASCII Wireframe (Low-Fidelity):
+
+┌─────────────────────────────────────┐
+│              HEADER                 │
+│  [Logo]  [Nav1] [Nav2] [Nav3]      │
+├─────────────────────────────────────┤
+│                                     │
+│  Main Content Area                  │
+│                                     │
+│  ┌─────────────┐ ┌─────────────┐   │
+│  │   Feature   │ │   Feature   │   │
+│  │    Block    │ │    Block    │   │
+│  └─────────────┘ └─────────────┘   │
+│                                     │
+├─────────────────────────────────────┤
+│              FOOTER                 │
+└─────────────────────────────────────┘
+"""
+        return wireframe
+    
+    def save_artifacts(self, spec: Dict[str, Any], artifacts: Dict[str, str]) -> str:
+        """Save specification and artifacts to disk."""
+        # Create session directory
+        self.session_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save main specification
+        spec_path = self.session_dir / "specification.json"
+        with open(spec_path, 'w') as f:
+            json.dump(spec, f, indent=2)
+        
+        # Save artifacts
+        for name, content in artifacts.items():
+            artifact_path = self.session_dir / f"{name}.md"
+            with open(artifact_path, 'w') as f:
+                f.write(f"# {name.replace('_', ' ').title()}\n\n{content}")
+        
+        # Create summary file
+        summary_path = self.session_dir / "README.md"
+        with open(summary_path, 'w') as f:
+            f.write(self._generate_session_summary(spec, artifacts))
+        
+        return str(self.session_dir)
+    
+    def _generate_session_summary(self, spec: Dict[str, Any], artifacts: Dict[str, str]) -> str:
+        """Generate session summary README."""
+        summary = f"""# Analysis Session: {spec['title']}
+
+**Generated:** {spec['metadata']['created_at']}
+**Session ID:** {spec['metadata']['session_id']}
+
+## Summary
+{spec['summary']}
+
+## Features
+"""
+        for feature in spec.get('features', []):
+            summary += f"- **{feature.get('name', 'Unnamed')}**: {feature.get('desc', 'No description')}\n"
+        
+        if spec.get('constraints'):
+            summary += "\n## Constraints\n"
+            for constraint in spec['constraints']:
+                summary += f"- {constraint}\n"
+        
+        summary += f"\n## Generated Artifacts\n"
+        for artifact_name in artifacts.keys():
+            summary += f"- [{artifact_name.replace('_', ' ').title()}]({artifact_name}.md)\n"
+        
+        return summary
