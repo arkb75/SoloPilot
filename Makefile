@@ -1,0 +1,88 @@
+# SoloPilot Development Makefile
+# Provides convenient commands for common development tasks
+
+.PHONY: help venv install run test demo clean docker docker-down
+
+# Default target
+help:
+	@echo "SoloPilot Development Commands:"
+	@echo ""
+	@echo "Setup Commands:"
+	@echo "  make venv       Create virtual environment and install dependencies"
+	@echo "  make install    Install dependencies in existing venv"
+	@echo ""
+	@echo "Development Commands:"
+	@echo "  make run        Run analyser with sample input"
+	@echo "  make test       Run test suite"
+	@echo "  make demo       Run demo script with sample data"
+	@echo ""
+	@echo "Docker Commands:"
+	@echo "  make docker     Start services with docker-compose"
+	@echo "  make docker-down Stop docker services"
+	@echo ""
+	@echo "Utility Commands:"
+	@echo "  make clean      Clean build artifacts and cache"
+	@echo "  make help       Show this help message"
+
+# Create virtual environment and install all dependencies
+venv:
+	@echo "🔧 Creating virtual environment..."
+	python3 -m venv .venv
+	@echo "📦 Installing dependencies..."
+	. .venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt
+	@echo "✅ Virtual environment ready! Run 'source .venv/bin/activate' to activate."
+
+# Install dependencies in existing virtual environment
+install:
+	@echo "📦 Installing dependencies..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	. .venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt
+	@echo "✅ Dependencies installed!"
+
+# Run analyser with sample input
+run:
+	@echo "🚀 Running SoloPilot analyser..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	. .venv/bin/activate && python scripts/run_analyser.py --path sample_input
+
+# Run test suite
+test:
+	@echo "🧪 Running tests..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	. .venv/bin/activate && pytest tests/ -v
+
+# Run demo script
+demo:
+	@echo "🎬 Running demo..."
+	@chmod +x scripts/demo.sh
+	./scripts/demo.sh
+
+# Start docker services
+docker:
+	@echo "🐳 Starting Docker services..."
+	docker-compose up --build
+
+# Stop docker services
+docker-down:
+	@echo "🛑 Stopping Docker services..."
+	docker-compose down
+
+# Clean build artifacts and cache
+clean:
+	@echo "🧹 Cleaning up..."
+	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	find . -type f -name "*.pyo" -delete 2>/dev/null || true
+	rm -rf .pytest_cache 2>/dev/null || true
+	@echo "✅ Cleanup complete!"
+
+# Quick development setup (venv + dependencies + tesseract check)
+setup: venv
+	@echo "🔍 Checking system dependencies..."
+	@if ! command -v tesseract >/dev/null 2>&1; then \
+		echo "⚠️  Tesseract not found. Install with: brew install tesseract"; \
+	else \
+		echo "✅ Tesseract found"; \
+	fi
+	@echo "🎉 Setup complete! Run 'source .venv/bin/activate' then 'make run' to test."

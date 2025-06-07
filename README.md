@@ -4,17 +4,35 @@
 
 ## 🚀 Quick Start
 
+### Local Development (Recommended)
+
 ```bash
 # Clone and setup
 git clone <repo-url>
 cd SoloPilot
+
+# Create virtual environment (avoids PEP 668 restrictions)
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies
+pip install --upgrade pip
 pip install -r requirements.txt
 
-# Start local stack
-docker-compose up -d
+# Install system dependencies (macOS)
+brew install tesseract
 
 # Run requirement analysis
 python scripts/run_analyser.py --path ./sample_input
+```
+
+### Docker Alternative (Zero Host Setup)
+
+```bash
+# Start local stack with Ollama + analyser
+docker-compose up --build
+
+# The compose file handles all dependencies automatically
 ```
 
 ## 🏗️ Architecture
@@ -90,11 +108,22 @@ Plus auto-generated artifacts:
 ## 🔧 Development
 
 ```bash
+# Setup virtual environment (first time only)
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# Activate environment (subsequent sessions)
+source .venv/bin/activate
+
 # Run tests
 pytest tests/
 
 # Local development
 python scripts/run_analyser.py --path ./tests/fixtures
+
+# Quick demo with sample data
+./scripts/demo.sh
 
 # Docker development
 docker-compose up --build

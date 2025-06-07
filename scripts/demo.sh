@@ -112,10 +112,22 @@ EOF
 
 echo "✅ Created additional requirements file"
 
-# Check if Python dependencies are installed
-echo "🔍 Checking Python dependencies..."
-if ! python3 -c "import agents.analyser" 2>/dev/null; then
-    echo "📦 Installing Python dependencies..."
+# Setup virtual environment and dependencies
+echo "🔍 Setting up Python environment..."
+
+# Create venv if it doesn't exist
+if [ ! -d ".venv" ]; then
+    echo "📦 Creating virtual environment..."
+    python3 -m venv .venv
+fi
+
+# Activate virtual environment
+echo "🔧 Activating virtual environment..."
+source .venv/bin/activate
+
+# Check if dependencies are installed in venv
+if ! python -c "import agents.analyser" 2>/dev/null; then
+    echo "📦 Installing Python dependencies in virtual environment..."
     
     # Check if tesseract is installed (required for OCR)
     if ! command -v tesseract &> /dev/null; then
@@ -130,22 +142,23 @@ if ! python3 -c "import agents.analyser" 2>/dev/null; then
         fi
     fi
     
-    # Install Python packages
-    pip3 install -r requirements.txt --break-system-packages
+    # Install Python packages in venv
+    pip install --upgrade pip
+    pip install -r requirements.txt
     
     # If FAISS installation failed on macOS, suggest alternatives
-    if ! python3 -c "import faiss" 2>/dev/null && ! python3 -c "import sklearn" 2>/dev/null; then
+    if ! python -c "import faiss" 2>/dev/null && ! python -c "import sklearn" 2>/dev/null; then
         echo "⚠️  Vector similarity search library not available."
         echo "   Installing scikit-learn as fallback..."
-        pip3 install scikit-learn==1.5.2 --break-system-packages
+        pip install scikit-learn==1.5.2
     fi
 else
-    echo "✅ Dependencies already installed"
+    echo "✅ Dependencies already installed in virtual environment"
 fi
 
 # Run the analyser
 echo "🔧 Running requirement analysis..."
-python3 scripts/run_analyser.py --path sample_input --config config/model_config.yaml
+python scripts/run_analyser.py --path sample_input --config config/model_config.yaml
 
 # Check if analysis was successful
 if [ -d "analysis/output" ]; then
@@ -161,7 +174,7 @@ if [ -d "analysis/output" ]; then
         echo "🎯 Specification preview:"
         echo "========================"
         if [ -f "analysis/output/$LATEST_DIR/specification.json" ]; then
-            python3 -c "
+            python -c "
 import json
 with open('analysis/output/$LATEST_DIR/specification.json') as f:
     spec = json.load(f)
