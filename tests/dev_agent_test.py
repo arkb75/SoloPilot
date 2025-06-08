@@ -6,19 +6,21 @@ Tests core functionality with mocked LLM responses.
 
 import json
 import os
-import pytest
-import tempfile
 import shutil
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
 import sys
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from agents.dev.dev_agent import DevAgent
 from agents.dev.context7_bridge import Context7Bridge
+from agents.dev.dev_agent import DevAgent
+
 
 @pytest.fixture
 def sample_planning_data():
@@ -36,15 +38,15 @@ def sample_planning_data():
                         "name": "Tech Stack Configuration",
                         "description": "Set up Node.js/Express backend, PostgreSQL database",
                         "estimated_hours": 24,
-                        "dependencies": []
+                        "dependencies": [],
                     },
                     {
                         "name": "Database Schema Design",
                         "description": "Create database schema for users, products, orders",
                         "estimated_hours": 16,
-                        "dependencies": []
-                    }
-                ]
+                        "dependencies": [],
+                    },
+                ],
             },
             {
                 "name": "Product Management & Catalog",
@@ -55,48 +57,44 @@ def sample_planning_data():
                         "name": "Product CRUD Operations",
                         "description": "Create backend APIs for product management",
                         "estimated_hours": 24,
-                        "dependencies": ["Database Schema Design"]
+                        "dependencies": ["Database Schema Design"],
                     }
-                ]
-            }
+                ],
+            },
         ],
         "tech_stack": ["Node.js", "Express.js", "PostgreSQL", "React"],
-        "estimated_total_duration": "4 weeks"
+        "estimated_total_duration": "4 weeks",
     }
+
 
 @pytest.fixture
 def temp_config_file():
     """Create a temporary config file for testing."""
     config_data = {
-        'llm': {
-            'bedrock': {
-                'model_id': 'us.anthropic.claude-3-5-haiku-20241022-v1:0',
-                'region': 'us-east-2',
-                'model_kwargs': {
-                    'temperature': 0.1,
-                    'top_p': 0.9,
-                    'max_tokens': 2048
-                }
+        "llm": {
+            "bedrock": {
+                "model_id": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+                "region": "us-east-2",
+                "model_kwargs": {"temperature": 0.1, "top_p": 0.9, "max_tokens": 2048},
             },
-            'openai': {
-                'model': 'gpt-4o-mini',
-                'max_tokens': 2048,
-                'temperature': 0.1
-            }
+            "openai": {"model": "gpt-4o-mini", "max_tokens": 2048, "temperature": 0.1},
         }
     }
-    
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         import yaml
+
         yaml.dump(config_data, f)
         return f.name
+
 
 @pytest.fixture
 def temp_planning_file(sample_planning_data):
     """Create a temporary planning file for testing."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         json.dump(sample_planning_data, f, indent=2)
         return f.name
+
 
 @pytest.fixture
 def temp_output_dir():
@@ -105,65 +103,66 @@ def temp_output_dir():
     yield temp_dir
     shutil.rmtree(temp_dir)
 
+
 class TestDevAgent:
     """Test cases for DevAgent class."""
-    
+
     def test_init(self, temp_config_file):
         """Test DevAgent initialization."""
         agent = DevAgent(config_path=temp_config_file)
         assert agent.config is not None
-        assert 'llm' in agent.config
-    
+        assert "llm" in agent.config
+
     def test_load_config(self, temp_config_file):
         """Test configuration loading."""
         agent = DevAgent(config_path=temp_config_file)
         config = agent._load_config(temp_config_file)
-        assert 'llm' in config
-        assert 'bedrock' in config['llm']
-    
+        assert "llm" in config
+        assert "bedrock" in config["llm"]
+
     def test_infer_language(self, temp_config_file):
         """Test language inference from tech stack."""
         agent = DevAgent(config_path=temp_config_file)
-        
+
         # Test JavaScript/TypeScript detection
-        assert agent._infer_language(['React', 'Node.js'], 'Frontend') == 'javascript'
-        assert agent._infer_language(['TypeScript', 'Express'], 'Backend') == 'javascript'
-        
+        assert agent._infer_language(["React", "Node.js"], "Frontend") == "javascript"
+        assert agent._infer_language(["TypeScript", "Express"], "Backend") == "javascript"
+
         # Test Python detection
-        assert agent._infer_language(['Python', 'Django'], 'API') == 'python'
-        assert agent._infer_language(['Flask', 'FastAPI'], 'Services') == 'python'
-        
+        assert agent._infer_language(["Python", "Django"], "API") == "python"
+        assert agent._infer_language(["Flask", "FastAPI"], "Services") == "python"
+
         # Test database detection
-        assert agent._infer_language(['PostgreSQL'], 'Database Schema') == 'sql'
-        
+        assert agent._infer_language(["PostgreSQL"], "Database Schema") == "sql"
+
         # Test default fallback
-        assert agent._infer_language(['Unknown'], 'Feature') == 'javascript'
-    
+        assert agent._infer_language(["Unknown"], "Feature") == "javascript"
+
     def test_get_file_extension(self, temp_config_file):
         """Test file extension mapping."""
         agent = DevAgent(config_path=temp_config_file)
-        
-        assert agent._get_file_extension('javascript') == '.js'
-        assert agent._get_file_extension('typescript') == '.ts'
-        assert agent._get_file_extension('python') == '.py'
-        assert agent._get_file_extension('java') == '.java'
-        assert agent._get_file_extension('sql') == '.sql'
-        assert agent._get_file_extension('unknown') == '.js'  # default
-    
+
+        assert agent._get_file_extension("javascript") == ".js"
+        assert agent._get_file_extension("typescript") == ".ts"
+        assert agent._get_file_extension("python") == ".py"
+        assert agent._get_file_extension("java") == ".java"
+        assert agent._get_file_extension("sql") == ".sql"
+        assert agent._get_file_extension("unknown") == ".js"  # default
+
     def test_generate_stub_code(self, temp_config_file):
         """Test stub code generation."""
         agent = DevAgent(config_path=temp_config_file)
         stub = agent._generate_stub_code()
-        
-        assert 'StubImplementation' in stub
-        assert 'TODO:' in stub
-        assert 'describe(' in stub
-        assert 'test(' in stub
-    
+
+        assert "StubImplementation" in stub
+        assert "TODO:" in stub
+        assert "describe(" in stub
+        assert "test(" in stub
+
     def test_parse_llm_response(self, temp_config_file):
         """Test LLM response parsing."""
         agent = DevAgent(config_path=temp_config_file)
-        
+
         # Test with properly formatted response
         mock_response = """
 ```javascript
@@ -182,13 +181,15 @@ describe('TestImplementation', () => {
 });
 ```
 """
-        skeleton, test = agent._parse_llm_response(mock_response, 'javascript')
-        assert 'TestImplementation' in skeleton
-        assert 'describe(' in test
-        assert 'should work' in test
-    
-    @patch('agents.dev.dev_agent.DevAgent._call_llm')
-    def test_process_planning_output(self, mock_llm_call, temp_config_file, temp_planning_file, temp_output_dir):
+        skeleton, test = agent._parse_llm_response(mock_response, "javascript")
+        assert "TestImplementation" in skeleton
+        assert "describe(" in test
+        assert "should work" in test
+
+    @patch("agents.dev.dev_agent.DevAgent._call_llm")
+    def test_process_planning_output(
+        self, mock_llm_call, temp_config_file, temp_planning_file, temp_output_dir
+    ):
         """Test processing planning output with mocked LLM."""
         # Mock LLM response
         mock_llm_call.return_value = """
@@ -220,210 +221,209 @@ describe('ProjectSetup', () => {
 });
 ```
 """
-        
+
         agent = DevAgent(config_path=temp_config_file)
         manifest = agent.process_planning_output(temp_planning_file, temp_output_dir)
-        
+
         # Verify manifest structure
-        assert manifest['project_title'] == 'Test E-Commerce Platform'
-        assert len(manifest['milestones']) == 2
-        assert 'Node.js' in manifest['tech_stack']
-        
+        assert manifest["project_title"] == "Test E-Commerce Platform"
+        assert len(manifest["milestones"]) == 2
+        assert "Node.js" in manifest["tech_stack"]
+
         # Verify output directory structure
         output_path = Path(temp_output_dir)
         assert output_path.exists()
-        
+
         # Check milestone directories
         milestone1_dir = output_path / "milestone-1"
         milestone2_dir = output_path / "milestone-2"
-        
+
         assert milestone1_dir.exists()
         assert milestone2_dir.exists()
-        
+
         # Check generated files
         assert (milestone1_dir / "implementation.js").exists()
         assert (milestone1_dir / "test.js").exists()
         assert (milestone1_dir / "README.md").exists()
-        
+
         # Check unit tests directory
         unit_tests_dir = output_path / "unit_tests"
         assert unit_tests_dir.exists()
         assert (unit_tests_dir / "integration.test.js").exists()
-        
+
         # Check manifest file
         manifest_file = output_path / "manifest.json"
         assert manifest_file.exists()
-        
+
         # Verify manifest content
-        with open(manifest_file, 'r') as f:
+        with open(manifest_file, "r") as f:
             saved_manifest = json.load(f)
-        assert saved_manifest['project_title'] == 'Test E-Commerce Platform'
-    
+        assert saved_manifest["project_title"] == "Test E-Commerce Platform"
+
     def test_find_latest_planning_output(self, temp_config_file):
         """Test finding latest planning output."""
         agent = DevAgent(config_path=temp_config_file)
-        
+
         # Test with no planning directory
-        with patch('pathlib.Path.exists', return_value=False):
+        with patch("pathlib.Path.exists", return_value=False):
             result = agent.find_latest_planning_output()
             assert result is None
-    
-    @patch('agents.dev.dev_agent.DevAgent._call_bedrock')
+
+    @patch("agents.dev.dev_agent.DevAgent._call_bedrock")
     def test_bedrock_fallback_to_openai(self, mock_bedrock, temp_config_file):
         """Test fallback from Bedrock to OpenAI."""
         # Mock Bedrock failure
         mock_bedrock.side_effect = Exception("Bedrock error")
-        
+
         agent = DevAgent(config_path=temp_config_file)
-        
-        with patch.object(agent, '_call_openai_fallback', return_value="Mocked OpenAI response"):
+
+        with patch.object(agent, "_call_openai_fallback", return_value="Mocked OpenAI response"):
             result = agent._call_llm("Test prompt")
             assert result == "Mocked OpenAI response"
-    
-    @patch('agents.dev.dev_agent.DevAgent._call_bedrock')
-    @patch('agents.dev.dev_agent.DevAgent._call_openai_fallback')
+
+    @patch("agents.dev.dev_agent.DevAgent._call_bedrock")
+    @patch("agents.dev.dev_agent.DevAgent._call_openai_fallback")
     def test_llm_fallback_to_stub(self, mock_openai, mock_bedrock, temp_config_file):
         """Test final fallback to stub code when both LLMs fail."""
         # Mock both LLM failures
         mock_bedrock.side_effect = Exception("Bedrock error")
         mock_openai.side_effect = Exception("OpenAI error")
-        
+
         agent = DevAgent(config_path=temp_config_file)
         result = agent._call_llm("Test prompt")
-        
+
         # Should return stub code
         assert "StubImplementation" in result
         assert "TODO:" in result
 
+
 class TestContext7Bridge:
     """Test cases for Context7Bridge class."""
-    
+
     def test_init(self):
         """Test Context7Bridge initialization."""
         bridge = Context7Bridge()
-        assert hasattr(bridge, 'context7_available')
-        assert hasattr(bridge, 'enabled')
-    
-    @patch('subprocess.run')
+        assert hasattr(bridge, "context7_available")
+        assert hasattr(bridge, "enabled")
+
+    @patch("subprocess.run")
     def test_check_context7_available_success(self, mock_run):
         """Test successful Context7 availability check."""
         mock_run.return_value.returncode = 0
-        
+
         bridge = Context7Bridge()
         bridge.context7_available = bridge._check_context7_available()
         assert bridge.context7_available is True
-    
-    @patch('subprocess.run')
+
+    @patch("subprocess.run")
     def test_check_context7_available_failure(self, mock_run):
         """Test failed Context7 availability check."""
         mock_run.side_effect = FileNotFoundError()
-        
+
         bridge = Context7Bridge()
         bridge.context7_available = bridge._check_context7_available()
         assert bridge.context7_available is False
-    
+
     def test_is_enabled_false_by_default(self):
         """Test that Context7 is disabled by default."""
         with patch.dict(os.environ, {}, clear=True):  # Clear environment
             bridge = Context7Bridge()
             assert bridge.is_enabled() is False
-    
-    @patch.dict(os.environ, {'C7_SCOUT': '1'})
-    @patch('subprocess.run')
+
+    @patch.dict(os.environ, {"C7_SCOUT": "1"})
+    @patch("subprocess.run")
     def test_is_enabled_with_env_var(self, mock_run):
         """Test Context7 enabled with environment variable."""
         mock_run.return_value.returncode = 0
-        
+
         bridge = Context7Bridge()
         bridge.context7_available = True
         bridge.enabled = True
         assert bridge.is_enabled() is True
-    
-    @patch('subprocess.run')
+
+    @patch("subprocess.run")
     def test_query_context7_success(self, mock_run):
         """Test successful Context7 query."""
         mock_run.return_value.returncode = 0
         mock_run.return_value.stdout = "Context7 response"
-        
+
         bridge = Context7Bridge()
         bridge.enabled = True
-        
+
         result = bridge._query_context7("Test question")
         assert result == "Context7 response"
-    
-    @patch('subprocess.run')
+
+    @patch("subprocess.run")
     def test_query_context7_failure(self, mock_run):
         """Test failed Context7 query."""
         mock_run.return_value.returncode = 1
         mock_run.return_value.stderr = "Context7 error"
-        
+
         bridge = Context7Bridge()
         bridge.enabled = True
-        
+
         result = bridge._query_context7("Test question")
         assert result is None
-    
+
     def test_generate_milestone_insights_disabled(self):
         """Test milestone insights generation when disabled."""
         bridge = Context7Bridge()
         bridge.enabled = False
-        
+
         milestone = {"name": "Test Milestone", "description": "Test description"}
         insights = bridge.generate_milestone_insights(milestone, ["Node.js"])
-        
+
         assert insights["enabled"] is False
         assert insights["pitfalls"] is None
         assert insights["patterns"] is None
         assert insights["testing"] is None
-    
+
     def test_format_insights_for_readme_empty(self):
         """Test formatting empty insights."""
         bridge = Context7Bridge()
-        
-        insights = {
-            "enabled": False,
-            "pitfalls": None,
-            "patterns": None,
-            "testing": None
-        }
-        
+
+        insights = {"enabled": False, "pitfalls": None, "patterns": None, "testing": None}
+
         result = bridge.format_insights_for_readme(insights)
         assert result == ""
-    
+
     def test_format_insights_for_readme_with_content(self):
         """Test formatting insights with content."""
         bridge = Context7Bridge()
-        
+
         insights = {
             "enabled": True,
             "pitfalls": "Common pitfalls include...",
             "patterns": "Best patterns are...",
-            "testing": "Testing strategies include..."
+            "testing": "Testing strategies include...",
         }
-        
+
         result = bridge.format_insights_for_readme(insights)
         assert "Common Pitfalls" in result
         assert "Implementation Patterns" in result
         assert "Testing Strategies" in result
         assert "Context7" in result
-    
+
     def test_get_status(self):
         """Test getting Context7 bridge status."""
         bridge = Context7Bridge()
         status = bridge.get_status()
-        
+
         assert "context7_available" in status
         assert "enabled" in status
         assert "env_var_set" in status
         assert "install_command" in status
         assert status["install_command"] == "npm install -g context7"
 
+
 # Integration smoke tests
 class TestIntegration:
     """Integration tests to verify end-to-end functionality."""
-    
-    @patch('agents.dev.dev_agent.DevAgent._call_llm')
-    def test_smoke_test_dev_agent(self, mock_llm_call, temp_config_file, temp_planning_file, temp_output_dir):
+
+    @patch("agents.dev.dev_agent.DevAgent._call_llm")
+    def test_smoke_test_dev_agent(
+        self, mock_llm_call, temp_config_file, temp_planning_file, temp_output_dir
+    ):
         """Smoke test for the complete dev agent workflow."""
         mock_llm_call.return_value = """
 ```javascript
@@ -443,31 +443,32 @@ describe('SmokeTestImplementation', () => {
 });
 ```
 """
-        
+
         agent = DevAgent(config_path=temp_config_file)
         manifest = agent.process_planning_output(temp_planning_file, temp_output_dir)
-        
+
         # Basic assertions to ensure the workflow completed
         assert manifest is not None
-        assert len(manifest['milestones']) > 0
+        assert len(manifest["milestones"]) > 0
         assert Path(temp_output_dir).exists()
         assert (Path(temp_output_dir) / "manifest.json").exists()
-    
+
     def test_smoke_test_context7_bridge(self):
         """Smoke test for Context7 bridge basic functionality."""
         bridge = Context7Bridge()
-        
+
         # Test basic methods don't crash
         status = bridge.get_status()
         assert isinstance(status, dict)
-        
+
         enabled = bridge.is_enabled()
         assert isinstance(enabled, bool)
-        
+
         # Test insights generation with disabled bridge
         milestone = {"name": "Test", "description": "Test"}
         insights = bridge.generate_milestone_insights(milestone, ["Node.js"])
         assert isinstance(insights, dict)
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

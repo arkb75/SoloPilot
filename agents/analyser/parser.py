@@ -11,15 +11,16 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
 
 import pytesseract
-from PIL import Image
 import yaml
+from PIL import Image
 
 # Load environment variables from .env file
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass  # dotenv is optional
@@ -27,14 +28,16 @@ except ImportError:
 # Try to import LangChain components with fallbacks
 try:
     from langchain_aws import ChatBedrock
-    from langchain_openai import ChatOpenAI
     from langchain_core.messages import HumanMessage
+    from langchain_openai import ChatOpenAI
+
     LANGCHAIN_AVAILABLE = True
     BEDROCK_AVAILABLE = True
 except ImportError:
     try:
-        from langchain_openai import ChatOpenAI
         from langchain_core.messages import HumanMessage
+        from langchain_openai import ChatOpenAI
+
         LANGCHAIN_AVAILABLE = True
         BEDROCK_AVAILABLE = False
         print("⚠️  AWS Bedrock not available, using OpenAI only")
@@ -46,11 +49,13 @@ except ImportError:
 # Vector similarity - try FAISS first, fallback to scikit-learn
 try:
     import faiss
+
     VECTOR_BACKEND = "faiss"
 except ImportError:
     try:
-        from sklearn.metrics.pairwise import cosine_similarity
         from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.metrics.pairwise import cosine_similarity
+
         VECTOR_BACKEND = "sklearn"
     except ImportError:
         VECTOR_BACKEND = None
@@ -58,110 +63,136 @@ except ImportError:
 
 class TextParser:
     """Parses text-based client requirements from various formats."""
-    
+
     def __init__(self, config_path: Optional[str] = None):
         self.config = self._load_config(config_path)
         self._setup_llm()
-    
+
     def _load_config(self, config_path: Optional[str]) -> Dict[str, Any]:
         """Load model configuration."""
         if config_path and os.path.exists(config_path):
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 return yaml.safe_load(f)
         return {
-            'llm': {
-                'primary': 'bedrock',
-                'fallback': 'openai',
-                'bedrock': {
-                    'model_id': 'anthropic.claude-3-haiku-20240307-v1:0',
-                    'region': 'us-east-2'
+            "llm": {
+                "primary": "bedrock",
+                "fallback": "openai",
+                "bedrock": {
+                    "model_id": "anthropic.claude-3-haiku-20240307-v1:0",
+                    "region": "us-east-2",
                 },
-                'openai': {
-                    'model': 'gpt-4o-mini'
-                }
+                "openai": {"model": "gpt-4o-mini"},
             }
         }
-    
+
     def _setup_llm(self):
         """Initialize LLM instances."""
         if not LANGCHAIN_AVAILABLE:
             self.primary_llm = None
             self.fallback_llm = None
             return
-            
+
         # Setup primary LLM (Bedrock)
         self.primary_llm = None
-        if BEDROCK_AVAILABLE and self.config['llm']['primary'] == 'bedrock':
+        if BEDROCK_AVAILABLE and self.config["llm"]["primary"] == "bedrock":
             try:
-                bedrock_config = self.config['llm'].get('bedrock', {})
+                bedrock_config = self.config["llm"].get("bedrock", {})
                 self.primary_llm = ChatBedrock(
-                    model_id=bedrock_config.get('model_id', 'anthropic.claude-3-haiku-20240307-v1:0'),
-                    region_name=bedrock_config.get('region', 'us-east-2'),
-                    model_kwargs={
-                        'temperature': 0.1,
-                        'max_tokens': 2048
-                    }
+                    model_id=bedrock_config.get(
+                        "model_id", "anthropic.claude-3-haiku-20240307-v1:0"
+                    ),
+                    region_name=bedrock_config.get("region", "us-east-2"),
+                    model_kwargs={"temperature": 0.1, "max_tokens": 2048},
                 )
                 print("✅ AWS Bedrock initialized successfully")
             except Exception as e:
                 print(f"⚠️  Bedrock initialization failed: {e}")
                 self.primary_llm = None
-        
+
         # Setup fallback LLM (OpenAI)
         try:
-            openai_config = self.config['llm'].get('openai', {})
+            openai_config = self.config["llm"].get("openai", {})
             self.fallback_llm = ChatOpenAI(
-                model=openai_config.get('model', 'gpt-4o-mini'),
-                temperature=0.1
+                model=openai_config.get("model", "gpt-4o-mini"), temperature=0.1
             )
             print("✅ OpenAI fallback initialized")
         except Exception as e:
             print(f"⚠️  OpenAI initialization failed: {e}")
             self.fallback_llm = None
-    
+
     def parse_file(self, file_path: str) -> str:
         """Parse a single text file and extract content."""
         path = Path(file_path)
-        
-        if path.suffix.lower() == '.md':
+
+        if path.suffix.lower() == ".md":
             return self._parse_markdown(path)
-        elif path.suffix.lower() == '.txt':
+        elif path.suffix.lower() == ".txt":
             return self._parse_text(path)
-        elif path.suffix.lower() == '.docx':
+        elif path.suffix.lower() == ".docx":
             return self._parse_docx(path)
         else:
             raise ValueError(f"Unsupported file format: {path.suffix}")
-    
+
     def _parse_markdown(self, path: Path) -> str:
         """Parse markdown files."""
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, "r", encoding="utf-8") as f:
             return f.read()
-    
+
     def _parse_text(self, path: Path) -> str:
         """Parse plain text files."""
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, "r", encoding="utf-8") as f:
             return f.read()
-    
+
     def _parse_docx(self, path: Path) -> str:
-        """Parse DOCX files (placeholder - requires python-docx)."""
-        # TODO: Implement DOCX parsing with python-docx
-        raise NotImplementedError("DOCX parsing not yet implemented")
-    
+        """Parse DOCX files using python-docx."""
+        try:
+            from docx import Document
+        except ImportError:
+            raise ImportError(
+                "python-docx is required for DOCX parsing. Install with: pip install python-docx"
+            )
+
+        try:
+            doc = Document(path)
+
+            # Extract all paragraph text
+            paragraphs = []
+            for paragraph in doc.paragraphs:
+                text = paragraph.text.strip()
+                if text:  # Only add non-empty paragraphs
+                    paragraphs.append(text)
+
+            # Extract text from tables
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = []
+                    for cell in row.cells:
+                        cell_text = cell.text.strip()
+                        if cell_text:
+                            row_text.append(cell_text)
+                    if row_text:
+                        paragraphs.append(" | ".join(row_text))
+
+            return "\n\n".join(paragraphs)
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to parse DOCX file {path}: {e}")
+
     def extract_requirements(self, text: str) -> Dict[str, Any]:
         """Extract structured requirements from text using LLM or fallback."""
         if not LANGCHAIN_AVAILABLE or (not self.primary_llm and not self.fallback_llm):
             # Fallback to simple keyword extraction
             return self._extract_requirements_fallback(text)
-        
+
         prompt = self._build_extraction_prompt(text)
-        
+
         llm = self.primary_llm or self.fallback_llm
-        
+
         try:
             print(f"🧠 Using LLM: {llm.__class__.__name__}")
             # Modern LangChain uses invoke() method
             response = llm.invoke(prompt)
-            
+
             print("✅ LLM extraction successful")
             return self._parse_llm_response(response)
         except Exception as e:
@@ -178,7 +209,7 @@ class TextParser:
             # If all LLMs fail, use keyword fallback
             print("🔄 Using keyword extraction fallback")
             return self._extract_requirements_fallback(text)
-    
+
     def _build_extraction_prompt(self, text: str) -> str:
         """Build prompt for requirement extraction."""
         return f"""
@@ -202,130 +233,141 @@ Client Requirements:
 
 Respond with ONLY the JSON object, no additional text:
 """
-    
+
     def _parse_llm_response(self, response) -> Dict[str, Any]:
         """Parse LLM response into structured data."""
-        content = response.content if hasattr(response, 'content') else str(response)
-        
+        content = response.content if hasattr(response, "content") else str(response)
+
         # Extract JSON from response
         try:
             # Find JSON block in response
-            start = content.find('{')
-            end = content.rfind('}') + 1
+            start = content.find("{")
+            end = content.rfind("}") + 1
             if start != -1 and end > start:
                 json_str = content[start:end]
                 return json.loads(json_str)
         except json.JSONDecodeError:
             pass
-        
+
         # Fallback: try to parse entire response as JSON
         try:
             return json.loads(content)
         except json.JSONDecodeError:
             raise ValueError("Could not parse LLM response as JSON")
-    
+
     def _extract_requirements_fallback(self, text: str) -> Dict[str, Any]:
         """Fallback requirement extraction using keyword matching."""
         import re
-        
+
         text_lower = text.lower()
-        
+
         # Extract title from headers or first line
-        title_match = re.search(r'^#\s+(.+)', text, re.MULTILINE)
+        title_match = re.search(r"^#\s+(.+)", text, re.MULTILINE)
         if title_match:
             title = title_match.group(1).strip()
         else:
             # Use first sentence as title
-            sentences = text.split('.')
+            sentences = text.split(".")
             title = sentences[0][:50] + "..." if len(sentences[0]) > 50 else sentences[0]
-        
+
         # Extract features from bullet points or numbered lists
         features = []
         feature_patterns = [
-            r'[-*]\s+(.+)',  # Bullet points
-            r'\d+\.\s+(.+)',  # Numbered lists
-            r'##\s+(.+)',     # H2 headers
+            r"[-*]\s+(.+)",  # Bullet points
+            r"\d+\.\s+(.+)",  # Numbered lists
+            r"##\s+(.+)",  # H2 headers
         ]
-        
+
         for pattern in feature_patterns:
             matches = re.findall(pattern, text, re.MULTILINE)
             for match in matches:
                 if len(match.strip()) > 5:  # Filter out very short matches
-                    features.append({
-                        "name": match.strip()[:30],
-                        "desc": match.strip()
-                    })
-        
+                    features.append({"name": match.strip()[:30], "desc": match.strip()})
+
         # Extract constraints from key phrases
         constraints = []
-        constraint_keywords = ['must', 'should', 'required', 'constraint', 'limitation', 'cannot']
-        sentences = text.split('.')
-        
+        constraint_keywords = ["must", "should", "required", "constraint", "limitation", "cannot"]
+        sentences = text.split(".")
+
         for sentence in sentences:
             sentence_lower = sentence.lower()
             if any(keyword in sentence_lower for keyword in constraint_keywords):
                 clean_sentence = sentence.strip()
                 if len(clean_sentence) > 10:
                     constraints.append(clean_sentence)
-        
+
         # Extract tech stack from common technology names
         tech_keywords = [
-            'react', 'angular', 'vue', 'node.js', 'python', 'java', 'php',
-            'mysql', 'postgresql', 'mongodb', 'redis', 'docker', 'kubernetes',
-            'aws', 'azure', 'gcp', 'typescript', 'javascript', 'html', 'css'
+            "react",
+            "angular",
+            "vue",
+            "node.js",
+            "python",
+            "java",
+            "php",
+            "mysql",
+            "postgresql",
+            "mongodb",
+            "redis",
+            "docker",
+            "kubernetes",
+            "aws",
+            "azure",
+            "gcp",
+            "typescript",
+            "javascript",
+            "html",
+            "css",
         ]
-        
+
         tech_stack = []
         for keyword in tech_keywords:
             if keyword in text_lower:
                 tech_stack.append(keyword.title())
-        
+
         # Extract timeline information
         timeline = None
-        timeline_patterns = [
-            r'(\d+)\s+(week|month|day)s?',
-            r'(week|month|day)s?\s*(\d+)'
-        ]
-        
+        timeline_patterns = [r"(\d+)\s+(week|month|day)s?", r"(week|month|day)s?\s*(\d+)"]
+
         for pattern in timeline_patterns:
             match = re.search(pattern, text_lower)
             if match:
                 timeline = match.group(0)
                 break
-        
+
         return {
-            'title': title,
-            'summary': text[:200] + "..." if len(text) > 200 else text,
-            'features': features[:10],  # Limit to 10 features
-            'constraints': constraints[:5],  # Limit to 5 constraints
-            'tech_stack': list(set(tech_stack)),  # Remove duplicates
-            'timeline': timeline,
-            'budget': None  # Difficult to extract without LLM
+            "title": title,
+            "summary": text[:200] + "..." if len(text) > 200 else text,
+            "features": features[:10],  # Limit to 10 features
+            "constraints": constraints[:5],  # Limit to 5 constraints
+            "tech_stack": list(set(tech_stack)),  # Remove duplicates
+            "timeline": timeline,
+            "budget": None,  # Difficult to extract without LLM
         }
 
 
 class ImageParser:
     """Processes images using OCR to extract text requirements."""
-    
+
     def __init__(self):
-        self.supported_formats = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff'}
-    
+        self.supported_formats = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff"}
+
     def parse_image(self, image_path: str) -> str:
         """Extract text from image using OCR."""
         path = Path(image_path)
-        
+
         if path.suffix.lower() not in self.supported_formats:
             raise ValueError(f"Unsupported image format: {path.suffix}")
-        
+
         try:
             image = Image.open(path)
             # Configure pytesseract for better accuracy
-            config = '--oem 3 --psm 6'
+            config = "--oem 3 --psm 6"
             text = pytesseract.image_to_string(image, config=config)
             return text.strip()
         except Exception as e:
             raise RuntimeError(f"OCR processing failed: {e}")
-    
+
     def batch_parse_images(self, image_paths: List[str]) -> Dict[str, str]:
         """Parse multiple images and return text content."""
         results = {}
@@ -339,113 +381,113 @@ class ImageParser:
 
 class SpecBuilder:
     """Builds structured specifications and generates helpful artifacts."""
-    
+
     def __init__(self, output_dir: str = "analysis/output"):
         self.output_dir = Path(output_dir)
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.session_dir = self.output_dir / self.timestamp
-    
-    def build_specification(self, 
-                          text_requirements: Dict[str, Any],
-                          image_texts: Dict[str, str],
-                          file_assets: List[str]) -> Dict[str, Any]:
+
+    def build_specification(
+        self, text_requirements: Dict[str, Any], image_texts: Dict[str, str], file_assets: List[str]
+    ) -> Dict[str, Any]:
         """Build complete specification from parsed inputs."""
-        
+
         # Merge image text into requirements if relevant
         combined_text = self._combine_image_text(image_texts)
         if combined_text:
-            text_requirements.setdefault('image_content', combined_text)
-        
+            text_requirements.setdefault("image_content", combined_text)
+
         # Build final spec
         spec = {
-            "title": text_requirements.get('title', 'Untitled Project'),
-            "summary": text_requirements.get('summary', ''),
-            "features": text_requirements.get('features', []),
-            "constraints": text_requirements.get('constraints', []),
-            "assets": {
-                "images": list(image_texts.keys()),
-                "docs": file_assets
-            },
+            "title": text_requirements.get("title", "Untitled Project"),
+            "summary": text_requirements.get("summary", ""),
+            "features": text_requirements.get("features", []),
+            "constraints": text_requirements.get("constraints", []),
+            "assets": {"images": list(image_texts.keys()), "docs": file_assets},
             "metadata": {
                 "created_at": datetime.now().isoformat(),
                 "session_id": self.timestamp,
-                "tech_stack": text_requirements.get('tech_stack', []),
-                "timeline": text_requirements.get('timeline'),
-                "budget": text_requirements.get('budget')
-            }
+                "tech_stack": text_requirements.get("tech_stack", []),
+                "timeline": text_requirements.get("timeline"),
+                "budget": text_requirements.get("budget"),
+            },
         }
-        
+
         return spec
-    
+
     def _combine_image_text(self, image_texts: Dict[str, str]) -> str:
         """Combine text extracted from images."""
-        valid_texts = [text for text in image_texts.values() 
-                      if text and not text.startswith('Error:')]
-        return '\n\n'.join(valid_texts) if valid_texts else ''
-    
+        valid_texts = [
+            text for text in image_texts.values() if text and not text.startswith("Error:")
+        ]
+        return "\n\n".join(valid_texts) if valid_texts else ""
+
     def generate_artifacts(self, spec: Dict[str, Any]) -> Dict[str, str]:
         """Generate helpful artifacts for downstream agents."""
         artifacts = {}
-        
+
         # Generate component diagram
-        artifacts['component_diagram'] = self._generate_component_diagram(spec)
-        
+        artifacts["component_diagram"] = self._generate_component_diagram(spec)
+
         # Generate task flow
-        artifacts['task_flow'] = self._generate_task_flow(spec)
-        
+        artifacts["task_flow"] = self._generate_task_flow(spec)
+
         # Generate optional wireframe
         if self._should_generate_wireframe(spec):
-            artifacts['wireframe'] = self._generate_wireframe(spec)
-        
+            artifacts["wireframe"] = self._generate_wireframe(spec)
+
         return artifacts
-    
+
     def _generate_component_diagram(self, spec: Dict[str, Any]) -> str:
         """Generate Mermaid component diagram."""
-        features = spec.get('features', [])
-        
+        features = spec.get("features", [])
+
         diagram = "```mermaid\ngraph TD\n"
         diagram += "    A[User Interface] --> B[Business Logic]\n"
         diagram += "    B --> C[Data Layer]\n"
-        
+
         # Add feature-specific components
         for i, feature in enumerate(features, 1):
             component_id = f"F{i}"
-            component_name = feature.get('name', f'Feature {i}')
+            component_name = feature.get("name", f"Feature {i}")
             diagram += f"    B --> {component_id}[{component_name}]\n"
-        
+
         diagram += "```"
         return diagram
-    
+
     def _generate_task_flow(self, spec: Dict[str, Any]) -> str:
         """Generate Mermaid task flow diagram."""
-        features = spec.get('features', [])
-        
+        features = spec.get("features", [])
+
         flow = "```mermaid\nflowchart TD\n"
         flow += "    Start([Project Start]) --> Setup[Environment Setup]\n"
-        
+
         for i, feature in enumerate(features, 1):
             feature_id = f"F{i}"
-            feature_name = feature.get('name', f'Feature {i}')
+            feature_name = feature.get("name", f"Feature {i}")
             prev_id = f"F{i-1}" if i > 1 else "Setup"
             flow += f"    {prev_id} --> {feature_id}[{feature_name}]\n"
-        
+
         last_feature = f"F{len(features)}" if features else "Setup"
         flow += f"    {last_feature} --> Test[Testing & QA]\n"
         flow += "    Test --> Deploy[Deployment]\n"
         flow += "    Deploy --> End([Project Complete])\n"
         flow += "```"
-        
+
         return flow
-    
+
     def _should_generate_wireframe(self, spec: Dict[str, Any]) -> bool:
         """Determine if wireframe generation is beneficial."""
         # Generate wireframe for UI-heavy projects
-        ui_keywords = ['interface', 'ui', 'frontend', 'web', 'app', 'dashboard']
-        text_content = (spec.get('summary', '') + ' ' + 
-                       ' '.join(f.get('desc', '') for f in spec.get('features', []))).lower()
-        
+        ui_keywords = ["interface", "ui", "frontend", "web", "app", "dashboard"]
+        text_content = (
+            spec.get("summary", "")
+            + " "
+            + " ".join(f.get("desc", "") for f in spec.get("features", []))
+        ).lower()
+
         return any(keyword in text_content for keyword in ui_keywords)
-    
+
     def _generate_wireframe(self, spec: Dict[str, Any]) -> str:
         """Generate ASCII wireframe for UI projects."""
         wireframe = """
@@ -468,30 +510,30 @@ ASCII Wireframe (Low-Fidelity):
 └─────────────────────────────────────┘
 """
         return wireframe
-    
+
     def save_artifacts(self, spec: Dict[str, Any], artifacts: Dict[str, str]) -> str:
         """Save specification and artifacts to disk."""
         # Create session directory
         self.session_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Save main specification
         spec_path = self.session_dir / "specification.json"
-        with open(spec_path, 'w') as f:
+        with open(spec_path, "w") as f:
             json.dump(spec, f, indent=2)
-        
+
         # Save artifacts
         for name, content in artifacts.items():
             artifact_path = self.session_dir / f"{name}.md"
-            with open(artifact_path, 'w') as f:
+            with open(artifact_path, "w") as f:
                 f.write(f"# {name.replace('_', ' ').title()}\n\n{content}")
-        
+
         # Create summary file
         summary_path = self.session_dir / "README.md"
-        with open(summary_path, 'w') as f:
+        with open(summary_path, "w") as f:
             f.write(self._generate_session_summary(spec, artifacts))
-        
+
         return str(self.session_dir)
-    
+
     def _generate_session_summary(self, spec: Dict[str, Any], artifacts: Dict[str, str]) -> str:
         """Generate session summary README."""
         summary = f"""# Analysis Session: {spec['title']}
@@ -504,16 +546,18 @@ ASCII Wireframe (Low-Fidelity):
 
 ## Features
 """
-        for feature in spec.get('features', []):
-            summary += f"- **{feature.get('name', 'Unnamed')}**: {feature.get('desc', 'No description')}\n"
-        
-        if spec.get('constraints'):
+        for feature in spec.get("features", []):
+            summary += (
+                f"- **{feature.get('name', 'Unnamed')}**: {feature.get('desc', 'No description')}\n"
+            )
+
+        if spec.get("constraints"):
             summary += "\n## Constraints\n"
-            for constraint in spec['constraints']:
+            for constraint in spec["constraints"]:
                 summary += f"- {constraint}\n"
-        
-        summary += f"\n## Generated Artifacts\n"
+
+        summary += "\n## Generated Artifacts\n"
         for artifact_name in artifacts.keys():
             summary += f"- [{artifact_name.replace('_', ' ').title()}]({artifact_name}.md)\n"
-        
+
         return summary

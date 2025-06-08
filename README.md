@@ -1,5 +1,7 @@
 # ☑️ SoloPilot – A-to-Z Freelance Automation System
 
+[![CI Status](https://github.com/your-username/SoloPilot/workflows/CI/badge.svg)](https://github.com/your-username/SoloPilot/actions)
+
 **SoloPilot** is a modular automation system that transforms raw client requirements into production-ready code. This system orchestrates multiple AI agents to handle the complete freelance development lifecycle.
 
 ## 🚀 Quick Start
@@ -85,7 +87,7 @@ flowchart TD
 ## 📋 Current Sprint: Requirement Analyser
 
 The analyser module ingests:
-- Plain text briefs (MD, TXT, DOCX)
+- Plain text briefs (MD, TXT, DOCX with full table support)
 - Images (screenshots, mockups) with OCR
 - ZIP archives or multipart uploads
 

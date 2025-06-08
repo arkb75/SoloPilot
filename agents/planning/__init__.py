@@ -6,7 +6,7 @@ into structured project plans with milestones, tech stack recommendations, and
 open questions for clarification.
 """
 
-from .planner import ProjectPlanner, PlanningOutput
+from .planner import PlanningOutput, ProjectPlanner
 
 __version__ = "0.1.0"
 __all__ = ["ProjectPlanner", "PlanningOutput"]
