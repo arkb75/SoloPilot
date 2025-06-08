@@ -1,7 +1,7 @@
 # SoloPilot Development Makefile
 # Provides convenient commands for common development tasks
 
-.PHONY: help venv install run test demo clean docker docker-down
+.PHONY: help venv install run test demo plan analyze-and-plan clean docker docker-down
 
 # Default target
 help:
@@ -13,6 +13,8 @@ help:
 	@echo ""
 	@echo "Development Commands:"
 	@echo "  make run        Run analyser with sample input"
+	@echo "  make plan       Run planner with latest specification"
+	@echo "  make analyze-and-plan  Run full analyser → planner workflow"
 	@echo "  make test       Run test suite"
 	@echo "  make demo       Run demo script with sample data"
 	@echo ""
@@ -56,6 +58,21 @@ demo:
 	@echo "🎬 Running demo..."
 	@chmod +x scripts/demo.sh
 	./scripts/demo.sh
+
+# Run planner with latest specification
+plan:
+	@echo "🔧 Running project planner..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	. .venv/bin/activate && python scripts/run_planner.py --latest
+
+# Run full analyser → planner workflow
+analyze-and-plan:
+	@echo "🚀 Running full analyser → planner workflow..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	@echo "Step 1: Running analyser..."
+	. .venv/bin/activate && python scripts/run_analyser.py --path sample_input
+	@echo "Step 2: Running planner..."
+	. .venv/bin/activate && python scripts/run_planner.py --latest
 
 # Start docker services
 docker:
