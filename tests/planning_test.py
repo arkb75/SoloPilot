@@ -5,8 +5,12 @@ Unit tests for the planning agent.
 import json
 import tempfile
 import pytest
+import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from agents.planning.planner import ProjectPlanner
 from agents.planning.models import PlanningOutput, Milestone, Task

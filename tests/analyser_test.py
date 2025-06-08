@@ -8,9 +8,13 @@ For comprehensive testing, expand these test cases.
 import json
 import pytest
 import tempfile
+import sys
 from pathlib import Path
 
-from agents.analyser import TextParser, ImageParser, SpecBuilder
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from agents.analyser.parser import TextParser, ImageParser, SpecBuilder
 
 
 class TestTextParser:
