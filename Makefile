@@ -1,7 +1,7 @@
 # SoloPilot Development Makefile
 # Provides convenient commands for common development tasks
 
-.PHONY: help venv install run test demo plan analyze-and-plan clean docker docker-down
+.PHONY: help venv install run test demo plan analyze-and-plan dev plan-dev dev-scout clean docker docker-down
 
 # Default target
 help:
@@ -15,6 +15,9 @@ help:
 	@echo "  make run        Run analyser with sample input"
 	@echo "  make plan       Run planner with latest specification"
 	@echo "  make analyze-and-plan  Run full analyser → planner workflow"
+	@echo "  make dev        Run dev agent with latest planning output"
+	@echo "  make plan-dev   Run analyser → planner → dev agent (end-to-end)"
+	@echo "  make dev-scout  Run dev agent with Context7 scouting enabled"
 	@echo "  make test       Run test suite"
 	@echo "  make demo       Run demo script with sample data"
 	@echo ""
@@ -93,6 +96,33 @@ clean:
 	find . -type f -name "*.pyo" -delete 2>/dev/null || true
 	rm -rf .pytest_cache 2>/dev/null || true
 	@echo "✅ Cleanup complete!"
+
+# Run dev agent with latest planning output
+dev:
+	@echo "⚙️ Running dev agent with latest planning output..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	. .venv/bin/activate && python scripts/run_dev_agent.py
+
+# Run full analyser → planner → dev agent workflow
+plan-dev:
+	@echo "🚀 Running full analyser → planner → dev agent workflow..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	@echo "Step 1: Running analyser..."
+	. .venv/bin/activate && python scripts/run_analyser.py --path sample_input
+	@echo "Step 2: Running planner..."
+	. .venv/bin/activate && python scripts/run_planner.py --latest
+	@echo "Step 3: Running dev agent..."
+	. .venv/bin/activate && python scripts/run_dev_agent.py
+
+# Run dev agent with Context7 scouting enabled
+dev-scout:
+	@echo "🔍 Running dev agent with Context7 scouting enabled..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	@if ! command -v context7 >/dev/null 2>&1; then \
+		echo "⚠️  Context7 not found. Installing globally..."; \
+		npm install -g context7; \
+	fi
+	. .venv/bin/activate && C7_SCOUT=1 python scripts/run_dev_agent.py
 
 # Quick development setup (venv + dependencies + tesseract check)
 setup: venv
