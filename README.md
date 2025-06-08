@@ -76,11 +76,11 @@ flowchart TD
 
 ## 🧩 Tech Stack
 
-- **LLM**: Llama 3 8B (local) + OpenAI GPT-4o (fallback)
+- **LLM**: AWS Bedrock Claude 3.5 Haiku (primary) + OpenAI GPT-4o Mini (fallback)
 - **OCR**: pytesseract + Pillow for image analysis
 - **Vector Search**: FAISS for similarity lookups
 - **Orchestration**: LangChain (lightweight usage)
-- **Infrastructure**: Docker + Ollama for local deployment
+- **Infrastructure**: Docker + AWS Bedrock for scalable deployment
 
 ## 📋 Current Sprint: Requirement Analyser
 

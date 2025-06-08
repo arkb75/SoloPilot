@@ -67,11 +67,11 @@ Key configuration paths:
 ## Key Dependencies & Fallbacks
 
 The parser module includes robust fallback mechanisms:
-- **LLM**: Ollama (local) → OpenAI (cloud) → keyword extraction
+- **LLM**: AWS Bedrock Claude 3.5 Haiku → OpenAI GPT-4o Mini → keyword extraction
 - **Vector search**: FAISS → scikit-learn → disabled
 - **OCR**: pytesseract (requires tesseract system dependency)
 
-On macOS, the demo script auto-installs tesseract via Homebrew and handles dependency fallbacks.
+The system automatically handles AWS credentials via environment variables or AWS profiles. On macOS, the demo script auto-installs tesseract via Homebrew.
 
 ## Output Structure
 

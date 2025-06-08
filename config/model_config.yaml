@@ -3,30 +3,32 @@
 
 # LLM Configuration
 llm:
-  # Primary LLM (local inference)
-  primary: "ollama"
+  # Primary LLM (AWS Bedrock)
+  primary: "bedrock"
   
-  # Fallback LLM (cloud API)
+  # Fallback LLM (OpenAI)
   fallback: "openai"
   
-  # Ollama Configuration
-  ollama:
-    host: "localhost"
-    port: 11434
-    model: "llama3:8b-instruct"
-    timeout: 120  # seconds
-    options:
+  # AWS Bedrock Configuration
+  bedrock:
+    model_id: "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+    region: "us-east-2"
+    timeout: 60  # seconds
+    model_kwargs:
       temperature: 0.1
       top_p: 0.9
-      num_ctx: 4096  # context window
-      num_predict: 1024  # max tokens to generate
+      max_tokens: 2048
+    # Alternative models (comment/uncomment as needed):
+    # model_id: "anthropic.claude-3-5-haiku-20241022-v1:0"   # Newer Haiku (requires inference profile)
+    # model_id: "meta.llama3-1-8b-instruct-v1:0"            # Llama 3.1 8B (cheaper)
+    # model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"  # Claude 3.5 Sonnet (more capable)
   
-  # OpenAI Configuration
+  # OpenAI Configuration (fallback)
   openai:
-    model: "gpt-4o"
+    model: "gpt-4o-mini"
     api_base: "https://api.openai.com/v1"
     timeout: 60
-    max_tokens: 1024
+    max_tokens: 2048
     temperature: 0.1
     top_p: 0.9
 
