@@ -26,14 +26,12 @@ except ImportError:
 # Try to import LangChain components with fallbacks
 try:
     from langchain_aws import ChatBedrock
-    from langchain_core.messages import HumanMessage
     from langchain_openai import ChatOpenAI
 
     LANGCHAIN_AVAILABLE = True
     BEDROCK_AVAILABLE = True
 except ImportError:
     try:
-        from langchain_core.messages import HumanMessage
         from langchain_openai import ChatOpenAI
 
         LANGCHAIN_AVAILABLE = True

@@ -29,7 +29,6 @@ except ImportError:
 # Try to import LangChain Bedrock components
 try:
     from langchain_aws import ChatBedrock
-    from langchain_core.messages import HumanMessage
 
     LANGCHAIN_AVAILABLE = True
     BEDROCK_AVAILABLE = True
@@ -40,13 +39,13 @@ except ImportError:
 
 # Vector similarity - try FAISS first, fallback to scikit-learn
 try:
-    import faiss
+    import faiss  # noqa: F401
 
     VECTOR_BACKEND = "faiss"
 except ImportError:
     try:
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        from sklearn.metrics.pairwise import cosine_similarity
+        from sklearn.feature_extraction.text import TfidfVectorizer  # noqa: F401
+        from sklearn.metrics.pairwise import cosine_similarity  # noqa: F401
 
         VECTOR_BACKEND = "sklearn"
     except ImportError:

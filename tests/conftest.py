@@ -34,7 +34,7 @@ def _no_network(monkeypatch):
         return mock_response
 
     try:
-        from langchain_aws import ChatBedrock
+        from langchain_aws import ChatBedrock  # noqa: F401
 
         monkeypatch.setattr("langchain_aws.ChatBedrock.invoke", mock_chatbedrock_invoke)
     except ImportError:
