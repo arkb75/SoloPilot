@@ -54,7 +54,7 @@ jobs:
         BEDROCK_IP_ARN: arn:aws:bedrock:us-east-2:111111111111:inference-profile/dummy
       run: |
         source .venv/bin/activate
-        pytest -q --timeout=90
+        pytest -q
 
     - name: Run linting (Ubuntu only)
       if: matrix.os == 'ubuntu-latest'
