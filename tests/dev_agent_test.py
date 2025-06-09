@@ -74,7 +74,7 @@ def temp_config_file():
     config_data = {
         "llm": {
             "bedrock": {
-                "inference_profile_arn": "arn:aws:bedrock:us-east-2:111111111111:inference-profile/dummy",
+                "inference_profile_arn": "arn:aws:bedrock:us-east-2:392894085110:inference-profile/dummy",
                 "region": "us-east-2",
                 "model_kwargs": {"temperature": 0.1, "top_p": 0.9, "max_tokens": 2048},
             },
@@ -452,7 +452,7 @@ describe('ProjectSetup', () => {
         # Test various ARN formats
         test_cases = [
             (
-                "arn:aws:bedrock:us-east-2:111111111111:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0",
+                "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0",
                 "us.anthropic.claude-3-haiku-20240307-v1:0",
             ),
             (
@@ -500,7 +500,7 @@ describe('ProjectSetup', () => {
                 assert "contentType" in captured_kwargs
 
                 # Verify ARN was used as modelId (modern signature)
-                arn = "arn:aws:bedrock:us-east-2:111111111111:inference-profile/dummy"
+                arn = "arn:aws:bedrock:us-east-2:392894085110:inference-profile/dummy"
                 assert captured_kwargs["modelId"] == arn
                 assert (
                     "inferenceProfileArn" not in captured_kwargs

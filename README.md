@@ -96,7 +96,7 @@ Override default Bedrock settings with these environment variables:
 
 Example:
 ```bash
-export BEDROCK_IP_ARN="arn:aws:bedrock:us-west-2:123456789012:inference-profile/us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+export BEDROCK_IP_ARN="arn:aws:bedrock:us-west-2:392894085110:inference-profile/us.anthropic.claude-3-5-sonnet-20241022-v2:0"
 export BEDROCK_REGION="us-west-2"
 make dev
 ```

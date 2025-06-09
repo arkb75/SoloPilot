@@ -55,6 +55,9 @@ AWS Bedrock (us-east-2) now enforces **Inference Profile ARNs** for all Anthropi
 |19 | Pixtral Large (25-02) | us.mistral.pixtral-large-2502-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.mistral.pixtral-large-2502-v1:0 |
 |20 | Nova Lite | us.amazon.nova-lite-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.amazon.nova-lite-v1:0 |
 
+**⚠️ Every in-repo ARN must contain this account-id (392894085110).  
+If you work in a different account, override BEDROCK_IP_ARN before running.**
+
 ## Development Commands
 
 **Setup (First Time):**

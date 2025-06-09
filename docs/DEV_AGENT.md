@@ -100,7 +100,7 @@ Uses the same `config/model_config.yaml` as other agents:
 ```yaml
 llm:
   bedrock:
-    inference_profile_arn: "${BEDROCK_IP_ARN:-arn:aws:bedrock:us-east-2:account:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0}"
+    inference_profile_arn: "${BEDROCK_IP_ARN:-arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0}"
     region: "${BEDROCK_REGION:-us-east-2}"
     model_kwargs:
       temperature: 0.1
@@ -116,7 +116,7 @@ Override configuration at runtime:
 
 Example:
 ```bash
-export BEDROCK_IP_ARN="arn:aws:bedrock:us-west-2:123456789012:inference-profile/us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+export BEDROCK_IP_ARN="arn:aws:bedrock:us-west-2:392894085110:inference-profile/us.anthropic.claude-3-5-sonnet-20241022-v2:0"
 make dev
 ```
 
