@@ -41,7 +41,7 @@ def test_arn_account_matches_sts():
     # Mock AWS STS call to avoid real AWS dependency
     # In CI/test environments with dummy ARNs, mock STS to return the ARN's account
     expected_account = acct_from_arn if acct_from_arn == "111111111111" else "392894085110"
-    
+
     with patch("boto3.client") as mock_boto3:
         mock_client = mock_boto3.return_value
         mock_client.get_caller_identity.return_value = {"Account": expected_account}

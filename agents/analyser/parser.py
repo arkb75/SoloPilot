@@ -61,8 +61,10 @@ class TextParser:
 
     def _load_config(self, config_path: Optional[str]) -> Dict[str, Any]:
         """Load model configuration with environment variable substitution."""
-        if config_path and os.path.exists(config_path):
-            with open(config_path, "r") as f:
+        config_file = config_path or "config/model_config.yaml"
+
+        if os.path.exists(config_file):
+            with open(config_file, "r") as f:
                 content = f.read()
 
             # Substitute environment variables in format ${VAR:-default}
@@ -77,15 +79,14 @@ class TextParser:
             content = re.sub(r"\$\{([^}]+)\}", env_substitute, content)
             return yaml.safe_load(content)
 
+        # Fallback config with inference profile ARN
         return {
             "llm": {
                 "primary": "bedrock",
-                "fallback": "openai",
                 "bedrock": {
-                    "model_id": "anthropic.claude-3-haiku-20240307-v1:0",
+                    "inference_profile_arn": "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0",
                     "region": "us-east-2",
                 },
-                "openai": {"model": "gpt-4o-mini"},
             }
         }
 
@@ -98,6 +99,13 @@ class TextParser:
 
     def _setup_llm(self):
         """Initialize LLM instances."""
+        # Check for NO_NETWORK environment variable
+        if os.getenv("NO_NETWORK") == "1":
+            print("🚫 NO_NETWORK=1, skipping Bedrock initialization")
+            self.primary_llm = None
+            self.fallback_llm = None
+            return
+
         if not LANGCHAIN_AVAILABLE:
             self.primary_llm = None
             self.fallback_llm = None
@@ -109,36 +117,19 @@ class TextParser:
             try:
                 bedrock_config = self.config["llm"].get("bedrock", {})
 
-                # Get inference profile ARN if available
+                # Get inference profile ARN (required)
                 inference_profile_arn = bedrock_config.get("inference_profile_arn")
-                if inference_profile_arn:
-                    # Use extracted model_id and try to pass inference_profile_arn if supported
-                    model_id = self._model_id_from_arn(inference_profile_arn)
-                    try:
-                        # Try with inference_profile_arn kwarg (newer LangChain)
-                        self.primary_llm = ChatBedrock(
-                            model_id=model_id,
-                            inference_profile_arn=inference_profile_arn,
-                            region_name=bedrock_config.get("region", "us-east-2"),
-                            model_kwargs={"temperature": 0.1, "max_tokens": 2048},
-                        )
-                    except TypeError:
-                        # Fall back to ARN as model_id (older LangChain)
-                        self.primary_llm = ChatBedrock(
-                            model_id=inference_profile_arn,
-                            region_name=bedrock_config.get("region", "us-east-2"),
-                            model_kwargs={"temperature": 0.1, "max_tokens": 2048},
-                        )
-                else:
-                    # Fallback to legacy model_id
-                    model_id = bedrock_config.get(
-                        "model_id", "anthropic.claude-3-haiku-20240307-v1:0"
-                    )
-                    self.primary_llm = ChatBedrock(
-                        model_id=model_id,
-                        region_name=bedrock_config.get("region", "us-east-2"),
-                        model_kwargs={"temperature": 0.1, "max_tokens": 2048},
-                    )
+                if not inference_profile_arn:
+                    print("⚠️  No inference_profile_arn found in config, skipping Bedrock")
+                    self.primary_llm = None
+                    return
+
+                # Use ARN as model_id (modern approach matching dev agent)
+                self.primary_llm = ChatBedrock(
+                    model_id=inference_profile_arn,
+                    region_name=bedrock_config.get("region", "us-east-2"),
+                    model_kwargs={"temperature": 0.1, "max_tokens": 2048},
+                )
 
                 print("✅ AWS Bedrock initialized successfully")
             except Exception as e:

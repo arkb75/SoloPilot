@@ -58,6 +58,8 @@ AWS Bedrock (us-east-2) now enforces **Inference Profile ARNs** for all Anthropi
 **⚠️ Every in-repo ARN must contain this account-id (392894085110).  
 If you work in a different account, override BEDROCK_IP_ARN before running.**
 
+• **Analyser now uses ARN**: All agents (analyser, planner, dev) consistently use inference_profile_arn from config
+
 ## Development Commands
 
 **Setup (First Time):**
