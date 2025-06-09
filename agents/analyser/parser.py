@@ -76,6 +76,13 @@ class TextParser:
             }
         }
 
+    def _model_id_from_arn(self, arn: str) -> str:
+        """Extract modelId from inference profile ARN.
+
+        ARN format: arn:aws:bedrock:<region>:<acct>:inference-profile/<modelId>
+        """
+        return arn.split("/")[-1]
+
     def _setup_llm(self):
         """Initialize LLM instances."""
         if not LANGCHAIN_AVAILABLE:
@@ -88,16 +95,38 @@ class TextParser:
         if BEDROCK_AVAILABLE and self.config["llm"]["primary"] == "bedrock":
             try:
                 bedrock_config = self.config["llm"].get("bedrock", {})
-                # Always use ARN as model_id for LangChain (handles both old and new SDK)
-                model_identifier = bedrock_config.get(
-                    "inference_profile_arn",
-                    bedrock_config.get("model_id", "anthropic.claude-3-haiku-20240307-v1:0"),
-                )
-                self.primary_llm = ChatBedrock(
-                    model_id=model_identifier,
-                    region_name=bedrock_config.get("region", "us-east-2"),
-                    model_kwargs={"temperature": 0.1, "max_tokens": 2048},
-                )
+
+                # Get inference profile ARN if available
+                inference_profile_arn = bedrock_config.get("inference_profile_arn")
+                if inference_profile_arn:
+                    # Use extracted model_id and try to pass inference_profile_arn if supported
+                    model_id = self._model_id_from_arn(inference_profile_arn)
+                    try:
+                        # Try with inference_profile_arn kwarg (newer LangChain)
+                        self.primary_llm = ChatBedrock(
+                            model_id=model_id,
+                            inference_profile_arn=inference_profile_arn,
+                            region_name=bedrock_config.get("region", "us-east-2"),
+                            model_kwargs={"temperature": 0.1, "max_tokens": 2048},
+                        )
+                    except TypeError:
+                        # Fall back to ARN as model_id (older LangChain)
+                        self.primary_llm = ChatBedrock(
+                            model_id=inference_profile_arn,
+                            region_name=bedrock_config.get("region", "us-east-2"),
+                            model_kwargs={"temperature": 0.1, "max_tokens": 2048},
+                        )
+                else:
+                    # Fallback to legacy model_id
+                    model_id = bedrock_config.get(
+                        "model_id", "anthropic.claude-3-haiku-20240307-v1:0"
+                    )
+                    self.primary_llm = ChatBedrock(
+                        model_id=model_id,
+                        region_name=bedrock_config.get("region", "us-east-2"),
+                        model_kwargs={"temperature": 0.1, "max_tokens": 2048},
+                    )
+
                 print("✅ AWS Bedrock initialized successfully")
             except Exception as e:
                 print(f"⚠️  Bedrock initialization failed: {e}")

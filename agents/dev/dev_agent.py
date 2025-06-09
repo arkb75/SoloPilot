@@ -83,6 +83,13 @@ class DevAgent:
         except Exception as e:
             raise RuntimeError(f"Failed to initialize Bedrock client: {e}")
 
+    def _model_id_from_arn(self, arn: str) -> str:
+        """Extract modelId from inference profile ARN.
+
+        ARN format: arn:aws:bedrock:<region>:<acct>:inference-profile/<modelId>
+        """
+        return arn.split("/")[-1]
+
     def _invoke_bedrock(
         self, model_id: str, inference_profile_arn: Optional[str], body: dict
     ) -> str:
@@ -105,9 +112,7 @@ class DevAgent:
             raise Exception("Bedrock client not available")
 
         inference_profile_arn = self.config["llm"]["bedrock"]["inference_profile_arn"]
-        model_id_from_cfg = self.config["llm"]["bedrock"].get(
-            "legacy_model_id", "anthropic.claude-3-haiku-20240307-v1:0"
-        )
+        model_id = self._model_id_from_arn(inference_profile_arn)
 
         body = {
             "anthropic_version": "bedrock-2023-05-31",
@@ -119,7 +124,7 @@ class DevAgent:
 
         try:
             # 1️⃣ Try modern signature (modelId + inferenceProfileArn)
-            return self._invoke_bedrock(model_id_from_cfg, inference_profile_arn, body)
+            return self._invoke_bedrock(model_id, inference_profile_arn, body)
         except ParamValidationError as e:
             if "inferenceProfileArn" in str(e):
                 # 2️⃣ Fall back to older signature (ARN as modelId)

@@ -394,6 +394,73 @@ describe('ProjectSetup', () => {
                 # Should have been called twice (modern -> fallback)
                 assert mock_client.invoke_model.call_count == 2
 
+    def test_model_id_extraction(self, temp_config_file):
+        """Test that model ID is correctly extracted from ARN."""
+        with patch.dict(
+            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
+        ):
+            with patch("boto3.client") as mock_boto3:
+                mock_boto3.return_value = MagicMock()
+                agent = DevAgent(config_path=temp_config_file)
+
+        # Test various ARN formats
+        test_cases = [
+            (
+                "arn:aws:bedrock:us-east-2:111111111111:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0",
+                "us.anthropic.claude-3-haiku-20240307-v1:0",
+            ),
+            (
+                "arn:aws:bedrock:us-west-2:222222222222:inference-profile/us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+                "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+            ),
+            (
+                "arn:aws:bedrock:eu-west-1:333333333333:inference-profile/us.meta.llama3-2-1b-instruct-v1:0",
+                "us.meta.llama3-2-1b-instruct-v1:0",
+            ),
+        ]
+
+        for arn, expected_model_id in test_cases:
+            assert agent._model_id_from_arn(arn) == expected_model_id
+
+    def test_correct_parameters_sent(self, temp_config_file):
+        """Test that correct parameters are sent to Bedrock invoke_model."""
+        with patch.dict(
+            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
+        ):
+            with patch("boto3.client") as mock_boto3:
+                mock_client = MagicMock()
+                captured_kwargs = {}
+
+                def capture_invoke_model(**kwargs):
+                    captured_kwargs.update(kwargs)
+                    mock_response = MagicMock()
+                    mock_response.__getitem__.return_value.read.return_value = (
+                        '{"content": [{"text": "Test response"}]}'
+                    )
+                    return mock_response
+
+                mock_client.invoke_model.side_effect = capture_invoke_model
+                mock_boto3.return_value = mock_client
+
+                agent = DevAgent(config_path=temp_config_file)
+                result = agent._call_bedrock("Test prompt")
+
+                # Verify the call was successful
+                assert result == "Test response"
+
+                # Verify correct parameters were sent
+                assert "modelId" in captured_kwargs
+                assert "inferenceProfileArn" in captured_kwargs
+                assert "body" in captured_kwargs
+                assert "contentType" in captured_kwargs
+
+                # Verify extracted model ID matches ARN suffix
+                arn = "arn:aws:bedrock:us-east-2:111111111111:inference-profile/dummy"
+                expected_model_id = "dummy"
+                assert captured_kwargs["modelId"] == expected_model_id
+                assert captured_kwargs["inferenceProfileArn"] == arn
+                assert captured_kwargs["contentType"] == "application/json"
+
 
 class TestContext7Bridge:
     """Test cases for Context7Bridge class."""
