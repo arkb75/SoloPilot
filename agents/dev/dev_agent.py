@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 import boto3
 import yaml
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import BotoCoreError, ClientError, ParamValidationError
 
 
 class DevAgent:
@@ -83,20 +83,31 @@ class DevAgent:
         except Exception as e:
             raise RuntimeError(f"Failed to initialize Bedrock client: {e}")
 
-    def _get_model_id_from_arn(self, inference_profile_arn: str) -> str:
-        """Extract the underlying model ID from an inference profile ARN."""
-        # ARN format: arn:aws:bedrock:region:account:inference-profile/us.provider.model-id
-        if "/us." in inference_profile_arn:
-            return inference_profile_arn.split("/")[-1]
-        return "anthropic.claude-3-haiku-20240307-v1:0"  # fallback
+    def _invoke_bedrock(
+        self, model_id: str, inference_profile_arn: Optional[str], body: dict
+    ) -> str:
+        """Helper to invoke Bedrock with conditional parameters."""
+        kwargs = {
+            "modelId": model_id,
+            "body": json.dumps(body),
+            "contentType": "application/json",
+        }
+        if inference_profile_arn:
+            kwargs["inferenceProfileArn"] = inference_profile_arn
+
+        response = self.bedrock_client.invoke_model(**kwargs)
+        response_body = json.loads(response["body"].read())
+        return response_body["content"][0]["text"]
 
     def _call_bedrock(self, prompt: str) -> str:
-        """Call AWS Bedrock using inference profile ARN with proper parameters."""
+        """Call AWS Bedrock with SDK-agnostic compatibility wrapper."""
         if not self.bedrock_client:
             raise Exception("Bedrock client not available")
 
         inference_profile_arn = self.config["llm"]["bedrock"]["inference_profile_arn"]
-        model_id = self._get_model_id_from_arn(inference_profile_arn)
+        model_id_from_cfg = self.config["llm"]["bedrock"].get(
+            "legacy_model_id", "anthropic.claude-3-haiku-20240307-v1:0"
+        )
 
         body = {
             "anthropic_version": "bedrock-2023-05-31",
@@ -107,16 +118,13 @@ class DevAgent:
         }
 
         try:
-            response = self.bedrock_client.invoke_model(
-                modelId=model_id,
-                inferenceProfileArn=inference_profile_arn,
-                body=json.dumps(body),
-                contentType="application/json",
-            )
-
-            response_body = json.loads(response["body"].read())
-            return response_body["content"][0]["text"]
-
+            # 1️⃣ Try modern signature (modelId + inferenceProfileArn)
+            return self._invoke_bedrock(model_id_from_cfg, inference_profile_arn, body)
+        except ParamValidationError as e:
+            if "inferenceProfileArn" in str(e):
+                # 2️⃣ Fall back to older signature (ARN as modelId)
+                return self._invoke_bedrock(inference_profile_arn, None, body)
+            raise
         except (ClientError, BotoCoreError) as e:
             # If we get AccessDeniedException, raise clear error with ARN info
             if "AccessDeniedException" in str(e) or "ValidationException" in str(e):

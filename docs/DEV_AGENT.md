@@ -48,6 +48,7 @@ The Dev Agent takes structured planning output (JSON) and generates:
 - **Fallback**: Stub code generation (if Bedrock fails)
 - **Retry Logic**: 3 attempts with 2^attempt + jitter backoff for stability
 - **Credentials**: Requires AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or ~/.aws/credentials
+- **SDK Compatibility**: Dev-Agent first attempts modern `inferenceProfileArn`; if SDK too old it automatically retries legacy mode (ARN as modelId)
 
 ### Context7 Enhancement (Optional)
 - **Pitfall Analysis**: Identifies common implementation mistakes

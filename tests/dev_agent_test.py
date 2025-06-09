@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ParamValidationError
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent
@@ -352,7 +352,9 @@ describe('ProjectSetup', () => {
 
     def test_inference_profile_access_validation(self, temp_config_file):
         """Test that inference profile access validation exists."""
-        with patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}):
+        with patch.dict(
+            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
+        ):
             with patch("boto3.client") as mock_boto3:
                 mock_boto3.return_value = MagicMock()
                 # Should not raise during initialization (validation is passive now)
@@ -360,6 +362,37 @@ describe('ProjectSetup', () => {
                 assert agent is not None
                 # Validation method exists
                 assert hasattr(agent, "_validate_inference_profile_access")
+
+    def test_sdk_compatibility_fallback(self, temp_config_file):
+        """Test SDK compatibility fallback when inferenceProfileArn param not supported."""
+        with patch.dict(
+            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
+        ):
+            with patch("boto3.client") as mock_boto3:
+                mock_client = MagicMock()
+
+                # Mock first call to fail with ParamValidationError, second to succeed
+                def mock_invoke_model(**kwargs):
+                    if "inferenceProfileArn" in kwargs:
+                        raise ParamValidationError(
+                            report="Unknown parameter in input: 'inferenceProfileArn'"
+                        )
+                    # Fallback call succeeds
+                    mock_response = MagicMock()
+                    mock_response.__getitem__.return_value.read.return_value = (
+                        '{"content": [{"text": "Fallback response"}]}'
+                    )
+                    return mock_response
+
+                mock_client.invoke_model.side_effect = mock_invoke_model
+                mock_boto3.return_value = mock_client
+
+                agent = DevAgent(config_path=temp_config_file)
+                result = agent._call_bedrock("Test prompt")
+
+                assert result == "Fallback response"
+                # Should have been called twice (modern -> fallback)
+                assert mock_client.invoke_model.call_count == 2
 
 
 class TestContext7Bridge:

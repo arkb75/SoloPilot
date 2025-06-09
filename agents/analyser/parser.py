@@ -88,7 +88,7 @@ class TextParser:
         if BEDROCK_AVAILABLE and self.config["llm"]["primary"] == "bedrock":
             try:
                 bedrock_config = self.config["llm"].get("bedrock", {})
-                # Use inference profile ARN if available, fallback to model_id
+                # Always use ARN as model_id for LangChain (handles both old and new SDK)
                 model_identifier = bedrock_config.get(
                     "inference_profile_arn",
                     bedrock_config.get("model_id", "anthropic.claude-3-haiku-20240307-v1:0"),
