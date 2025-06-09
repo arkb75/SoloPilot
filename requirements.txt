@@ -2,18 +2,18 @@
 # Core ML and processing dependencies
 
 # LangChain for LLM orchestration (light usage) - compatible versions
-langchain>=0.3.0
-langchain-community>=0.3.0
-langchain-core>=0.3.0
+langchain>=0.3.25,<1.0.0
+langchain-community==0.3.24
+langchain-core>=0.3.55,<1.0.0
 
 # AWS Bedrock integration (primary LLM)
-langchain-aws>=0.2.4
+langchain-aws==0.2.24
 boto3>=1.35.0
 botocore>=1.35.0
 
 # OpenAI integration (fallback LLM)
-langchain-openai>=0.3.0
-openai==1.51.2
+langchain-openai==0.3.21
+openai>=1.68.2,<2.0.0
 
 # OCR and image processing
 pytesseract>=0.3.10
@@ -39,7 +39,7 @@ pytest==8.3.3
 python-docx==1.1.2
 
 # Data validation
-pydantic==2.8.2
+pydantic>=2.10.0,<3.0.0
 
 # Development dependencies
 black==24.8.0
