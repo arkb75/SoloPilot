@@ -8,9 +8,10 @@ llm:
   
   # AWS Bedrock Configuration (Inference Profile ARNs required)
   bedrock:
-    # Primary inference profile ARN (Claude 3 Haiku)
-    inference_profile_arn: "arn:aws:bedrock:us-east-2:831926611481:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0"
-    region: "us-east-2"
+    # Primary inference profile ARN (Claude 3 Haiku) - can be overridden with BEDROCK_IP_ARN
+    inference_profile_arn: "${BEDROCK_IP_ARN:-arn:aws:bedrock:us-east-2:831926611481:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0}"
+    # Region - can be overridden with BEDROCK_REGION
+    region: "${BEDROCK_REGION:-us-east-2}"
     timeout: 60  # seconds
     model_kwargs:
       temperature: 0.1

@@ -7,6 +7,7 @@ Transforms planning output into milestone-based code structure with skeleton imp
 import json
 import os
 import random
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -28,9 +29,21 @@ class DevAgent:
         self._validate_inference_profile_access()
 
     def _load_config(self, config_path: str) -> Dict[str, Any]:
-        """Load configuration from YAML file."""
+        """Load configuration from YAML file with environment variable substitution."""
         with open(config_path, "r") as f:
-            return yaml.safe_load(f)
+            content = f.read()
+
+        # Substitute environment variables in format ${VAR:-default}
+        def env_substitute(match):
+            var_spec = match.group(1)
+            if ":-" in var_spec:
+                var_name, default = var_spec.split(":-", 1)
+                return os.getenv(var_name, default)
+            else:
+                return os.getenv(var_spec, "")
+
+        content = re.sub(r"\$\{([^}]+)\}", env_substitute, content)
+        return yaml.safe_load(content)
 
     def _validate_credentials(self) -> None:
         """Fail fast if no AWS credentials are available for Bedrock."""
@@ -123,23 +136,35 @@ class DevAgent:
         }
 
         try:
-            # 1️⃣ Try modern signature (modelId + inferenceProfileArn)
-            return self._invoke_bedrock(model_id, inference_profile_arn, body)
+            # 1️⃣ Try modern signature (ARN as modelId) - preferred by latest botocore
+            return self._invoke_bedrock(inference_profile_arn, None, body)
         except ParamValidationError as e:
-            if "inferenceProfileArn" in str(e):
-                # 2️⃣ Fall back to older signature (ARN as modelId)
-                return self._invoke_bedrock(inference_profile_arn, None, body)
-            raise
+            if "inferenceProfileArn" not in str(e):
+                # Some other parameter error
+                raise RuntimeError(f"❌ Bedrock parameter validation failed: {e}") from e
+
+            # 2️⃣ Fall back to legacy signature (modelId + inferenceProfileArn)
+            try:
+                return self._invoke_bedrock(model_id, inference_profile_arn, body)
+            except (ClientError, BotoCoreError) as e:
+                # AccessDenied or other errors - fail immediately, no stub fallback
+                if "AccessDeniedException" in str(e) or "ValidationException" in str(e):
+                    raise RuntimeError(
+                        f"❌ Bedrock inference profile access denied. "
+                        f"ARN attempted: {inference_profile_arn}. "
+                        f"Verify the profile exists and you have access."
+                    ) from e
+                raise RuntimeError(f"❌ Bedrock API error: {e}") from e
+
         except (ClientError, BotoCoreError) as e:
-            # If we get AccessDeniedException, raise clear error with ARN info
+            # AccessDenied or other errors from first attempt - fail immediately, no stub fallback
             if "AccessDeniedException" in str(e) or "ValidationException" in str(e):
                 raise RuntimeError(
                     f"❌ Bedrock inference profile access denied. "
                     f"ARN attempted: {inference_profile_arn}. "
-                    f"Verify the profile exists and you have access in us-east-2."
+                    f"Verify the profile exists and you have access."
                 ) from e
-            print(f"Bedrock API error: {e}")
-            raise
+            raise RuntimeError(f"❌ Bedrock API error: {e}") from e
 
     def _call_llm_with_retry(self, prompt: str, max_retries: int = 3) -> str:
         """Call Bedrock with exponential backoff retry."""
@@ -162,13 +187,8 @@ class DevAgent:
         raise last_exception
 
     def _call_llm(self, prompt: str) -> str:
-        """Call Bedrock with retry logic."""
-        try:
-            return self._call_llm_with_retry(prompt)
-        except Exception as e:
-            print(f"Bedrock failed after retries: {e}")
-            # Return stub code as final fallback
-            return self._generate_stub_code()
+        """Call Bedrock with retry logic - fail loud, no stub fallback."""
+        return self._call_llm_with_retry(prompt)
 
     def _generate_stub_code(self) -> str:
         """Generate basic stub code when LLM calls fail."""

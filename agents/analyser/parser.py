@@ -9,6 +9,7 @@ This module contains the main components for processing client requirements:
 
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -60,10 +61,23 @@ class TextParser:
         self._setup_llm()
 
     def _load_config(self, config_path: Optional[str]) -> Dict[str, Any]:
-        """Load model configuration."""
+        """Load model configuration with environment variable substitution."""
         if config_path and os.path.exists(config_path):
             with open(config_path, "r") as f:
-                return yaml.safe_load(f)
+                content = f.read()
+
+            # Substitute environment variables in format ${VAR:-default}
+            def env_substitute(match):
+                var_spec = match.group(1)
+                if ":-" in var_spec:
+                    var_name, default = var_spec.split(":-", 1)
+                    return os.getenv(var_name, default)
+                else:
+                    return os.getenv(var_spec, "")
+
+            content = re.sub(r"\$\{([^}]+)\}", env_substitute, content)
+            return yaml.safe_load(content)
+
         return {
             "llm": {
                 "primary": "bedrock",

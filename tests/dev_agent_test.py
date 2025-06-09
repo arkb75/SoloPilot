@@ -310,10 +310,10 @@ describe('ProjectSetup', () => {
             assert result is None
 
     @patch("agents.dev.dev_agent.DevAgent._call_bedrock")
-    def test_bedrock_fallback_to_stub(self, mock_bedrock, temp_config_file):
-        """Test fallback from Bedrock to stub code."""
+    def test_bedrock_failure_raises_exception(self, mock_bedrock, temp_config_file):
+        """Test that Bedrock failures raise exceptions instead of returning stubs."""
         # Mock Bedrock failure
-        mock_bedrock.side_effect = Exception("Bedrock error")
+        mock_bedrock.side_effect = RuntimeError("Bedrock access denied")
 
         with patch.dict(
             os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
@@ -321,8 +321,10 @@ describe('ProjectSetup', () => {
             with patch("boto3.client") as mock_boto3:
                 mock_boto3.return_value = MagicMock()
                 agent = DevAgent(config_path=temp_config_file)
-                result = agent._call_llm("Test prompt")
-                assert "StubImplementation" in result
+
+                # Should raise exception, not return stub code
+                with pytest.raises(RuntimeError, match="Bedrock access denied"):
+                    agent._call_llm("Test prompt")
 
     def test_credentials_missing_env_and_profile(self, temp_config_file):
         """Test credential validation when neither env vars nor profile exist."""
@@ -371,16 +373,60 @@ describe('ProjectSetup', () => {
             with patch("boto3.client") as mock_boto3:
                 mock_client = MagicMock()
 
-                # Mock first call to fail with ParamValidationError, second to succeed
+                # Mock first call (ARN as modelId) to succeed
+                call_count = 0
+
                 def mock_invoke_model(**kwargs):
-                    if "inferenceProfileArn" in kwargs:
+                    nonlocal call_count
+                    call_count += 1
+                    if call_count == 1 and "inferenceProfileArn" not in kwargs:
+                        # First call (ARN as modelId) succeeds
+                        mock_response = MagicMock()
+                        mock_response.__getitem__.return_value.read.return_value = (
+                            '{"content": [{"text": "Modern response"}]}'
+                        )
+                        return mock_response
+                    elif "inferenceProfileArn" in kwargs:
                         raise ParamValidationError(
                             report="Unknown parameter in input: 'inferenceProfileArn'"
                         )
-                    # Fallback call succeeds
+                    else:
+                        # Fallback call
+                        mock_response = MagicMock()
+                        mock_response.__getitem__.return_value.read.return_value = (
+                            '{"content": [{"text": "Fallback response"}]}'
+                        )
+                        return mock_response
+
+                mock_client.invoke_model.side_effect = mock_invoke_model
+                mock_boto3.return_value = mock_client
+
+                agent = DevAgent(config_path=temp_config_file)
+                result = agent._call_bedrock("Test prompt")
+
+                assert result == "Modern response"
+                # Should succeed on first try (ARN as modelId)
+                assert mock_client.invoke_model.call_count == 1
+
+    def test_sdk_legacy_fallback(self, temp_config_file):
+        """Test fallback to legacy signature when modern signature fails."""
+        with patch.dict(
+            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
+        ):
+            with patch("boto3.client") as mock_boto3:
+                mock_client = MagicMock()
+
+                # Mock first call to fail, second to succeed
+                def mock_invoke_model(**kwargs):
+                    if "inferenceProfileArn" not in kwargs:
+                        # First call (ARN as modelId) fails with ParamValidationError
+                        raise ParamValidationError(
+                            report="Unknown parameter in input: 'inferenceProfileArn'"
+                        )
+                    # Second call (legacy) succeeds
                     mock_response = MagicMock()
                     mock_response.__getitem__.return_value.read.return_value = (
-                        '{"content": [{"text": "Fallback response"}]}'
+                        '{"content": [{"text": "Legacy response"}]}'
                     )
                     return mock_response
 
@@ -390,8 +436,8 @@ describe('ProjectSetup', () => {
                 agent = DevAgent(config_path=temp_config_file)
                 result = agent._call_bedrock("Test prompt")
 
-                assert result == "Fallback response"
-                # Should have been called twice (modern -> fallback)
+                assert result == "Legacy response"
+                # Should have been called twice (modern -> legacy)
                 assert mock_client.invoke_model.call_count == 2
 
     def test_model_id_extraction(self, temp_config_file):
@@ -450,15 +496,15 @@ describe('ProjectSetup', () => {
 
                 # Verify correct parameters were sent
                 assert "modelId" in captured_kwargs
-                assert "inferenceProfileArn" in captured_kwargs
                 assert "body" in captured_kwargs
                 assert "contentType" in captured_kwargs
 
-                # Verify extracted model ID matches ARN suffix
+                # Verify ARN was used as modelId (modern signature)
                 arn = "arn:aws:bedrock:us-east-2:111111111111:inference-profile/dummy"
-                expected_model_id = "dummy"
-                assert captured_kwargs["modelId"] == expected_model_id
-                assert captured_kwargs["inferenceProfileArn"] == arn
+                assert captured_kwargs["modelId"] == arn
+                assert (
+                    "inferenceProfileArn" not in captured_kwargs
+                )  # Modern signature doesn't use this
                 assert captured_kwargs["contentType"] == "application/json"
 
 

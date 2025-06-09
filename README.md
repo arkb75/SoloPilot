@@ -84,6 +84,23 @@ flowchart TD
 - **Orchestration**: LangChain (lightweight usage)
 - **Infrastructure**: Docker + AWS Bedrock for scalable deployment
 
+## ⚙️ Configuration
+
+### Environment Variables
+
+Override default Bedrock settings with these environment variables:
+
+- `BEDROCK_IP_ARN`: Inference profile ARN (overrides config)
+- `BEDROCK_REGION`: AWS region (default: us-east-2)
+- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`: AWS credentials
+
+Example:
+```bash
+export BEDROCK_IP_ARN="arn:aws:bedrock:us-west-2:123456789012:inference-profile/us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+export BEDROCK_REGION="us-west-2"
+make dev
+```
+
 ## 📋 Current Sprint: Requirement Analyser
 
 The analyser module ingests:

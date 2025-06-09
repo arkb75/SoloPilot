@@ -115,7 +115,7 @@ clean:
 dev:
 	@echo "⚙️ Running dev agent with latest planning output..."
 	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
-	. .venv/bin/activate && python scripts/run_dev_agent.py
+	. .venv/bin/activate && python scripts/check_bedrock.py && python scripts/run_dev_agent.py
 
 # Run full analyser → planner → dev agent workflow
 plan-dev:
@@ -126,7 +126,7 @@ plan-dev:
 	@echo "Step 2: Running planner..."
 	. .venv/bin/activate && python scripts/run_planner.py --latest
 	@echo "Step 3: Running dev agent..."
-	. .venv/bin/activate && python scripts/run_dev_agent.py
+	. .venv/bin/activate && python scripts/check_bedrock.py && python scripts/run_dev_agent.py
 
 # Run dev agent with Context7 scouting enabled
 dev-scout:
@@ -136,7 +136,7 @@ dev-scout:
 		echo "⚠️  Context7 not found. Installing globally..."; \
 		npm install -g context7; \
 	fi
-	. .venv/bin/activate && C7_SCOUT=1 python scripts/run_dev_agent.py
+	. .venv/bin/activate && python scripts/check_bedrock.py && C7_SCOUT=1 python scripts/run_dev_agent.py
 
 # Quick development setup (venv + dependencies + tesseract check)
 setup: venv

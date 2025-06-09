@@ -100,12 +100,24 @@ Uses the same `config/model_config.yaml` as other agents:
 ```yaml
 llm:
   bedrock:
-    model_id: "us.anthropic.claude-3-5-haiku-20241022-v1:0"
-    region: "us-east-2"
+    inference_profile_arn: "${BEDROCK_IP_ARN:-arn:aws:bedrock:us-east-2:account:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0}"
+    region: "${BEDROCK_REGION:-us-east-2}"
     model_kwargs:
       temperature: 0.1
       max_tokens: 2048
-# OpenAI configuration removed - Bedrock only
+```
+
+### Environment Variables
+
+Override configuration at runtime:
+
+- `BEDROCK_IP_ARN`: Full inference profile ARN
+- `BEDROCK_REGION`: AWS region (default: us-east-2)
+
+Example:
+```bash
+export BEDROCK_IP_ARN="arn:aws:bedrock:us-west-2:123456789012:inference-profile/us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+make dev
 ```
 
 ## Output Structure
