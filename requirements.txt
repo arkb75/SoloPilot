@@ -2,18 +2,18 @@
 # Core ML and processing dependencies
 
 # LangChain for LLM orchestration (light usage) - compatible versions
-langchain>=0.3.0
-langchain-community>=0.3.0
-langchain-core>=0.3.0
+langchain>=0.3.25,<1.0.0
+langchain-community==0.3.24
+langchain-core>=0.3.55,<1.0.0
 
 # AWS Bedrock integration (primary LLM)
-langchain-aws>=0.2.4
+langchain-aws==0.2.24
 boto3>=1.35.0
 botocore>=1.35.0
 
 # OpenAI integration (fallback LLM)
-langchain-openai>=0.3.0
-openai==1.51.2
+langchain-openai==0.3.21
+openai>=1.68.2,<2.0.0
 
 # OCR and image processing
 pytesseract>=0.3.10
@@ -21,7 +21,7 @@ Pillow>=10.0.0
 
 # Vector similarity search (use conda-forge or brew version if faiss-cpu fails)
 # Option 1: Try faiss-cpu first
-faiss-cpu==1.8.0.post1; platform_system != "Darwin"
+faiss-cpu>=1.11.0; platform_system != "Darwin"
 # Option 2: For macOS, use scikit-learn as fallback for vector similarity
 scikit-learn==1.5.2; platform_system == "Darwin"
 
@@ -35,8 +35,11 @@ requests==2.32.3
 # Testing framework
 pytest==8.3.3
 
-# Additional parsing support (future DOCX support)
-# python-docx==1.1.2  # Uncomment when needed
+# Additional parsing support
+python-docx==1.1.2
+
+# Data validation
+pydantic>=2.10.0,<3.0.0
 
 # Development dependencies
 black==24.8.0

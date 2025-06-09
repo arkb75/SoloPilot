@@ -1,7 +1,7 @@
 # SoloPilot Development Makefile
 # Provides convenient commands for common development tasks
 
-.PHONY: help venv install run test demo plan analyze-and-plan dev plan-dev dev-scout clean docker docker-down
+.PHONY: help venv install run test demo plan analyze-and-plan dev plan-dev dev-scout lint clean docker docker-down
 
 # Default target
 help:
@@ -19,6 +19,7 @@ help:
 	@echo "  make plan-dev   Run analyser → planner → dev agent (end-to-end)"
 	@echo "  make dev-scout  Run dev agent with Context7 scouting enabled"
 	@echo "  make test       Run test suite"
+	@echo "  make lint       Run code linting and formatting"
 	@echo "  make demo       Run demo script with sample data"
 	@echo ""
 	@echo "Docker Commands:"
@@ -55,6 +56,19 @@ test:
 	@echo "🧪 Running tests..."
 	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
 	. .venv/bin/activate && pytest tests/ -v
+
+# Run code linting and formatting
+lint:
+	@echo "🧹 Running code linting and formatting..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	. .venv/bin/activate && \
+	echo "Running ruff..." && \
+	(ruff check . --fix || echo "Ruff check completed") && \
+	echo "Running black..." && \
+	(black . --line-length=100 || echo "Black formatting completed") && \
+	echo "Running isort..." && \
+	(isort . --profile=black --line-length=100 || echo "isort completed") && \
+	echo "✅ Linting complete!"
 
 # Run demo script
 demo:

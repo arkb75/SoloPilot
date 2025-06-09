@@ -4,6 +4,8 @@ The Dev Agent transforms planning output into milestone-based code structure wit
 
 ## Overview
 
+[![CI Status](https://github.com/your-username/SoloPilot/workflows/CI/badge.svg)](https://github.com/your-username/SoloPilot/actions)
+
 The Dev Agent takes structured planning output (JSON) and generates:
 - **Milestone directories** with skeleton code implementations
 - **Unit test frameworks** for each milestone
@@ -42,9 +44,10 @@ The Dev Agent takes structured planning output (JSON) and generates:
 - **Documentation**: Auto-generates README files for each milestone
 
 ### LLM Integration
-- **Primary**: AWS Bedrock Claude 3.5 Haiku
-- **Fallback**: OpenAI GPT-4o Mini
+- **Primary**: AWS Bedrock Claude 3.5 Haiku with exponential backoff retry
+- **Fallback**: OpenAI GPT-4o Mini with exponential backoff retry
 - **Final Fallback**: Stub code generation (if both LLMs fail)
+- **Retry Logic**: 3 attempts with 2^attempt + jitter backoff for stability
 
 ### Context7 Enhancement (Optional)
 - **Pitfall Analysis**: Identifies common implementation mistakes
