@@ -3,34 +3,25 @@
 
 # LLM Configuration
 llm:
-  # Primary LLM (AWS Bedrock)
+  # Primary LLM only (Bedrock)
   primary: "bedrock"
   
-  # Fallback LLM (OpenAI)
-  fallback: "openai"
-  
-  # AWS Bedrock Configuration
+  # AWS Bedrock Configuration (Inference Profile ARNs required)
   bedrock:
-    model_id: "anthropic.claude-3-haiku-20240307-v1:0"
+    # Primary inference profile ARN (Claude 3 Haiku)
+    inference_profile_arn: "arn:aws:bedrock:us-east-2:831926611481:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0"
+    # Legacy model_id (kept for reference): "anthropic.claude-3-haiku-20240307-v1:0"
     region: "us-east-2"
     timeout: 60  # seconds
     model_kwargs:
       temperature: 0.1
       top_p: 0.9
       max_tokens: 2048
-    # Alternative models (comment/uncomment as needed):
-    # model_id: "anthropic.claude-3-5-haiku-20241022-v1:0"   # Newer Haiku (requires inference profile)
-    # model_id: "meta.llama3-1-8b-instruct-v1:0"            # Llama 3.1 8B (cheaper)
-    # model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"  # Claude 3.5 Sonnet (more capable)
+    # Alternative inference profile ARNs (comment/uncomment as needed):
+    # inference_profile_arn: "arn:aws:bedrock:us-east-2:831926611481:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0"  # Claude 3.5 Haiku
+    # inference_profile_arn: "arn:aws:bedrock:us-east-2:831926611481:inference-profile/us.anthropic.claude-3-5-sonnet-20240620-v1:0"  # Claude 3.5 Sonnet
+    # inference_profile_arn: "arn:aws:bedrock:us-east-2:831926611481:inference-profile/us.anthropic.claude-3-5-sonnet-20241022-v2:0"  # Claude 3.5 Sonnet v2
   
-  # OpenAI Configuration (fallback)
-  openai:
-    model: "gpt-4o-mini"
-    api_base: "https://api.openai.com/v1"
-    timeout: 60
-    max_tokens: 2048
-    temperature: 0.1
-    top_p: 0.9
 
 # Processing Configuration
 processing:

@@ -28,6 +28,33 @@ The dev agent (agents/dev/) includes:
 - `DevAgent`: Transforms planning output into milestone-based code structure with skeleton implementations
 - `Context7Bridge`: MCP adapter for enhanced development insights and best practices
 
+## 🗺 Inference Profile Map – us-east-2
+
+AWS Bedrock (us-east-2) now enforces **Inference Profile ARNs** for all Anthropic, Meta-Llama, DeepSeek, Mistral and Amazon models:
+
+| # | Model (console label) | Inference profile ID (`modelId`) | Inference profile ARN |
+|---|-----------------------|----------------------------------|-----------------------|
+| 1 | Claude 3 Haiku | **us.anthropic.claude-3-haiku-20240307-v1:0** | **arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0** |
+| 2 | Claude 3.5 Haiku | us.anthropic.claude-3-5-haiku-20241022-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0 |
+| 3 | Claude 3.5 Sonnet | us.anthropic.claude-3-5-sonnet-20240620-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-sonnet-20240620-v1:0 |
+| 4 | Claude 3.7 Sonnet | us.anthropic.claude-3-7-sonnet-20250219-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0 |
+| 5 | Claude 3.5 Sonnet (v2) | us.anthropic.claude-3-5-sonnet-20241022-v2:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-sonnet-20241022-v2:0 |
+| 6 | Claude Opus 4 | us.anthropic.claude-opus-4-20250514-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-opus-4-20250514-v1:0 |
+| 7 | Claude Sonnet 4 | us.anthropic.claude-sonnet-4-20250514-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0 |
+| 8 | DeepSeek-R1 | us.deepseek.r1-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.deepseek.r1-v1:0 |
+| 9 | Llama 4 Maverick 17B Instr | us.meta.llama4-maverick-17b-instruct-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.meta.llama4-maverick-17b-instruct-v1:0 |
+|10 | Llama 4 Scout 17B Instr | us.meta.llama4-scout-17b-instruct-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.meta.llama4-scout-17b-instruct-v1:0 |
+|11 | Llama 3 70B Instr | us.meta.llama3-70b-instruct-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.meta.llama3-70b-instruct-v1:0 |
+|12 | Llama 3 8B Instr | us.meta.llama3-8b-instruct-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.meta.llama3-8b-instruct-v1:0 |
+|13 | Llama 3.1 40-5B Instr | us.meta.llama3-1-405b-instruct-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.meta.llama3-1-405b-instruct-v1:0 |
+|14 | Llama 3.2 118B Instr | us.meta.llama3-2-118b-instruct-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.meta.llama3-2-118b-instruct-v1:0 |
+|15 | Llama 3.2 1B Instr | us.meta.llama3-2-1b-instruct-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.meta.llama3-2-1b-instruct-v1:0 |
+|16 | Llama 3.2 3B Instr | us.meta.llama3-2-3b-instruct-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.meta.llama3-2-3b-instruct-v1:0 |
+|17 | Llama 3.2 90B Vision | us.meta.llama3-2-90b-instruct-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.meta.llama3-2-90b-instruct-v1:0 |
+|18 | Llama 3.3 70B Instr | us.meta.llama3-3-70b-instruct-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.meta.llama3-3-70b-instruct-v1:0 |
+|19 | Pixtral Large (25-02) | us.mistral.pixtral-large-2502-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.mistral.pixtral-large-2502-v1:0 |
+|20 | Nova Lite | us.amazon.nova-lite-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.amazon.nova-lite-v1:0 |
+
 ## Development Commands
 
 **Setup (First Time):**

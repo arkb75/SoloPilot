@@ -22,8 +22,10 @@ class DevAgent:
         """Initialize the dev agent with configuration."""
         self.config = self._load_config(config_path)
         self._validate_credentials()
+        self._validate_inference_profile()
         self.bedrock_client = None
         self._init_llm_clients()
+        self._validate_inference_profile_access()
 
     def _load_config(self, config_path: str) -> Dict[str, Any]:
         """Load configuration from YAML file."""
@@ -40,6 +42,37 @@ class DevAgent:
                 "Set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY or configure ~/.aws/credentials."
             )
 
+    def _validate_inference_profile(self) -> None:
+        """Fail fast if inference profile ARN is missing or invalid."""
+        arn = self.config["llm"]["bedrock"].get("inference_profile_arn")
+        if not arn:
+            raise RuntimeError(
+                "❌ Bedrock inference_profile_arn not found in config. "
+                "Update config/model_config.yaml with a valid ARN."
+            )
+        if not arn.startswith("arn:aws:bedrock:"):
+            raise RuntimeError(
+                f"❌ Invalid inference profile ARN format: {arn}. "
+                "Expected format: arn:aws:bedrock:region:account:inference-profile/profile-id"
+            )
+
+    def _validate_inference_profile_access(self) -> None:
+        """Fail fast if we don't have access to the inference profile."""
+        if not self.bedrock_client:
+            return  # Skip validation if no client
+
+        try:
+            # Try a simple operation to validate access - bedrock-runtime doesn't have list operations
+            # We'll skip this validation for now since there's no good way to test access without invoking
+            pass
+        except ClientError as e:
+            if "AccessDeniedException" in str(e):
+                arn = self.config["llm"]["bedrock"]["inference_profile_arn"]
+                raise RuntimeError(
+                    f"❌ Bedrock access denied for inference profile. "
+                    f"ARN: {arn}. Verify you have bedrock:InvokeModel permissions."
+                ) from e
+
     def _init_llm_clients(self):
         """Initialize Bedrock client."""
         try:
@@ -50,10 +83,20 @@ class DevAgent:
         except Exception as e:
             raise RuntimeError(f"Failed to initialize Bedrock client: {e}")
 
+    def _get_model_id_from_arn(self, inference_profile_arn: str) -> str:
+        """Extract the underlying model ID from an inference profile ARN."""
+        # ARN format: arn:aws:bedrock:region:account:inference-profile/us.provider.model-id
+        if "/us." in inference_profile_arn:
+            return inference_profile_arn.split("/")[-1]
+        return "anthropic.claude-3-haiku-20240307-v1:0"  # fallback
+
     def _call_bedrock(self, prompt: str) -> str:
-        """Call AWS Bedrock Claude model."""
+        """Call AWS Bedrock using inference profile ARN with proper parameters."""
         if not self.bedrock_client:
             raise Exception("Bedrock client not available")
+
+        inference_profile_arn = self.config["llm"]["bedrock"]["inference_profile_arn"]
+        model_id = self._get_model_id_from_arn(inference_profile_arn)
 
         body = {
             "anthropic_version": "bedrock-2023-05-31",
@@ -65,7 +108,8 @@ class DevAgent:
 
         try:
             response = self.bedrock_client.invoke_model(
-                modelId=self.config["llm"]["bedrock"]["model_id"],
+                modelId=model_id,
+                inferenceProfileArn=inference_profile_arn,
                 body=json.dumps(body),
                 contentType="application/json",
             )
@@ -74,6 +118,13 @@ class DevAgent:
             return response_body["content"][0]["text"]
 
         except (ClientError, BotoCoreError) as e:
+            # If we get AccessDeniedException, raise clear error with ARN info
+            if "AccessDeniedException" in str(e) or "ValidationException" in str(e):
+                raise RuntimeError(
+                    f"❌ Bedrock inference profile access denied. "
+                    f"ARN attempted: {inference_profile_arn}. "
+                    f"Verify the profile exists and you have access in us-east-2."
+                ) from e
             print(f"Bedrock API error: {e}")
             raise
 

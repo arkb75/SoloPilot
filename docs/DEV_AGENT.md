@@ -309,6 +309,10 @@ describe('AuthenticationService', () => {
 });
 ```
 
+## Using Inference Profiles
+
+The Dev Agent now requires AWS Bedrock inference profiles for all model access. Configure your `config/model_config.yaml` with the full inference profile ARN instead of model IDs. This provides better access control and regional availability. See the complete inference profile mapping in [CLAUDE.md](../CLAUDE.md#-inference-profile-map--us-east-2) for all available models and their corresponding ARNs.
+
 ---
 
 **Generated**: 2025-06-08  

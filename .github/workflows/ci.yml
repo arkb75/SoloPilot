@@ -51,9 +51,10 @@ jobs:
       env:
         AWS_ACCESS_KEY_ID: dummy
         AWS_SECRET_ACCESS_KEY: dummy
+        BEDROCK_IP_ARN_CLAUDE3_HAIKU: arn:aws:bedrock:us-east-2:111111111111:inference-profile/dummy
       run: |
         source .venv/bin/activate
-        make test
+        pytest -q --timeout=90
 
     - name: Run linting (Ubuntu only)
       if: matrix.os == 'ubuntu-latest'

@@ -25,26 +25,17 @@ try:
 except ImportError:
     pass  # dotenv is optional
 
-# Try to import LangChain components with fallbacks
+# Try to import LangChain Bedrock components
 try:
     from langchain_aws import ChatBedrock
     from langchain_core.messages import HumanMessage
-    from langchain_openai import ChatOpenAI
 
     LANGCHAIN_AVAILABLE = True
     BEDROCK_AVAILABLE = True
 except ImportError:
-    try:
-        from langchain_core.messages import HumanMessage
-        from langchain_openai import ChatOpenAI
-
-        LANGCHAIN_AVAILABLE = True
-        BEDROCK_AVAILABLE = False
-        print("⚠️  AWS Bedrock not available, using OpenAI only")
-    except ImportError:
-        LANGCHAIN_AVAILABLE = False
-        BEDROCK_AVAILABLE = False
-        print("⚠️  LangChain not fully available. LLM features will be disabled.")
+    LANGCHAIN_AVAILABLE = False
+    BEDROCK_AVAILABLE = False
+    print("⚠️  LangChain AWS not available. LLM features will be disabled.")
 
 # Vector similarity - try FAISS first, fallback to scikit-learn
 try:
@@ -97,10 +88,13 @@ class TextParser:
         if BEDROCK_AVAILABLE and self.config["llm"]["primary"] == "bedrock":
             try:
                 bedrock_config = self.config["llm"].get("bedrock", {})
+                # Use inference profile ARN if available, fallback to model_id
+                model_identifier = bedrock_config.get(
+                    "inference_profile_arn",
+                    bedrock_config.get("model_id", "anthropic.claude-3-haiku-20240307-v1:0"),
+                )
                 self.primary_llm = ChatBedrock(
-                    model_id=bedrock_config.get(
-                        "model_id", "anthropic.claude-3-haiku-20240307-v1:0"
-                    ),
+                    model_id=model_identifier,
                     region_name=bedrock_config.get("region", "us-east-2"),
                     model_kwargs={"temperature": 0.1, "max_tokens": 2048},
                 )
@@ -109,16 +103,8 @@ class TextParser:
                 print(f"⚠️  Bedrock initialization failed: {e}")
                 self.primary_llm = None
 
-        # Setup fallback LLM (OpenAI)
-        try:
-            openai_config = self.config["llm"].get("openai", {})
-            self.fallback_llm = ChatOpenAI(
-                model=openai_config.get("model", "gpt-4o-mini"), temperature=0.1
-            )
-            print("✅ OpenAI fallback initialized")
-        except Exception as e:
-            print(f"⚠️  OpenAI initialization failed: {e}")
-            self.fallback_llm = None
+        # No fallback LLM - Bedrock only
+        self.fallback_llm = None
 
     def parse_file(self, file_path: str) -> str:
         """Parse a single text file and extract content."""
@@ -179,34 +165,23 @@ class TextParser:
             raise RuntimeError(f"Failed to parse DOCX file {path}: {e}")
 
     def extract_requirements(self, text: str) -> Dict[str, Any]:
-        """Extract structured requirements from text using LLM or fallback."""
-        if not LANGCHAIN_AVAILABLE or (not self.primary_llm and not self.fallback_llm):
+        """Extract structured requirements from text using Bedrock LLM."""
+        if not LANGCHAIN_AVAILABLE or not self.primary_llm:
             # Fallback to simple keyword extraction
             return self._extract_requirements_fallback(text)
 
         prompt = self._build_extraction_prompt(text)
 
-        llm = self.primary_llm or self.fallback_llm
-
         try:
-            print(f"🧠 Using LLM: {llm.__class__.__name__}")
+            print(f"🧠 Using LLM: {self.primary_llm.__class__.__name__}")
             # Modern LangChain uses invoke() method
-            response = llm.invoke(prompt)
+            response = self.primary_llm.invoke(prompt)
 
             print("✅ LLM extraction successful")
             return self._parse_llm_response(response)
         except Exception as e:
-            print(f"⚠️  Primary LLM failed ({e})")
-            if self.fallback_llm and llm != self.fallback_llm:
-                try:
-                    print(f"🔄 Trying fallback LLM: {self.fallback_llm.__class__.__name__}")
-                    response = self.fallback_llm.invoke(prompt)
-                    print("✅ Fallback LLM extraction successful")
-                    return self._parse_llm_response(response)
-                except Exception as fallback_e:
-                    print(f"⚠️  Fallback LLM also failed ({fallback_e})")
-                    pass
-            # If all LLMs fail, use keyword fallback
+            print(f"⚠️  Bedrock LLM failed ({e})")
+            # Fail fast - no fallback to OpenAI, use keyword extraction only
             print("🔄 Using keyword extraction fallback")
             return self._extract_requirements_fallback(text)
 

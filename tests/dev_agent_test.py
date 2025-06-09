@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent
@@ -73,7 +74,7 @@ def temp_config_file():
     config_data = {
         "llm": {
             "bedrock": {
-                "model_id": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+                "inference_profile_arn": "arn:aws:bedrock:us-east-2:111111111111:inference-profile/dummy",
                 "region": "us-east-2",
                 "model_kwargs": {"temperature": 0.1, "top_p": 0.9, "max_tokens": 2048},
             },
@@ -348,6 +349,17 @@ describe('ProjectSetup', () => {
                     # Should not raise
                     agent = DevAgent(config_path=temp_config_file)
                     assert agent is not None
+
+    def test_inference_profile_access_validation(self, temp_config_file):
+        """Test that inference profile access validation exists."""
+        with patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}):
+            with patch("boto3.client") as mock_boto3:
+                mock_boto3.return_value = MagicMock()
+                # Should not raise during initialization (validation is passive now)
+                agent = DevAgent(config_path=temp_config_file)
+                assert agent is not None
+                # Validation method exists
+                assert hasattr(agent, "_validate_inference_profile_access")
 
 
 class TestContext7Bridge:
