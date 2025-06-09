@@ -10,17 +10,23 @@ SoloPilot is a modular automation system that transforms raw client requirements
 
 The system follows a multi-agent architecture with these key modules:
 
-- **analyser**: Active - Parses client requirements (text + images) into structured JSON specs
-- **planning**: Planned - Converts specs into development roadmaps  
-- **dev**: Planned - Generates production-ready code
+- **analyser**: ✅ Active - Parses client requirements (text + images) into structured JSON specs
+- **planning**: ✅ Active - Converts specs into development roadmaps  
+- **dev**: ✅ Active - Generates milestone-based code structure with Context7 integration
 - **marketing**: Planned - Creates marketing materials
 - **outreach**: Planned - Handles client communication
 - **coordination**: Planned - Orchestrates multi-agent workflows
 
-The analyser module is the current focus and contains three main components:
+**Current Status**: Full analyser → planner → dev agent workflow implemented and tested.
+
+The analyser module contains three main components:
 - `TextParser`: Handles text documents (MD, TXT, DOCX) with LLM-based extraction and keyword fallback
 - `ImageParser`: Processes images using pytesseract OCR
 - `SpecBuilder`: Constructs JSON specifications and generates Mermaid diagrams/wireframes
+
+The dev agent (agents/dev/) includes:
+- `DevAgent`: Transforms planning output into milestone-based code structure with skeleton implementations
+- `Context7Bridge`: MCP adapter for enhanced development insights and best practices
 
 ## Development Commands
 
@@ -42,13 +48,19 @@ source .venv/bin/activate
 
 # Common tasks via Makefile
 make run          # Run analyser with sample input
-make test         # Run test suite  
+make plan         # Run planner with latest specification
+make dev          # Run dev agent with latest planning output
+make plan-dev     # Run full analyser → planner → dev agent workflow
+make dev-scout    # Run dev agent with Context7 scouting enabled
+make test         # Run test suite (40 tests)
+make lint         # Run code linting and formatting
 make demo         # Demo with sample data creation
 make docker       # Docker alternative (zero host setup)
 
 # Direct commands
 python scripts/run_analyser.py --path ./sample_input
-python scripts/run_analyser.py --path ./path/to/file.md --config ./config/model_config.yaml
+python scripts/run_planner.py --latest
+python scripts/run_dev_agent.py
 ```
 
 ## Configuration
@@ -98,3 +110,30 @@ The TextParser extracts requirements into this JSON structure:
 ```
 
 Images are processed with OCR and combined text is stored in the specification's `image_content` field.
+
+## Recent Development Status (Dec 2025)
+
+**✅ COMPLETED:**
+- **Dev Agent v0**: Full milestone-based code generation system with Context7 integration
+- **Dependency Management**: Resolved CI conflicts, updated to compatible LangChain/OpenAI versions
+- **CI Pipeline**: Fixed deprecated GitHub Actions, all 40 tests passing on Ubuntu + macOS
+- **DOCX Support**: Added python-docx parsing with table extraction
+- **Pydantic v2**: Migrated from Config to ConfigDict for compatibility
+
+**Current Package Versions:**
+- openai: >=1.68.2,<2.0.0 (was ==1.51.2)
+- langchain: >=0.3.25,<1.0.0
+- langchain-openai: ==0.3.21
+- langchain-aws: ==0.2.24
+- pydantic: >=2.10.0,<3.0.0
+- faiss-cpu: >=1.11.0 (Linux), scikit-learn: ==1.5.2 (macOS)
+
+**CI Status**: ✅ Green on main branch
+
+**Key Files:**
+- agents/dev/dev_agent.py: Main dev agent with retry logic and LLM fallbacks
+- agents/dev/context7_bridge.py: Context7 MCP integration for development insights
+- scripts/run_dev_agent.py: CLI for dev agent execution
+- tests/dev_agent_test.py: Comprehensive test suite (22 tests)
+
+**Integration**: Full analyser → planner → dev agent pipeline working end-to-end.
