@@ -11,8 +11,8 @@ llm:
   
   # AWS Bedrock Configuration
   bedrock:
-    model_id: "anthropic.claude-3-5-sonnet-20240620-v1:0"
-    region: "us-east-2"
+    model_id: "anthropic.claude-3-haiku-20240307-v1:0"
+    region: "us-east-1"
     timeout: 60  # seconds
     model_kwargs:
       temperature: 0.1
