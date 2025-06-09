@@ -10,7 +10,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -77,7 +77,6 @@ def temp_config_file():
                 "region": "us-east-2",
                 "model_kwargs": {"temperature": 0.1, "top_p": 0.9, "max_tokens": 2048},
             },
-            "openai": {"model": "gpt-4o-mini", "max_tokens": 2048, "temperature": 0.1},
         }
     }
 
@@ -109,20 +108,35 @@ class TestDevAgent:
 
     def test_init(self, temp_config_file):
         """Test DevAgent initialization."""
-        agent = DevAgent(config_path=temp_config_file)
+        with patch.dict(
+            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
+        ):
+            with patch("boto3.client") as mock_boto3:
+                mock_boto3.return_value = MagicMock()
+                agent = DevAgent(config_path=temp_config_file)
         assert agent.config is not None
         assert "llm" in agent.config
 
     def test_load_config(self, temp_config_file):
         """Test configuration loading."""
-        agent = DevAgent(config_path=temp_config_file)
+        with patch.dict(
+            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
+        ):
+            with patch("boto3.client") as mock_boto3:
+                mock_boto3.return_value = MagicMock()
+                agent = DevAgent(config_path=temp_config_file)
         config = agent._load_config(temp_config_file)
         assert "llm" in config
         assert "bedrock" in config["llm"]
 
     def test_infer_language(self, temp_config_file):
         """Test language inference from tech stack."""
-        agent = DevAgent(config_path=temp_config_file)
+        with patch.dict(
+            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
+        ):
+            with patch("boto3.client") as mock_boto3:
+                mock_boto3.return_value = MagicMock()
+                agent = DevAgent(config_path=temp_config_file)
 
         # Test JavaScript/TypeScript detection
         assert agent._infer_language(["React", "Node.js"], "Frontend") == "javascript"
@@ -140,7 +154,12 @@ class TestDevAgent:
 
     def test_get_file_extension(self, temp_config_file):
         """Test file extension mapping."""
-        agent = DevAgent(config_path=temp_config_file)
+        with patch.dict(
+            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
+        ):
+            with patch("boto3.client") as mock_boto3:
+                mock_boto3.return_value = MagicMock()
+                agent = DevAgent(config_path=temp_config_file)
 
         assert agent._get_file_extension("javascript") == ".js"
         assert agent._get_file_extension("typescript") == ".ts"
@@ -151,7 +170,12 @@ class TestDevAgent:
 
     def test_generate_stub_code(self, temp_config_file):
         """Test stub code generation."""
-        agent = DevAgent(config_path=temp_config_file)
+        with patch.dict(
+            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
+        ):
+            with patch("boto3.client") as mock_boto3:
+                mock_boto3.return_value = MagicMock()
+                agent = DevAgent(config_path=temp_config_file)
         stub = agent._generate_stub_code()
 
         assert "StubImplementation" in stub
@@ -161,7 +185,12 @@ class TestDevAgent:
 
     def test_parse_llm_response(self, temp_config_file):
         """Test LLM response parsing."""
-        agent = DevAgent(config_path=temp_config_file)
+        with patch.dict(
+            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
+        ):
+            with patch("boto3.client") as mock_boto3:
+                mock_boto3.return_value = MagicMock()
+                agent = DevAgent(config_path=temp_config_file)
 
         # Test with properly formatted response
         mock_response = """
@@ -222,7 +251,12 @@ describe('ProjectSetup', () => {
 ```
 """
 
-        agent = DevAgent(config_path=temp_config_file)
+        with patch.dict(
+            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
+        ):
+            with patch("boto3.client") as mock_boto3:
+                mock_boto3.return_value = MagicMock()
+                agent = DevAgent(config_path=temp_config_file)
         manifest = agent.process_planning_output(temp_planning_file, temp_output_dir)
 
         # Verify manifest structure
@@ -262,7 +296,12 @@ describe('ProjectSetup', () => {
 
     def test_find_latest_planning_output(self, temp_config_file):
         """Test finding latest planning output."""
-        agent = DevAgent(config_path=temp_config_file)
+        with patch.dict(
+            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
+        ):
+            with patch("boto3.client") as mock_boto3:
+                mock_boto3.return_value = MagicMock()
+                agent = DevAgent(config_path=temp_config_file)
 
         # Test with no planning directory
         with patch("pathlib.Path.exists", return_value=False):
@@ -270,31 +309,45 @@ describe('ProjectSetup', () => {
             assert result is None
 
     @patch("agents.dev.dev_agent.DevAgent._call_bedrock")
-    def test_bedrock_fallback_to_openai(self, mock_bedrock, temp_config_file):
-        """Test fallback from Bedrock to OpenAI."""
+    def test_bedrock_fallback_to_stub(self, mock_bedrock, temp_config_file):
+        """Test fallback from Bedrock to stub code."""
         # Mock Bedrock failure
         mock_bedrock.side_effect = Exception("Bedrock error")
 
-        agent = DevAgent(config_path=temp_config_file)
+        with patch.dict(
+            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
+        ):
+            with patch("boto3.client") as mock_boto3:
+                mock_boto3.return_value = MagicMock()
+                agent = DevAgent(config_path=temp_config_file)
+                result = agent._call_llm("Test prompt")
+                assert "StubImplementation" in result
 
-        with patch.object(agent, "_call_openai_fallback", return_value="Mocked OpenAI response"):
-            result = agent._call_llm("Test prompt")
-            assert result == "Mocked OpenAI response"
+    def test_credentials_missing_env_and_profile(self, temp_config_file):
+        """Test credential validation when neither env vars nor profile exist."""
+        with patch.dict(os.environ, {}, clear=True):  # Clear all env vars
+            with patch("pathlib.Path.exists", return_value=False):  # No AWS profile
+                with pytest.raises(RuntimeError, match="Bedrock credentials not found"):
+                    DevAgent(config_path=temp_config_file)
 
-    @patch("agents.dev.dev_agent.DevAgent._call_bedrock")
-    @patch("agents.dev.dev_agent.DevAgent._call_openai_fallback")
-    def test_llm_fallback_to_stub(self, mock_openai, mock_bedrock, temp_config_file):
-        """Test final fallback to stub code when both LLMs fail."""
-        # Mock both LLM failures
-        mock_bedrock.side_effect = Exception("Bedrock error")
-        mock_openai.side_effect = Exception("OpenAI error")
+    def test_credentials_with_env_vars(self, temp_config_file):
+        """Test credential validation with environment variables."""
+        with patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "test", "AWS_SECRET_ACCESS_KEY": "test"}):
+            with patch("boto3.client") as mock_boto3:
+                mock_boto3.return_value = MagicMock()
+                # Should not raise
+                agent = DevAgent(config_path=temp_config_file)
+                assert agent is not None
 
-        agent = DevAgent(config_path=temp_config_file)
-        result = agent._call_llm("Test prompt")
-
-        # Should return stub code
-        assert "StubImplementation" in result
-        assert "TODO:" in result
+    def test_credentials_with_profile(self, temp_config_file):
+        """Test credential validation with AWS profile."""
+        with patch.dict(os.environ, {}, clear=True):  # Clear env vars
+            with patch("pathlib.Path.exists", return_value=True):  # AWS profile exists
+                with patch("boto3.client") as mock_boto3:
+                    mock_boto3.return_value = MagicMock()
+                    # Should not raise
+                    agent = DevAgent(config_path=temp_config_file)
+                    assert agent is not None
 
 
 class TestContext7Bridge:
@@ -444,7 +497,12 @@ describe('SmokeTestImplementation', () => {
 ```
 """
 
-        agent = DevAgent(config_path=temp_config_file)
+        with patch.dict(
+            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
+        ):
+            with patch("boto3.client") as mock_boto3:
+                mock_boto3.return_value = MagicMock()
+                agent = DevAgent(config_path=temp_config_file)
         manifest = agent.process_planning_output(temp_planning_file, temp_output_dir)
 
         # Basic assertions to ensure the workflow completed

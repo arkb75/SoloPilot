@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import boto3
-import openai
 import yaml
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -22,8 +21,8 @@ class DevAgent:
     def __init__(self, config_path: str = "config/model_config.yaml"):
         """Initialize the dev agent with configuration."""
         self.config = self._load_config(config_path)
+        self._validate_credentials()
         self.bedrock_client = None
-        self.openai_client = None
         self._init_llm_clients()
 
     def _load_config(self, config_path: str) -> Dict[str, Any]:
@@ -31,22 +30,25 @@ class DevAgent:
         with open(config_path, "r") as f:
             return yaml.safe_load(f)
 
+    def _validate_credentials(self) -> None:
+        """Fail fast if no AWS credentials are available for Bedrock."""
+        has_env = all(os.getenv(k) for k in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"))
+        has_profile = Path("~/.aws/credentials").expanduser().exists()
+        if not (has_env or has_profile):
+            raise RuntimeError(
+                "❌ Bedrock credentials not found. "
+                "Set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY or configure ~/.aws/credentials."
+            )
+
     def _init_llm_clients(self):
-        """Initialize LLM clients (Bedrock + OpenAI fallback)."""
+        """Initialize Bedrock client."""
         try:
             # Initialize Bedrock client
             self.bedrock_client = boto3.client(
                 "bedrock-runtime", region_name=self.config["llm"]["bedrock"]["region"]
             )
         except Exception as e:
-            print(f"Warning: Could not initialize Bedrock client: {e}")
-
-        try:
-            # Initialize OpenAI client as fallback
-            if os.getenv("OPENAI_API_KEY"):
-                self.openai_client = openai.OpenAI()
-        except Exception as e:
-            print(f"Warning: Could not initialize OpenAI client: {e}")
+            raise RuntimeError(f"Failed to initialize Bedrock client: {e}")
 
     def _call_bedrock(self, prompt: str) -> str:
         """Call AWS Bedrock Claude model."""
@@ -75,58 +77,34 @@ class DevAgent:
             print(f"Bedrock API error: {e}")
             raise
 
-    def _call_openai_fallback(self, prompt: str) -> str:
-        """Call OpenAI API as fallback."""
-        if not self.openai_client:
-            raise Exception("OpenAI client not available")
-
-        try:
-            response = self.openai_client.chat.completions.create(
-                model=self.config["llm"]["openai"]["model"],
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=self.config["llm"]["openai"]["max_tokens"],
-                temperature=self.config["llm"]["openai"]["temperature"],
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            print(f"OpenAI API error: {e}")
-            raise
-
-    def _call_llm_with_retry(self, llm_func, prompt: str, max_retries: int = 3) -> str:
-        """Call LLM function with exponential backoff retry."""
+    def _call_llm_with_retry(self, prompt: str, max_retries: int = 3) -> str:
+        """Call Bedrock with exponential backoff retry."""
         last_exception = None
 
         for attempt in range(max_retries):
             try:
-                return llm_func(prompt)
+                return self._call_bedrock(prompt)
             except Exception as e:
                 last_exception = e
                 if attempt < max_retries - 1:
                     # Exponential backoff: 2^attempt + random jitter
                     wait_time = (2**attempt) + random.uniform(0, 1)
-                    print(f"LLM call failed (attempt {attempt + 1}/{max_retries}): {e}")
+                    print(f"Bedrock call failed (attempt {attempt + 1}/{max_retries}): {e}")
                     print(f"Retrying in {wait_time:.1f} seconds...")
                     time.sleep(wait_time)
                 else:
-                    print(f"Final LLM attempt failed: {e}")
+                    print(f"Final Bedrock attempt failed: {e}")
 
         raise last_exception
 
     def _call_llm(self, prompt: str) -> str:
-        """Call LLM with fallback mechanism and retry logic."""
-        # Try Bedrock first with retry
+        """Call Bedrock with retry logic."""
         try:
-            return self._call_llm_with_retry(self._call_bedrock, prompt)
+            return self._call_llm_with_retry(prompt)
         except Exception as e:
-            print(f"Bedrock failed after retries: {e}, trying OpenAI fallback...")
-
-            # Fall back to OpenAI with retry
-            try:
-                return self._call_llm_with_retry(self._call_openai_fallback, prompt)
-            except Exception as e2:
-                print(f"OpenAI fallback failed after retries: {e2}")
-                # Return stub code as final fallback
-                return self._generate_stub_code()
+            print(f"Bedrock failed after retries: {e}")
+            # Return stub code as final fallback
+            return self._generate_stub_code()
 
     def _generate_stub_code(self) -> str:
         """Generate basic stub code when LLM calls fail."""

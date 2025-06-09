@@ -45,9 +45,9 @@ The Dev Agent takes structured planning output (JSON) and generates:
 
 ### LLM Integration
 - **Primary**: AWS Bedrock Claude 3.5 Haiku with exponential backoff retry
-- **Fallback**: OpenAI GPT-4o Mini with exponential backoff retry
-- **Final Fallback**: Stub code generation (if both LLMs fail)
+- **Fallback**: Stub code generation (if Bedrock fails)
 - **Retry Logic**: 3 attempts with 2^attempt + jitter backoff for stability
+- **Credentials**: Requires AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or ~/.aws/credentials
 
 ### Context7 Enhancement (Optional)
 - **Pitfall Analysis**: Identifies common implementation mistakes
@@ -104,9 +104,7 @@ llm:
     model_kwargs:
       temperature: 0.1
       max_tokens: 2048
-  openai:
-    model: "gpt-4o-mini"
-    # ... fallback configuration
+# OpenAI configuration removed - Bedrock only
 ```
 
 ## Output Structure
@@ -202,10 +200,10 @@ make test
 
 ### Robust Fallbacks
 
-1. **Bedrock unavailable** → OpenAI fallback
-2. **OpenAI unavailable** → Stub code generation
-3. **Context7 unavailable** → Standard generation without insights
-4. **Invalid planning data** → Clear error messages with guidance
+1. **Bedrock unavailable** → Stub code generation
+2. **Context7 unavailable** → Standard generation without insights
+3. **Invalid planning data** → Clear error messages with guidance
+4. **Missing AWS credentials** → Clear runtime error with setup guidance
 
 ### Common Issues
 

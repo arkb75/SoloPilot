@@ -78,7 +78,7 @@ flowchart TD
 
 ## 🧩 Tech Stack
 
-- **LLM**: AWS Bedrock Claude 3.5 Haiku (primary) + OpenAI GPT-4o Mini (fallback)
+- **LLM**: AWS Bedrock Claude 3.5 Haiku (Bedrock only - no fallbacks)
 - **OCR**: pytesseract + Pillow for image analysis
 - **Vector Search**: FAISS for similarity lookups
 - **Orchestration**: LangChain (lightweight usage)
