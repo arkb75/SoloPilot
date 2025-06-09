@@ -77,6 +77,8 @@ def check_bedrock_access():
 
     try:
         client = boto3.client("bedrock-runtime", region_name=region)
+        acct = boto3.client("sts").get_caller_identity()["Account"]
+        print(f"🔑 Using AWS account: {acct}")
     except Exception as e:
         print(f"❌ Failed to create Bedrock client: {e}")
         print("💡 Check your AWS credentials and region configuration")
