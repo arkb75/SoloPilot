@@ -21,6 +21,13 @@ from botocore.exceptions import BotoCoreError, ClientError, ParamValidationError
 class DevAgent:
     def __init__(self, config_path: str = "config/model_config.yaml"):
         """Initialize the dev agent with configuration."""
+        # Check for NO_NETWORK environment variable first
+        if os.getenv("NO_NETWORK") == "1":
+            print("🚫 NO_NETWORK=1, skipping Bedrock initialization")
+            self.bedrock_client = None
+            self.config = self._load_config(config_path)
+            return
+            
         self.config = self._load_config(config_path)
         self._validate_credentials()
         self._validate_inference_profile()
@@ -188,6 +195,11 @@ class DevAgent:
 
     def _call_llm(self, prompt: str) -> str:
         """Call Bedrock with retry logic - fail loud, no stub fallback."""
+        if os.getenv("NO_NETWORK") == "1":
+            raise RuntimeError(
+                "❌ NO_NETWORK=1 is set. Cannot make Bedrock calls in offline mode. "
+                "Remove NO_NETWORK=1 to enable LLM functionality."
+            )
         return self._call_llm_with_retry(prompt)
 
     def _generate_stub_code(self) -> str:
