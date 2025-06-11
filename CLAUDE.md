@@ -169,3 +169,43 @@ Images are processed with OCR and combined text is stored in the specification's
 - tests/dev_agent_test.py: Comprehensive test suite (22 tests)
 
 **Integration**: Full analyser → planner → dev agent pipeline working end-to-end.
+
+## Repository Cleanliness Protocol
+
+**CRITICAL**: Before any agent execution or code generation, verify the git repository is clean. This prevents committing unwanted artifacts like output files, cache data, or temporary files.
+
+**Pre-Execution Checklist (MANDATORY):**
+```bash
+# 1. Check git status - should show ONLY intentional changes
+git status
+
+# 2. Verify no output files are staged/tracked
+git ls-files | grep -E "(analysis/output|analysis/planning|output/dev)" || echo "✅ No output files tracked"
+
+# 3. Verify no cache files are staged/tracked  
+git ls-files | grep -E "(__pycache__|\.pyc$|\.cache)" || echo "✅ No cache files tracked"
+
+# 4. If untracked output/cache files exist, they should be ignored by .gitignore
+git status --ignored | grep -E "(analysis/|output/|__pycache__|\.pyc)" | head -5
+```
+
+**Agent Output Directories (MUST be .gitignore'd):**
+- `analysis/output/YYYYMMDD_HHMMSS/` - Analyser agent outputs
+- `analysis/planning/YYYYMMDD_HHMMSS/` - Planning agent outputs  
+- `output/dev/YYYYMMDD_HHMMSS/` - Dev agent outputs
+- `__pycache__/` and `*.pyc` - Python cache files
+- `tmp/` - Temporary files
+- `.pytest_cache/` - Test cache files
+
+**Post-Execution Verification:**
+```bash
+# After running any agent, verify no new files are tracked
+git status --porcelain | grep "^??" | grep -E "(analysis/|output/|__pycache__|\.cache)" && echo "❌ New artifacts detected!" || echo "✅ Repository clean"
+```
+
+**If Repository Contains Unwanted Files:**
+1. Update `.gitignore` with missing patterns
+2. Remove tracked files: `git rm --cached <files>`  
+3. Commit cleanup: `git commit -m "Clean repository: remove output/cache files"`
+
+This protocol ensures the repository remains clean and professional, containing only source code and documentation.
