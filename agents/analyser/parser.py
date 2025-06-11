@@ -124,11 +124,13 @@ class TextParser:
                     self.primary_llm = None
                     return
 
-                # Use ARN as model_id (modern approach matching dev agent)
+                # Extract model_id from ARN (matching planning agent pattern)
+                model_id = self._model_id_from_arn(inference_profile_arn)
+                
                 self.primary_llm = ChatBedrock(
-                    model_id=inference_profile_arn,
+                    model_id=model_id,
                     region_name=bedrock_config.get("region", "us-east-2"),
-                    model_kwargs={"temperature": 0.1, "max_tokens": 2048},
+                    model_kwargs=bedrock_config.get("model_kwargs", {"temperature": 0.1, "max_tokens": 2048}),
                 )
 
                 print("✅ AWS Bedrock initialized successfully")
