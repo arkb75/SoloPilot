@@ -282,10 +282,22 @@ Respond with ONLY the JSON object, no additional text:
                 for feature in group:
                     feature_name = feature.get("name", f"Feature {i+1}")
                     feature_desc = feature.get("desc", feature_name)
+                    
+                    # Create detailed task description for better dev agent code generation
+                    detailed_desc = f"Implement {feature_name} functionality. {feature_desc}. "
+                    
+                    # Add technology-specific implementation details
+                    if any(tech.lower() in ["react", "vue", "angular"] for tech in tech_stack):
+                        detailed_desc += "Create React components with proper state management, event handlers, and user interface elements. "
+                    elif any(tech.lower() in ["node.js", "express", "fastapi", "django"] for tech in tech_stack):
+                        detailed_desc += "Implement backend API endpoints with proper routing, validation, and database integration. "
+                    
+                    detailed_desc += "Include error handling, input validation, and comprehensive unit tests."
+                    
                     milestone_tasks.append(
                         {
                             "name": f"Implement {feature_name}",
-                            "description": feature_desc,
+                            "description": detailed_desc,
                             "estimated_hours": 16,
                             "dependencies": [],
                         }

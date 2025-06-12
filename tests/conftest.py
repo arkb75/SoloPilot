@@ -3,6 +3,7 @@
 Shared test configuration and fixtures for SoloPilot.
 """
 
+import os
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,6 +12,10 @@ import pytest
 @pytest.fixture(autouse=True)
 def _no_network(monkeypatch):
     """Mock all network calls to prevent actual API calls during testing."""
+    # Skip mocking if INTEGRATION_TEST environment variable is set
+    if os.getenv("INTEGRATION_TEST") == "1":
+        return
+    
     monkeypatch.setenv("NO_NETWORK", "1")
 
     # Mock boto3 client for Bedrock

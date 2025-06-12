@@ -19,6 +19,8 @@ from agents.dev.dev_agent import DevAgent
 from agents.planning.planner import ProjectPlanner
 
 
+
+
 class TestIntegrationPipeline(unittest.TestCase):
     """Integration tests for the full analyser → planning → dev pipeline."""
 
@@ -129,6 +131,10 @@ Additional Requirements:
 
     def test_full_pipeline_integration(self):
         """Test the complete analyser → planning → dev pipeline."""
+        # Skip if this is not explicitly marked as an integration test run
+        if os.getenv("INTEGRATION_TEST") != "1":
+            self.skipTest("Integration test requires INTEGRATION_TEST=1 environment variable")
+        
         print("\n🔄 Testing full pipeline integration...")
 
         # Track LLM usage to verify no fallbacks
@@ -324,14 +330,32 @@ Additional Requirements:
         # Test analyser error handling
         text_parser = TextParser()
 
-        # Simulate LLM failure by patching
-        with patch.object(
-            text_parser.primary_llm, "invoke", side_effect=Exception("Simulated LLM failure")
-        ):
-            # Should fall back to keyword extraction
-            requirements = text_parser.extract_requirements("Build a simple todo app with React")
+        # Simulate LLM failure by patching the standardized client if available, or primary_llm as fallback
+        if text_parser.standardized_client:
+            # Import BedrockError for the test
+            from agents.common.bedrock_client import BedrockError
+            with patch.object(
+                text_parser.standardized_client, "simple_invoke", side_effect=BedrockError("Simulated LLM failure")
+            ):
+                # Should fall back to keyword extraction
+                requirements = text_parser.extract_requirements("Build a simple todo app with React")
 
-            # Should still produce some output (from fallback)
+                # Should still produce some output (from fallback)
+                self.assertIn("title", requirements)
+                self.assertIn("features", requirements)
+        elif text_parser.primary_llm:
+            with patch.object(
+                text_parser.primary_llm, "invoke", side_effect=Exception("Simulated LLM failure")
+            ):
+                # Should fall back to keyword extraction
+                requirements = text_parser.extract_requirements("Build a simple todo app with React")
+
+                # Should still produce some output (from fallback)
+                self.assertIn("title", requirements)
+                self.assertIn("features", requirements)
+        else:
+            # No LLM available, test direct fallback
+            requirements = text_parser.extract_requirements("Build a simple todo app with React")
             self.assertIn("title", requirements)
             self.assertIn("features", requirements)
 
