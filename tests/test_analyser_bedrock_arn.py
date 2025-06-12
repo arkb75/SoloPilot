@@ -19,7 +19,7 @@ sys.path.insert(0, str(project_root))
 
 
 def test_analyser_uses_bedrock_arn():
-    """Test that analyser uses inference profile ARN as model_id."""
+    """Test that analyser uses inference profile ARN correctly via standardized client."""
     # Create a temporary config file with ARN
     config_data = {
         "llm": {
@@ -36,10 +36,10 @@ def test_analyser_uses_bedrock_arn():
         config_path = f.name
 
     try:
-        # Mock ChatBedrock to capture initialization parameters
-        with patch("agents.analyser.parser.ChatBedrock") as mock_chatbedrock:
-            mock_instance = MagicMock()
-            mock_chatbedrock.return_value = mock_instance
+        # Mock standardized client to verify it gets initialized with correct config
+        with patch("agents.analyser.parser.create_bedrock_client") as mock_create_client:
+            mock_client = MagicMock()
+            mock_create_client.return_value = mock_client
 
             # Clear NO_NETWORK to allow Bedrock initialization
             with patch.dict(os.environ, {"NO_NETWORK": "0"}, clear=False):
@@ -48,15 +48,13 @@ def test_analyser_uses_bedrock_arn():
 
                 parser = TextParser(config_path=config_path)
 
-                # Verify ChatBedrock was called with the ARN as model_id
-                mock_chatbedrock.assert_called_once_with(
-                    model_id="arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0",
-                    region_name="us-east-2",
-                    model_kwargs={"temperature": 0.1, "max_tokens": 2048},
-                )
+                # Verify standardized client was created with the config
+                mock_create_client.assert_called_once()
+                config_arg = mock_create_client.call_args[0][0]
+                assert config_arg["llm"]["bedrock"]["inference_profile_arn"] == "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0"
 
-                # Verify the parser has the LLM initialized
-                assert parser.primary_llm == mock_instance
+                # Verify the parser has the standardized client initialized
+                assert parser.standardized_client == mock_client
 
     finally:
         os.unlink(config_path)
@@ -101,23 +99,21 @@ def test_analyser_respects_no_network():
 def test_analyser_fallback_config():
     """Test that analyser uses fallback config when no config file exists."""
     # Use a non-existent config path
-    with patch("agents.analyser.parser.ChatBedrock") as mock_chatbedrock:
-        mock_instance = MagicMock()
-        mock_chatbedrock.return_value = mock_instance
+    with patch("agents.analyser.parser.create_bedrock_client") as mock_create_client:
+        mock_client = MagicMock()
+        mock_create_client.return_value = mock_client
 
         # Clear NO_NETWORK to allow Bedrock initialization
         with patch.dict(os.environ, {"NO_NETWORK": "0"}, clear=False):
             # Import and initialize TextParser with non-existent config
             from agents.analyser.parser import TextParser
 
-            TextParser(config_path="non_existent_config.yaml")
+            parser = TextParser(config_path="non_existent_config.yaml")
 
-            # Verify ChatBedrock was called with the fallback ARN
-            mock_chatbedrock.assert_called_once_with(
-                model_id="arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0",
-                region_name="us-east-2",
-                model_kwargs={"temperature": 0.1, "max_tokens": 2048},
-            )
+            # Verify standardized client was created with fallback config
+            mock_create_client.assert_called_once()
+            config_arg = mock_create_client.call_args[0][0]
+            assert config_arg["llm"]["bedrock"]["inference_profile_arn"] == "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0"
 
 
 def test_analyser_env_var_substitution():
@@ -138,9 +134,9 @@ def test_analyser_env_var_substitution():
         config_path = f.name
 
     try:
-        with patch("agents.analyser.parser.ChatBedrock") as mock_chatbedrock:
-            mock_instance = MagicMock()
-            mock_chatbedrock.return_value = mock_instance
+        with patch("agents.analyser.parser.create_bedrock_client") as mock_create_client:
+            mock_client = MagicMock()
+            mock_create_client.return_value = mock_client
 
             # Set environment variables including clearing NO_NETWORK
             test_arn = "arn:aws:bedrock:us-west-2:123456789012:inference-profile/test"
@@ -150,14 +146,13 @@ def test_analyser_env_var_substitution():
             ):
                 from agents.analyser.parser import TextParser
 
-                TextParser(config_path=config_path)
+                parser = TextParser(config_path=config_path)
 
-                # Verify ChatBedrock was called with the env var values
-                mock_chatbedrock.assert_called_once_with(
-                    model_id=test_arn,
-                    region_name="us-west-2",
-                    model_kwargs={"temperature": 0.1, "max_tokens": 2048},
-                )
+                # Verify standardized client was created with env var substituted values
+                mock_create_client.assert_called_once()
+                config_arg = mock_create_client.call_args[0][0]
+                assert config_arg["llm"]["bedrock"]["inference_profile_arn"] == test_arn
+                assert config_arg["llm"]["bedrock"]["region"] == "us-west-2"
 
     finally:
         os.unlink(config_path)

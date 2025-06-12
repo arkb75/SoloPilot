@@ -15,6 +15,7 @@ from pathlib import Path
 
 import boto3
 import yaml
+import pytest
 from botocore.exceptions import BotoCoreError, ClientError, ParamValidationError
 
 
@@ -58,17 +59,37 @@ def model_id_from_arn(arn):
     return arn.split("/")[-1]
 
 
+@pytest.fixture
+def bedrock_config():
+    """Load Bedrock configuration for tests."""
+    # Skip tests if NO_NETWORK is set
+    if os.getenv("NO_NETWORK") == "1":
+        pytest.skip("Skipping Bedrock tests due to NO_NETWORK=1")
+    
+    arn, region = load_config()
+    return {"arn": arn, "region": region}
+
+
+@pytest.fixture
+def arn(bedrock_config):
+    """Get inference profile ARN."""
+    return bedrock_config["arn"]
+
+
+@pytest.fixture
+def region(bedrock_config):
+    """Get AWS region."""
+    return bedrock_config["region"]
+
+
 def test_bedrock_python_sdk(arn, region):
     """Test Bedrock access using Python SDK (boto3)."""
     print("\n🐍 Testing Python SDK (boto3)...")
     
-    try:
-        client = boto3.client("bedrock-runtime", region_name=region)
-        acct = boto3.client("sts").get_caller_identity()["Account"]
-        print(f"   🔑 AWS Account: {acct}")
-    except Exception as e:
-        print(f"   ❌ Failed to create Bedrock client: {e}")
-        return False
+    # Create Bedrock client
+    client = boto3.client("bedrock-runtime", region_name=region)
+    acct = boto3.client("sts").get_caller_identity()["Account"]
+    print(f"   🔑 AWS Account: {acct}")
 
     # Test payload
     body = {
@@ -78,6 +99,7 @@ def test_bedrock_python_sdk(arn, region):
         "messages": [{"role": "user", "content": "Hi"}],
     }
 
+    success = False
     try:
         # Try modern signature first (ARN as modelId)
         response = client.invoke_model(
@@ -89,12 +111,11 @@ def test_bedrock_python_sdk(arn, region):
         tokens_used = response_body.get("usage", {})
         print(f"   ✅ Modern signature successful")
         print(f"   📊 Tokens used: {tokens_used.get('input_tokens', '?')} input, {tokens_used.get('output_tokens', '?')} output")
-        return True
+        success = True
 
     except ParamValidationError as e:
         if "inferenceProfileArn" not in str(e):
-            print(f"   ❌ Parameter validation error: {e}")
-            return False
+            pytest.fail(f"Parameter validation error: {e}")
 
         # Try legacy signature
         try:
@@ -109,15 +130,15 @@ def test_bedrock_python_sdk(arn, region):
             tokens_used = response_body.get("usage", {})
             print(f"   ✅ Legacy signature successful")
             print(f"   📊 Tokens used: {tokens_used.get('input_tokens', '?')} input, {tokens_used.get('output_tokens', '?')} output")
-            return True
+            success = True
 
         except (ClientError, BotoCoreError) as e:
-            print(f"   ❌ Legacy signature failed: {e}")
-            return False
+            pytest.fail(f"Legacy signature failed: {e}")
 
     except (ClientError, BotoCoreError) as e:
-        print(f"   ❌ Modern signature failed: {e}")
-        return False
+        pytest.fail(f"Modern signature failed: {e}")
+    
+    assert success, "Neither modern nor legacy signature worked"
 
 
 def test_bedrock_aws_cli(arn, region):
@@ -127,13 +148,10 @@ def test_bedrock_aws_cli(arn, region):
     # Check if AWS CLI is available
     try:
         result = subprocess.run(["aws", "--version"], capture_output=True, text=True)
-        if result.returncode != 0:
-            print("   ❌ AWS CLI not available")
-            return False
+        assert result.returncode == 0, "AWS CLI not available"
         print(f"   📦 {result.stdout.strip()}")
     except FileNotFoundError:
-        print("   ❌ AWS CLI not installed")
-        return False
+        pytest.skip("AWS CLI not installed")
 
     # Create temporary files for request and response
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as body_file:
@@ -162,22 +180,18 @@ def test_bedrock_aws_cli(arn, region):
         
         result = subprocess.run(cmd, capture_output=True, text=True)
         
-        if result.returncode == 0:
-            # Read response
-            with open(output_file_path, 'r') as f:
-                response_data = json.load(f)
-            
-            tokens_used = response_data.get("usage", {})
-            print(f"   ✅ AWS CLI successful")
-            print(f"   📊 Tokens used: {tokens_used.get('input_tokens', '?')} input, {tokens_used.get('output_tokens', '?')} output")
-            return True
-        else:
-            print(f"   ❌ AWS CLI failed: {result.stderr.strip()}")
-            return False
-
-    except Exception as e:
-        print(f"   ❌ AWS CLI test error: {e}")
-        return False
+        assert result.returncode == 0, f"AWS CLI failed: {result.stderr.strip()}"
+        
+        # Read response
+        with open(output_file_path, 'r') as f:
+            response_data = json.load(f)
+        
+        tokens_used = response_data.get("usage", {})
+        print(f"   ✅ AWS CLI successful")
+        print(f"   📊 Tokens used: {tokens_used.get('input_tokens', '?')} input, {tokens_used.get('output_tokens', '?')} output")
+        
+        # Basic response validation
+        assert "content" in response_data, "Response should contain content"
     
     finally:
         # Clean up temporary files
@@ -195,12 +209,14 @@ def test_account_validation(arn):
     expected_account = "392894085110"
     if expected_account in arn:
         print(f"   ✅ ARN contains expected account ID: {expected_account}")
-        return True
     else:
         print(f"   ⚠️  ARN does not contain expected account ID: {expected_account}")
         print(f"   📝 ARN: {arn}")
-        # Don't fail for this - just warn
-        return True
+        # Don't fail for this in CI - just warn
+    
+    # Basic ARN format validation
+    assert arn.startswith("arn:aws:bedrock:"), "ARN should start with arn:aws:bedrock:"
+    assert "inference-profile" in arn, "ARN should contain inference-profile"
 
 
 def main():
