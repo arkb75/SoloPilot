@@ -37,6 +37,18 @@ except ImportError:
     BEDROCK_AVAILABLE = False
     print("⚠️  LangChain AWS not available. LLM features will be disabled.")
 
+# Import standardized Bedrock client
+try:
+    from agents.common.bedrock_client import (
+        BedrockError,
+        StandardizedBedrockClient,
+        create_bedrock_client,
+        get_standardized_error_message,
+    )
+    STANDARDIZED_CLIENT_AVAILABLE = True
+except ImportError:
+    STANDARDIZED_CLIENT_AVAILABLE = False
+
 # Vector similarity - try FAISS first, fallback to scikit-learn
 try:
     import faiss  # noqa: F401
@@ -57,6 +69,9 @@ class TextParser:
 
     def __init__(self, config_path: Optional[str] = None):
         self.config = self._load_config(config_path)
+        self.primary_llm = None
+        self.fallback_llm = None
+        self.standardized_client = None
         self._setup_llm()
 
     def _load_config(self, config_path: Optional[str]) -> Dict[str, Any]:
@@ -98,48 +113,47 @@ class TextParser:
         return arn.split("/")[-1]
 
     def _setup_llm(self):
-        """Initialize LLM instances."""
-        # Check for NO_NETWORK environment variable
+        """Initialize LLM instances with standardized and legacy support."""
+        # Try standardized client first
+        if STANDARDIZED_CLIENT_AVAILABLE:
+            try:
+                self.standardized_client = create_bedrock_client(self.config)
+                print("✅ Standardized Bedrock client initialized")
+                return
+            except BedrockError as e:
+                error_msg = get_standardized_error_message(e, "analyser")
+                print(error_msg)
+                if "NO_NETWORK" in str(e):
+                    # Allow offline mode
+                    return
+
+        # Fallback to legacy LangChain initialization
         if os.getenv("NO_NETWORK") == "1":
             print("🚫 NO_NETWORK=1, skipping Bedrock initialization")
-            self.primary_llm = None
-            self.fallback_llm = None
             return
 
         if not LANGCHAIN_AVAILABLE:
-            self.primary_llm = None
-            self.fallback_llm = None
             return
 
-        # Setup primary LLM (Bedrock)
-        self.primary_llm = None
+        # Setup primary LLM (Bedrock) - legacy mode
         if BEDROCK_AVAILABLE and self.config["llm"]["primary"] == "bedrock":
             try:
                 bedrock_config = self.config["llm"].get("bedrock", {})
-
-                # Get inference profile ARN (required)
                 inference_profile_arn = bedrock_config.get("inference_profile_arn")
+                
                 if not inference_profile_arn:
                     print("⚠️  No inference_profile_arn found in config, skipping Bedrock")
-                    self.primary_llm = None
                     return
 
-                # Extract model_id from ARN (matching planning agent pattern)
                 model_id = self._model_id_from_arn(inference_profile_arn)
-                
                 self.primary_llm = ChatBedrock(
                     model_id=model_id,
                     region_name=bedrock_config.get("region", "us-east-2"),
                     model_kwargs=bedrock_config.get("model_kwargs", {"temperature": 0.1, "max_tokens": 2048}),
                 )
-
-                print("✅ AWS Bedrock initialized successfully")
+                print("✅ Legacy Bedrock client initialized")
             except Exception as e:
-                print(f"⚠️  Bedrock initialization failed: {e}")
-                self.primary_llm = None
-
-        # No fallback LLM - Bedrock only
-        self.fallback_llm = None
+                print(f"⚠️  Legacy Bedrock initialization failed: {e}")
 
     def parse_file(self, file_path: str) -> str:
         """Parse a single text file and extract content."""
@@ -201,22 +215,47 @@ class TextParser:
 
     def extract_requirements(self, text: str) -> Dict[str, Any]:
         """Extract structured requirements from text using Bedrock LLM."""
-        if not LANGCHAIN_AVAILABLE or not self.primary_llm:
-            # Fallback to simple keyword extraction
+        # Try standardized client first
+        if self.standardized_client:
+            return self._extract_with_standardized_client(text)
+        
+        # Fallback to legacy LangChain client
+        if LANGCHAIN_AVAILABLE and self.primary_llm:
+            return self._extract_with_legacy_client(text)
+            
+        # Ultimate fallback to keyword extraction
+        print("🔄 No LLM available, using keyword extraction fallback")
+        return self._extract_requirements_fallback(text)
+
+    def _extract_with_standardized_client(self, text: str) -> Dict[str, Any]:
+        """Extract requirements using standardized Bedrock client."""
+        prompt = self._build_extraction_prompt(text)
+        
+        try:
+            print("🧠 Using standardized Bedrock client")
+            response = self.standardized_client.simple_invoke(prompt)
+            print("✅ Standardized LLM extraction successful")
+            return self._parse_llm_response_text(response)
+        except (BedrockError, ValueError, json.JSONDecodeError) as e:
+            if isinstance(e, BedrockError):
+                error_msg = get_standardized_error_message(e, "analyser")
+                print(error_msg)
+            else:
+                print(f"⚠️  JSON parsing failed: {e}")
+            print("🔄 Using keyword extraction fallback")
             return self._extract_requirements_fallback(text)
 
+    def _extract_with_legacy_client(self, text: str) -> Dict[str, Any]:
+        """Extract requirements using legacy LangChain client."""
         prompt = self._build_extraction_prompt(text)
-
+        
         try:
-            print(f"🧠 Using LLM: {self.primary_llm.__class__.__name__}")
-            # Modern LangChain uses invoke() method
+            print(f"🧠 Using legacy LLM: {self.primary_llm.__class__.__name__}")
             response = self.primary_llm.invoke(prompt)
-
-            print("✅ LLM extraction successful")
+            print("✅ Legacy LLM extraction successful")
             return self._parse_llm_response(response)
         except Exception as e:
-            print(f"⚠️  Bedrock LLM failed ({e})")
-            # Fail fast - no fallback to OpenAI, use keyword extraction only
+            print(f"⚠️  Legacy Bedrock LLM failed ({e})")
             print("🔄 Using keyword extraction fallback")
             return self._extract_requirements_fallback(text)
 
@@ -245,9 +284,12 @@ Respond with ONLY the JSON object, no additional text:
 """
 
     def _parse_llm_response(self, response) -> Dict[str, Any]:
-        """Parse LLM response into structured data."""
+        """Parse LangChain LLM response into structured data."""
         content = response.content if hasattr(response, "content") else str(response)
+        return self._parse_llm_response_text(content)
 
+    def _parse_llm_response_text(self, content: str) -> Dict[str, Any]:
+        """Parse raw text response into structured data."""
         # Extract JSON from response
         try:
             # Find JSON block in response

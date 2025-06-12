@@ -6,34 +6,39 @@ Transforms planning output into milestone-based code structure with skeleton imp
 
 import json
 import os
-import random
 import re
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import boto3
 import yaml
-from botocore.exceptions import BotoCoreError, ClientError, ParamValidationError
+
+from agents.common.bedrock_client import (
+    BedrockError,
+    StandardizedBedrockClient,
+    create_bedrock_client,
+    get_standardized_error_message,
+)
 
 
 class DevAgent:
     def __init__(self, config_path: str = "config/model_config.yaml"):
         """Initialize the dev agent with configuration."""
-        # Check for NO_NETWORK environment variable first
-        if os.getenv("NO_NETWORK") == "1":
-            print("🚫 NO_NETWORK=1, skipping Bedrock initialization")
-            self.bedrock_client = None
-            self.config = self._load_config(config_path)
-            return
-            
         self.config = self._load_config(config_path)
-        self._validate_credentials()
-        self._validate_inference_profile()
         self.bedrock_client = None
-        self._init_llm_clients()
-        self._validate_inference_profile_access()
+        
+        # Initialize Bedrock client with standardized error handling
+        try:
+            self.bedrock_client = create_bedrock_client(self.config)
+            print("✅ Bedrock client initialized successfully")
+        except BedrockError as e:
+            error_msg = get_standardized_error_message(e, "dev-agent")
+            print(error_msg)
+            if "NO_NETWORK" in str(e):
+                # Allow offline mode
+                self.bedrock_client = None
+            else:
+                raise
 
     def _load_config(self, config_path: str) -> Dict[str, Any]:
         """Load configuration from YAML file with environment variable substitution."""
@@ -52,155 +57,28 @@ class DevAgent:
         content = re.sub(r"\$\{([^}]+)\}", env_substitute, content)
         return yaml.safe_load(content)
 
-    def _validate_credentials(self) -> None:
-        """Fail fast if no AWS credentials are available for Bedrock."""
-        has_env = all(os.getenv(k) for k in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"))
-        has_profile = Path("~/.aws/credentials").expanduser().exists()
-        if not (has_env or has_profile):
-            raise RuntimeError(
-                "❌ Bedrock credentials not found. "
-                "Set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY or configure ~/.aws/credentials."
-            )
-
-    def _validate_inference_profile(self) -> None:
-        """Fail fast if inference profile ARN is missing or invalid."""
-        arn = self.config["llm"]["bedrock"].get("inference_profile_arn")
-        if not arn:
-            raise RuntimeError(
-                "❌ Bedrock inference_profile_arn not found in config. "
-                "Update config/model_config.yaml with a valid ARN."
-            )
-        if not arn.startswith("arn:aws:bedrock:"):
-            raise RuntimeError(
-                f"❌ Invalid inference profile ARN format: {arn}. "
-                "Expected format: arn:aws:bedrock:region:account:inference-profile/profile-id"
-            )
-
-    def _validate_inference_profile_access(self) -> None:
-        """Fail fast if we don't have access to the inference profile."""
-        if not self.bedrock_client:
-            return  # Skip validation if no client
-
-        try:
-            # Try a simple operation to validate access - bedrock-runtime doesn't have list operations
-            # We'll skip this validation for now since there's no good way to test access without invoking
-            pass
-        except ClientError as e:
-            if "AccessDeniedException" in str(e):
-                arn = self.config["llm"]["bedrock"]["inference_profile_arn"]
-                raise RuntimeError(
-                    f"❌ Bedrock access denied for inference profile. "
-                    f"ARN: {arn}. Verify you have bedrock:InvokeModel permissions."
-                ) from e
-
-    def _init_llm_clients(self):
-        """Initialize Bedrock client."""
-        try:
-            # Initialize Bedrock client
-            self.bedrock_client = boto3.client(
-                "bedrock-runtime", region_name=self.config["llm"]["bedrock"]["region"]
-            )
-        except Exception as e:
-            raise RuntimeError(f"Failed to initialize Bedrock client: {e}")
-
-    def _model_id_from_arn(self, arn: str) -> str:
-        """Extract modelId from inference profile ARN.
-
-        ARN format: arn:aws:bedrock:<region>:<acct>:inference-profile/<modelId>
-        """
-        return arn.split("/")[-1]
-
-    def _invoke_bedrock(
-        self, model_id: str, inference_profile_arn: Optional[str], body: dict
-    ) -> str:
-        """Helper to invoke Bedrock with conditional parameters."""
-        kwargs = {
-            "modelId": model_id,
-            "body": json.dumps(body),
-            "contentType": "application/json",
-        }
-        if inference_profile_arn:
-            kwargs["inferenceProfileArn"] = inference_profile_arn
-
-        response = self.bedrock_client.invoke_model(**kwargs)
-        response_body = json.loads(response["body"].read())
-        return response_body["content"][0]["text"]
-
-    def _call_bedrock(self, prompt: str) -> str:
-        """Call AWS Bedrock with SDK-agnostic compatibility wrapper."""
-        if not self.bedrock_client:
-            raise Exception("Bedrock client not available")
-
-        inference_profile_arn = self.config["llm"]["bedrock"]["inference_profile_arn"]
-        model_id = self._model_id_from_arn(inference_profile_arn)
-
-        body = {
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": self.config["llm"]["bedrock"]["model_kwargs"]["max_tokens"],
-            "temperature": self.config["llm"]["bedrock"]["model_kwargs"]["temperature"],
-            "top_p": self.config["llm"]["bedrock"]["model_kwargs"]["top_p"],
-            "messages": [{"role": "user", "content": prompt}],
-        }
-
-        try:
-            # 1️⃣ Try modern signature (ARN as modelId) - preferred by latest botocore
-            return self._invoke_bedrock(inference_profile_arn, None, body)
-        except ParamValidationError as e:
-            if "inferenceProfileArn" not in str(e):
-                # Some other parameter error
-                raise RuntimeError(f"❌ Bedrock parameter validation failed: {e}") from e
-
-            # 2️⃣ Fall back to legacy signature (modelId + inferenceProfileArn)
-            try:
-                return self._invoke_bedrock(model_id, inference_profile_arn, body)
-            except (ClientError, BotoCoreError) as e:
-                # AccessDenied or other errors - fail immediately, no stub fallback
-                if "AccessDeniedException" in str(e) or "ValidationException" in str(e):
-                    raise RuntimeError(
-                        f"❌ Bedrock inference profile access denied. "
-                        f"ARN attempted: {inference_profile_arn}. "
-                        f"Verify the profile exists and you have access."
-                    ) from e
-                raise RuntimeError(f"❌ Bedrock API error: {e}") from e
-
-        except (ClientError, BotoCoreError) as e:
-            # AccessDenied or other errors from first attempt - fail immediately, no stub fallback
-            if "AccessDeniedException" in str(e) or "ValidationException" in str(e):
-                raise RuntimeError(
-                    f"❌ Bedrock inference profile access denied. "
-                    f"ARN attempted: {inference_profile_arn}. "
-                    f"Verify the profile exists and you have access."
-                ) from e
-            raise RuntimeError(f"❌ Bedrock API error: {e}") from e
-
-    def _call_llm_with_retry(self, prompt: str, max_retries: int = 3) -> str:
-        """Call Bedrock with exponential backoff retry."""
-        last_exception = None
-
-        for attempt in range(max_retries):
-            try:
-                return self._call_bedrock(prompt)
-            except Exception as e:
-                last_exception = e
-                if attempt < max_retries - 1:
-                    # Exponential backoff: 2^attempt + random jitter
-                    wait_time = (2**attempt) + random.uniform(0, 1)
-                    print(f"Bedrock call failed (attempt {attempt + 1}/{max_retries}): {e}")
-                    print(f"Retrying in {wait_time:.1f} seconds...")
-                    time.sleep(wait_time)
-                else:
-                    print(f"Final Bedrock attempt failed: {e}")
-
-        raise last_exception
 
     def _call_llm(self, prompt: str) -> str:
-        """Call Bedrock with retry logic - fail loud, no stub fallback."""
-        if os.getenv("NO_NETWORK") == "1":
-            raise RuntimeError(
-                "❌ NO_NETWORK=1 is set. Cannot make Bedrock calls in offline mode. "
-                "Remove NO_NETWORK=1 to enable LLM functionality."
+        """Call Bedrock with standardized error handling."""
+        if not self.bedrock_client:
+            raise BedrockError(
+                "❌ Bedrock client not available. "
+                "Initialize client or remove NO_NETWORK=1 to enable LLM functionality."
             )
-        return self._call_llm_with_retry(prompt)
+        
+        try:
+            # Get model configuration
+            model_config = self.config.get("llm", {}).get("bedrock", {}).get("model_kwargs", {})
+            max_tokens = model_config.get("max_tokens", 2048)
+            temperature = model_config.get("temperature", 0.1)
+            
+            # Use standardized client
+            return self.bedrock_client.simple_invoke(prompt, max_tokens, temperature)
+            
+        except BedrockError as e:
+            error_msg = get_standardized_error_message(e, "dev-agent")
+            print(error_msg)
+            raise
 
     def _generate_stub_code(self) -> str:
         """Generate basic stub code when LLM calls fail."""
