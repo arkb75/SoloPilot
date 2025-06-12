@@ -1,7 +1,7 @@
 # SoloPilot Development Makefile
 # Provides convenient commands for common development tasks
 
-.PHONY: help venv install run test demo plan analyze-and-plan dev plan-dev dev-scout lint clean docker docker-down
+.PHONY: help venv install run test demo plan analyze-and-plan dev plan-dev dev-scout lint clean docker docker-down test-bedrock test-bedrock-cli
 
 # Default target
 help:
@@ -19,6 +19,8 @@ help:
 	@echo "  make plan-dev   Run analyser → planner → dev agent (end-to-end)"
 	@echo "  make dev-scout  Run dev agent with Context7 scouting enabled"
 	@echo "  make test       Run test suite"
+	@echo "  make test-bedrock    Run comprehensive Bedrock API tests"
+	@echo "  make test-bedrock-cli Run AWS CLI Bedrock ping test"
 	@echo "  make lint       Run code linting and formatting"
 	@echo "  make demo       Run demo script with sample data"
 	@echo ""
@@ -147,3 +149,15 @@ setup: venv
 		echo "✅ Tesseract found"; \
 	fi
 	@echo "🎉 Setup complete! Run 'source .venv/bin/activate' then 'make run' to test."
+
+# Run comprehensive Bedrock API tests
+test-bedrock:
+	@echo "🔍 Running comprehensive Bedrock API tests..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	. .venv/bin/activate && python scripts/test_bedrock_direct.py
+
+# Run AWS CLI Bedrock ping test
+test-bedrock-cli:
+	@echo "🔧 Running AWS CLI Bedrock ping test..."
+	@chmod +x scripts/ping_bedrock_cli.sh
+	./scripts/ping_bedrock_cli.sh
