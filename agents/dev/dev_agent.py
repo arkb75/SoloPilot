@@ -15,10 +15,10 @@ import yaml
 
 from agents.common.bedrock_client import (
     BedrockError,
-    StandardizedBedrockClient,
     create_bedrock_client,
     get_standardized_error_message,
 )
+from agents.dev.context_packer import build_context
 
 
 class DevAgent:
@@ -26,7 +26,7 @@ class DevAgent:
         """Initialize the dev agent with configuration."""
         self.config = self._load_config(config_path)
         self.bedrock_client = None
-        
+
         # Initialize Bedrock client with standardized error handling
         try:
             self.bedrock_client = create_bedrock_client(self.config)
@@ -57,24 +57,31 @@ class DevAgent:
         content = re.sub(r"\$\{([^}]+)\}", env_substitute, content)
         return yaml.safe_load(content)
 
-
-    def _call_llm(self, prompt: str) -> str:
-        """Call Bedrock with standardized error handling."""
+    def _call_llm(self, prompt: str, milestone_path: Optional[Path] = None) -> str:
+        """Call Bedrock with standardized error handling and context packing."""
         if not self.bedrock_client:
             raise BedrockError(
                 "❌ Bedrock client not available. "
                 "Initialize client or remove NO_NETWORK=1 to enable LLM functionality."
             )
-        
+
+        # Build context if milestone_path is provided
+        enhanced_prompt = prompt
+        if milestone_path:
+            context = build_context(milestone_path)
+            if context.strip():
+                enhanced_prompt = context + prompt
+                print(f"📦 Context packed: {len(context)} chars from {milestone_path}")
+
         try:
             # Get model configuration
             model_config = self.config.get("llm", {}).get("bedrock", {}).get("model_kwargs", {})
             max_tokens = model_config.get("max_tokens", 2048)
             temperature = model_config.get("temperature", 0.1)
-            
+
             # Use standardized client
-            return self.bedrock_client.simple_invoke(prompt, max_tokens, temperature)
-            
+            return self.bedrock_client.simple_invoke(enhanced_prompt, max_tokens, temperature)
+
         except BedrockError as e:
             error_msg = get_standardized_error_message(e, "dev-agent")
             print(error_msg)
@@ -253,7 +260,7 @@ Focus on creating a solid foundation that a developer can build upon."""
             prompt = self._create_milestone_prompt(
                 milestone, planning_data.get("tech_stack", []), language
             )
-            llm_response = self._call_llm(prompt)
+            llm_response = self._call_llm(prompt, milestone_dir)
 
             # Parse response
             skeleton_code, unit_test = self._parse_llm_response(llm_response, language)

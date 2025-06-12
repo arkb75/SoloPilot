@@ -25,7 +25,7 @@ def test_analyser_uses_bedrock_arn():
         "llm": {
             "primary": "bedrock",
             "bedrock": {
-                "inference_profile_arn": "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0",
+                "inference_profile_arn": "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0",
                 "region": "us-east-2",
             },
         }
@@ -51,7 +51,10 @@ def test_analyser_uses_bedrock_arn():
                 # Verify standardized client was created with the config
                 mock_create_client.assert_called_once()
                 config_arg = mock_create_client.call_args[0][0]
-                assert config_arg["llm"]["bedrock"]["inference_profile_arn"] == "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0"
+                assert (
+                    config_arg["llm"]["bedrock"]["inference_profile_arn"]
+                    == "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"
+                )
 
                 # Verify the parser has the standardized client initialized
                 assert parser.standardized_client == mock_client
@@ -66,7 +69,7 @@ def test_analyser_respects_no_network():
         "llm": {
             "primary": "bedrock",
             "bedrock": {
-                "inference_profile_arn": "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0",
+                "inference_profile_arn": "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0",
                 "region": "us-east-2",
             },
         }
@@ -108,12 +111,15 @@ def test_analyser_fallback_config():
             # Import and initialize TextParser with non-existent config
             from agents.analyser.parser import TextParser
 
-            parser = TextParser(config_path="non_existent_config.yaml")
+            TextParser(config_path="non_existent_config.yaml")
 
             # Verify standardized client was created with fallback config
             mock_create_client.assert_called_once()
             config_arg = mock_create_client.call_args[0][0]
-            assert config_arg["llm"]["bedrock"]["inference_profile_arn"] == "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0"
+            assert (
+                config_arg["llm"]["bedrock"]["inference_profile_arn"]
+                == "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"
+            )
 
 
 def test_analyser_env_var_substitution():
@@ -146,7 +152,7 @@ def test_analyser_env_var_substitution():
             ):
                 from agents.analyser.parser import TextParser
 
-                parser = TextParser(config_path=config_path)
+                TextParser(config_path=config_path)
 
                 # Verify standardized client was created with env var substituted values
                 mock_create_client.assert_called_once()

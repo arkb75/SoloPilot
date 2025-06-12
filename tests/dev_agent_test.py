@@ -13,7 +13,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from botocore.exceptions import ParamValidationError
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent
@@ -315,6 +314,7 @@ describe('ProjectSetup', () => {
         # Mock standardized client to fail
         with patch("agents.common.bedrock_client.StandardizedBedrockClient") as mock_client_class:
             from agents.common.bedrock_client import BedrockError
+
             mock_client = MagicMock()
             mock_client.simple_invoke.side_effect = BedrockError("Bedrock access denied")
             mock_client_class.return_value = mock_client
@@ -333,6 +333,7 @@ describe('ProjectSetup', () => {
         with patch.dict(os.environ, {}, clear=True):  # Clear all env vars
             with patch("os.path.exists", return_value=False):  # No AWS profile
                 from agents.common.bedrock_client import BedrockAccessError
+
                 with pytest.raises(BedrockAccessError, match="AWS credentials not found"):
                     DevAgent(config_path=temp_config_file)
 
@@ -349,7 +350,9 @@ describe('ProjectSetup', () => {
         """Test credential validation with AWS profile."""
         with patch.dict(os.environ, {}, clear=True):  # Clear env vars
             with patch("os.path.exists", return_value=True):  # AWS profile exists
-                with patch("agents.common.bedrock_client.StandardizedBedrockClient") as mock_client_class:
+                with patch(
+                    "agents.common.bedrock_client.StandardizedBedrockClient"
+                ) as mock_client_class:
                     mock_client = MagicMock()
                     mock_client_class.return_value = mock_client
                     # Should not raise
@@ -361,7 +364,9 @@ describe('ProjectSetup', () => {
         with patch.dict(
             os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
         ):
-            with patch("agents.common.bedrock_client.StandardizedBedrockClient") as mock_client_class:
+            with patch(
+                "agents.common.bedrock_client.StandardizedBedrockClient"
+            ) as mock_client_class:
                 mock_client = MagicMock()
                 mock_client_class.return_value = mock_client
                 # Should not raise during initialization (validation is in standardized client)
@@ -375,7 +380,9 @@ describe('ProjectSetup', () => {
         with patch.dict(
             os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
         ):
-            with patch("agents.common.bedrock_client.StandardizedBedrockClient") as mock_client_class:
+            with patch(
+                "agents.common.bedrock_client.StandardizedBedrockClient"
+            ) as mock_client_class:
                 mock_client = MagicMock()
                 mock_client.simple_invoke.return_value = "Modern response"
                 mock_client_class.return_value = mock_client
@@ -391,7 +398,9 @@ describe('ProjectSetup', () => {
         with patch.dict(
             os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
         ):
-            with patch("agents.common.bedrock_client.StandardizedBedrockClient") as mock_client_class:
+            with patch(
+                "agents.common.bedrock_client.StandardizedBedrockClient"
+            ) as mock_client_class:
                 mock_client = MagicMock()
                 mock_client.simple_invoke.return_value = "Legacy response"
                 mock_client_class.return_value = mock_client
@@ -406,7 +415,7 @@ describe('ProjectSetup', () => {
         # Test ARN parsing directly
         test_arn = "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0"
         expected_model_id = "us.anthropic.claude-3-haiku-20240307-v1:0"
-        
+
         # Test ARN parsing logic
         assert test_arn.split("/")[-1] == expected_model_id
 
@@ -415,7 +424,9 @@ describe('ProjectSetup', () => {
         with patch.dict(
             os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
         ):
-            with patch("agents.common.bedrock_client.StandardizedBedrockClient") as mock_client_class:
+            with patch(
+                "agents.common.bedrock_client.StandardizedBedrockClient"
+            ) as mock_client_class:
                 mock_client = MagicMock()
                 mock_client.simple_invoke.return_value = "Test response"
                 mock_client_class.return_value = mock_client
@@ -429,10 +440,10 @@ describe('ProjectSetup', () => {
                 # Verify standardized client was called with correct parameters
                 mock_client.simple_invoke.assert_called_once()
                 call_args = mock_client.simple_invoke.call_args
-                
+
                 # Check prompt parameter
                 assert call_args[0][0] == "Test prompt"
-                
+
                 # Check that max_tokens and temperature were passed
                 assert len(call_args[0]) >= 3  # prompt, max_tokens, temperature
 

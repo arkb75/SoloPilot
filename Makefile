@@ -118,6 +118,16 @@ dev:
 	@echo "⚙️ Running dev agent with latest planning output..."
 	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
 	. .venv/bin/activate && python scripts/check_bedrock.py && python scripts/run_dev_agent.py
+	@if [ ! -z "$(PUSH_REMOTE)" ]; then \
+		echo "🚀 Pushing artifacts to remote repository..."; \
+		. .venv/bin/activate && \
+		LATEST_OUTPUT=$$(find output/dev -maxdepth 1 -type d -name "20*" | sort | tail -1) && \
+		if [ ! -z "$$LATEST_OUTPUT" ]; then \
+			python scripts/push_artifacts.py --src "$$LATEST_OUTPUT" --remote "$(PUSH_REMOTE)"; \
+		else \
+			echo "⚠️ No dev output directory found to push"; \
+		fi; \
+	fi
 
 # Run full analyser → planner → dev agent workflow
 plan-dev:

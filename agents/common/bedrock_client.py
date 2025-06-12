@@ -16,21 +16,25 @@ from botocore.exceptions import BotoCoreError, ClientError, ParamValidationError
 
 class BedrockError(Exception):
     """Base exception for Bedrock-related errors."""
+
     pass
 
 
 class BedrockAccessError(BedrockError):
     """Raised when Bedrock access is denied or credentials are invalid."""
+
     pass
 
 
 class BedrockValidationError(BedrockError):
     """Raised when Bedrock request validation fails."""
+
     pass
 
 
 class BedrockNetworkError(BedrockError):
     """Raised when network connectivity to Bedrock fails."""
+
     pass
 
 
@@ -42,13 +46,13 @@ class StandardizedBedrockClient:
         self.inference_profile_arn = inference_profile_arn
         self.region = region
         self.client = None
-        
+
         # Check for offline mode
         if os.getenv("NO_NETWORK") == "1":
             raise BedrockNetworkError(
                 "🚫 NO_NETWORK=1 is set. Cannot initialize Bedrock client in offline mode."
             )
-        
+
         self._initialize_client()
 
     def _initialize_client(self):
@@ -56,13 +60,13 @@ class StandardizedBedrockClient:
         try:
             # Validate credentials first
             self._validate_credentials()
-            
+
             # Initialize client
             self.client = boto3.client("bedrock-runtime", region_name=self.region)
-            
+
             # Validate inference profile access
             self._validate_inference_profile()
-            
+
         except (ClientError, BotoCoreError) as e:
             raise BedrockAccessError(f"Failed to initialize Bedrock client: {e}") from e
 
@@ -70,7 +74,7 @@ class StandardizedBedrockClient:
         """Validate AWS credentials are available."""
         has_env = all(os.getenv(k) for k in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"))
         has_profile = os.path.exists(os.path.expanduser("~/.aws/credentials"))
-        
+
         if not (has_env or has_profile):
             raise BedrockAccessError(
                 "❌ AWS credentials not found. "
@@ -81,7 +85,7 @@ class StandardizedBedrockClient:
         """Validate inference profile ARN format."""
         if not self.inference_profile_arn:
             raise BedrockValidationError("❌ Inference profile ARN is required")
-            
+
         if not self.inference_profile_arn.startswith("arn:aws:bedrock:"):
             raise BedrockValidationError(
                 f"❌ Invalid inference profile ARN format: {self.inference_profile_arn}. "
@@ -92,7 +96,9 @@ class StandardizedBedrockClient:
         """Extract model ID from inference profile ARN."""
         return self.inference_profile_arn.split("/")[-1]
 
-    def _invoke_with_signature(self, model_id: str, inference_profile_arn: Optional[str], body: dict) -> str:
+    def _invoke_with_signature(
+        self, model_id: str, inference_profile_arn: Optional[str], body: dict
+    ) -> str:
         """Helper to invoke Bedrock with conditional parameters."""
         kwargs = {
             "modelId": model_id,
@@ -106,20 +112,21 @@ class StandardizedBedrockClient:
         response_body = json.loads(response["body"].read())
         return response_body["content"][0]["text"]
 
-    def invoke_model(self, messages: list, max_tokens: int = 2048, temperature: float = 0.1, 
-                    max_retries: int = 3) -> str:
+    def invoke_model(
+        self, messages: list, max_tokens: int = 2048, temperature: float = 0.1, max_retries: int = 3
+    ) -> str:
         """
         Invoke Bedrock model with standardized retry logic and error handling.
-        
+
         Args:
             messages: List of message objects in Anthropic format
             max_tokens: Maximum tokens to generate
             temperature: Temperature for response generation
             max_retries: Maximum number of retry attempts
-            
+
         Returns:
             Generated text response
-            
+
         Raises:
             BedrockError: For various Bedrock-related failures
         """
@@ -135,12 +142,12 @@ class StandardizedBedrockClient:
         }
 
         last_exception = None
-        
+
         for attempt in range(max_retries):
             try:
                 # Try modern signature first (ARN as modelId)
                 return self._invoke_with_signature(self.inference_profile_arn, None, body)
-                
+
             except ParamValidationError as e:
                 if "inferenceProfileArn" not in str(e):
                     raise BedrockValidationError(f"Parameter validation failed: {e}") from e
@@ -150,21 +157,25 @@ class StandardizedBedrockClient:
                     return self._invoke_with_signature(model_id, self.inference_profile_arn, body)
                 except (ClientError, BotoCoreError) as legacy_e:
                     last_exception = legacy_e
-                    
+
             except (ClientError, BotoCoreError) as e:
                 last_exception = e
-                
+
             # Handle retry logic
             if attempt < max_retries - 1:
                 # Determine if this is a retryable error
                 error_str = str(last_exception)
-                if any(err in error_str for err in ["AccessDeniedException", "ValidationException"]):
+                if any(
+                    err in error_str for err in ["AccessDeniedException", "ValidationException"]
+                ):
                     # Don't retry access/validation errors
                     break
-                    
+
                 # Exponential backoff with jitter
-                wait_time = (2 ** attempt) + random.uniform(0, 1)
-                print(f"🔄 Bedrock call failed (attempt {attempt + 1}/{max_retries}): {last_exception}")
+                wait_time = (2**attempt) + random.uniform(0, 1)
+                print(
+                    f"🔄 Bedrock call failed (attempt {attempt + 1}/{max_retries}): {last_exception}"
+                )
                 print(f"   Retrying in {wait_time:.1f} seconds...")
                 time.sleep(wait_time)
             else:
@@ -181,14 +192,15 @@ class StandardizedBedrockClient:
             raise BedrockValidationError(
                 f"❌ Bedrock validation error: {last_exception}"
             ) from last_exception
-        elif any(network_err in error_str for network_err in ["ConnectionError", "TimeoutError", "EndpointConnectionError"]):
+        elif any(
+            network_err in error_str
+            for network_err in ["ConnectionError", "TimeoutError", "EndpointConnectionError"]
+        ):
             raise BedrockNetworkError(
                 f"❌ Bedrock network error: {last_exception}"
             ) from last_exception
         else:
-            raise BedrockError(
-                f"❌ Bedrock API error: {last_exception}"
-            ) from last_exception
+            raise BedrockError(f"❌ Bedrock API error: {last_exception}") from last_exception
 
     def simple_invoke(self, prompt: str, max_tokens: int = 2048, temperature: float = 0.1) -> str:
         """Simple single-message invoke for convenience."""
@@ -199,43 +211,43 @@ class StandardizedBedrockClient:
 def create_bedrock_client(config: Dict[str, Any]) -> StandardizedBedrockClient:
     """
     Factory function to create a standardized Bedrock client from config.
-    
+
     Args:
         config: Configuration dictionary containing bedrock settings
-        
+
     Returns:
         Initialized StandardizedBedrockClient
-        
+
     Raises:
         BedrockError: If client creation fails
     """
     bedrock_config = config.get("llm", {}).get("bedrock", {})
-    
+
     inference_profile_arn = bedrock_config.get("inference_profile_arn")
     region = bedrock_config.get("region", "us-east-2")
-    
+
     if not inference_profile_arn:
         raise BedrockValidationError(
             "❌ No inference_profile_arn found in config. "
             "Update config/model_config.yaml with a valid ARN."
         )
-    
+
     return StandardizedBedrockClient(inference_profile_arn, region)
 
 
 def get_standardized_error_message(error: Exception, context: str = "") -> str:
     """
     Generate standardized error messages with troubleshooting guidance.
-    
+
     Args:
         error: The exception that occurred
         context: Additional context (e.g., "analyser", "planner", "dev")
-        
+
     Returns:
         Formatted error message with troubleshooting steps
     """
     context_prefix = f"[{context}] " if context else ""
-    
+
     if isinstance(error, BedrockAccessError):
         return f"""
 {context_prefix}❌ Bedrock Access Error: {error}
@@ -246,7 +258,7 @@ def get_standardized_error_message(error: Exception, context: str = "") -> str:
    3. Verify inference profile exists and is accessible
    4. Check region configuration matches profile region
 """
-    
+
     elif isinstance(error, BedrockValidationError):
         return f"""
 {context_prefix}❌ Bedrock Validation Error: {error}
@@ -256,7 +268,7 @@ def get_standardized_error_message(error: Exception, context: str = "") -> str:
    2. Verify model is available in the specified region
    3. Check request parameters (max_tokens, temperature, etc.)
 """
-    
+
     elif isinstance(error, BedrockNetworkError):
         return f"""
 {context_prefix}❌ Bedrock Network Error: {error}
@@ -267,7 +279,7 @@ def get_standardized_error_message(error: Exception, context: str = "") -> str:
    3. Check VPC/firewall settings if using private networking
    4. Try setting NO_NETWORK=1 for offline development
 """
-    
+
     else:
         return f"""
 {context_prefix}❌ Bedrock Error: {error}

@@ -14,8 +14,8 @@ import tempfile
 from pathlib import Path
 
 import boto3
-import yaml
 import pytest
+import yaml
 from botocore.exceptions import BotoCoreError, ClientError, ParamValidationError
 
 
@@ -65,7 +65,7 @@ def bedrock_config():
     # Skip tests if NO_NETWORK is set
     if os.getenv("NO_NETWORK") == "1":
         pytest.skip("Skipping Bedrock tests due to NO_NETWORK=1")
-    
+
     arn, region = load_config()
     return {"arn": arn, "region": region}
 
@@ -85,7 +85,7 @@ def region(bedrock_config):
 def test_bedrock_python_sdk(arn, region):
     """Test Bedrock access using Python SDK (boto3)."""
     print("\n🐍 Testing Python SDK (boto3)...")
-    
+
     # Create Bedrock client
     client = boto3.client("bedrock-runtime", region_name=region)
     acct = boto3.client("sts").get_caller_identity()["Account"]
@@ -109,8 +109,10 @@ def test_bedrock_python_sdk(arn, region):
         )
         response_body = json.loads(response["body"].read())
         tokens_used = response_body.get("usage", {})
-        print(f"   ✅ Modern signature successful")
-        print(f"   📊 Tokens used: {tokens_used.get('input_tokens', '?')} input, {tokens_used.get('output_tokens', '?')} output")
+        print("   ✅ Modern signature successful")
+        print(
+            f"   📊 Tokens used: {tokens_used.get('input_tokens', '?')} input, {tokens_used.get('output_tokens', '?')} output"
+        )
         success = True
 
     except ParamValidationError as e:
@@ -128,8 +130,10 @@ def test_bedrock_python_sdk(arn, region):
             )
             response_body = json.loads(response["body"].read())
             tokens_used = response_body.get("usage", {})
-            print(f"   ✅ Legacy signature successful")
-            print(f"   📊 Tokens used: {tokens_used.get('input_tokens', '?')} input, {tokens_used.get('output_tokens', '?')} output")
+            print("   ✅ Legacy signature successful")
+            print(
+                f"   📊 Tokens used: {tokens_used.get('input_tokens', '?')} input, {tokens_used.get('output_tokens', '?')} output"
+            )
             success = True
 
         except (ClientError, BotoCoreError) as e:
@@ -137,14 +141,14 @@ def test_bedrock_python_sdk(arn, region):
 
     except (ClientError, BotoCoreError) as e:
         pytest.fail(f"Modern signature failed: {e}")
-    
+
     assert success, "Neither modern nor legacy signature worked"
 
 
 def test_bedrock_aws_cli(arn, region):
     """Test Bedrock access using AWS CLI."""
     print("\n🔧 Testing AWS CLI...")
-    
+
     # Check if AWS CLI is available
     try:
         result = subprocess.run(["aws", "--version"], capture_output=True, text=True)
@@ -154,7 +158,7 @@ def test_bedrock_aws_cli(arn, region):
         pytest.skip("AWS CLI not installed")
 
     # Create temporary files for request and response
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as body_file:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as body_file:
         body = {
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 5,
@@ -164,48 +168,56 @@ def test_bedrock_aws_cli(arn, region):
         json.dump(body, body_file)
         body_file_path = body_file.name
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as output_file:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as output_file:
         output_file_path = output_file.name
 
     try:
         # Run AWS CLI command
         cmd = [
-            "aws", "bedrock-runtime", "invoke-model",
-            "--model-id", arn,
-            "--body", f"file://{body_file_path}",
-            "--cli-binary-format", "raw-in-base64-out",
-            "--region", region,
-            output_file_path
+            "aws",
+            "bedrock-runtime",
+            "invoke-model",
+            "--model-id",
+            arn,
+            "--body",
+            f"file://{body_file_path}",
+            "--cli-binary-format",
+            "raw-in-base64-out",
+            "--region",
+            region,
+            output_file_path,
         ]
-        
+
         result = subprocess.run(cmd, capture_output=True, text=True)
-        
+
         assert result.returncode == 0, f"AWS CLI failed: {result.stderr.strip()}"
-        
+
         # Read response
-        with open(output_file_path, 'r') as f:
+        with open(output_file_path, "r") as f:
             response_data = json.load(f)
-        
+
         tokens_used = response_data.get("usage", {})
-        print(f"   ✅ AWS CLI successful")
-        print(f"   📊 Tokens used: {tokens_used.get('input_tokens', '?')} input, {tokens_used.get('output_tokens', '?')} output")
-        
+        print("   ✅ AWS CLI successful")
+        print(
+            f"   📊 Tokens used: {tokens_used.get('input_tokens', '?')} input, {tokens_used.get('output_tokens', '?')} output"
+        )
+
         # Basic response validation
         assert "content" in response_data, "Response should contain content"
-    
+
     finally:
         # Clean up temporary files
         try:
             os.unlink(body_file_path)
             os.unlink(output_file_path)
-        except:
+        except OSError:
             pass
 
 
 def test_account_validation(arn):
     """Validate that the ARN contains the expected account ID."""
     print("\n🔍 Validating account ID...")
-    
+
     expected_account = "392894085110"
     if expected_account in arn:
         print(f"   ✅ ARN contains expected account ID: {expected_account}")
@@ -213,7 +225,7 @@ def test_account_validation(arn):
         print(f"   ⚠️  ARN does not contain expected account ID: {expected_account}")
         print(f"   📝 ARN: {arn}")
         # Don't fail for this in CI - just warn
-    
+
     # Basic ARN format validation
     assert arn.startswith("arn:aws:bedrock:"), "ARN should start with arn:aws:bedrock:"
     assert "inference-profile" in arn, "ARN should contain inference-profile"
@@ -253,7 +265,7 @@ def main():
     # Summary
     print("\n" + "=" * 50)
     print(f"📊 Test Results: {tests_passed}/{total_tests} passed")
-    
+
     if tests_passed == total_tests:
         print("🎉 All Bedrock tests passed!")
         sys.exit(0)

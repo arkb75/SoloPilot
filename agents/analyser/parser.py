@@ -41,10 +41,10 @@ except ImportError:
 try:
     from agents.common.bedrock_client import (
         BedrockError,
-        StandardizedBedrockClient,
         create_bedrock_client,
         get_standardized_error_message,
     )
+
     STANDARDIZED_CLIENT_AVAILABLE = True
 except ImportError:
     STANDARDIZED_CLIENT_AVAILABLE = False
@@ -99,7 +99,7 @@ class TextParser:
             "llm": {
                 "primary": "bedrock",
                 "bedrock": {
-                    "inference_profile_arn": "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0",
+                    "inference_profile_arn": "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0",
                     "region": "us-east-2",
                 },
             }
@@ -140,7 +140,7 @@ class TextParser:
             try:
                 bedrock_config = self.config["llm"].get("bedrock", {})
                 inference_profile_arn = bedrock_config.get("inference_profile_arn")
-                
+
                 if not inference_profile_arn:
                     print("⚠️  No inference_profile_arn found in config, skipping Bedrock")
                     return
@@ -149,7 +149,9 @@ class TextParser:
                 self.primary_llm = ChatBedrock(
                     model_id=model_id,
                     region_name=bedrock_config.get("region", "us-east-2"),
-                    model_kwargs=bedrock_config.get("model_kwargs", {"temperature": 0.1, "max_tokens": 2048}),
+                    model_kwargs=bedrock_config.get(
+                        "model_kwargs", {"temperature": 0.1, "max_tokens": 2048}
+                    ),
                 )
                 print("✅ Legacy Bedrock client initialized")
             except Exception as e:
@@ -218,11 +220,11 @@ class TextParser:
         # Try standardized client first
         if self.standardized_client:
             return self._extract_with_standardized_client(text)
-        
+
         # Fallback to legacy LangChain client
         if LANGCHAIN_AVAILABLE and self.primary_llm:
             return self._extract_with_legacy_client(text)
-            
+
         # Ultimate fallback to keyword extraction
         print("🔄 No LLM available, using keyword extraction fallback")
         return self._extract_requirements_fallback(text)
@@ -230,7 +232,7 @@ class TextParser:
     def _extract_with_standardized_client(self, text: str) -> Dict[str, Any]:
         """Extract requirements using standardized Bedrock client."""
         prompt = self._build_extraction_prompt(text)
-        
+
         try:
             print("🧠 Using standardized Bedrock client")
             response = self.standardized_client.simple_invoke(prompt)
@@ -248,7 +250,7 @@ class TextParser:
     def _extract_with_legacy_client(self, text: str) -> Dict[str, Any]:
         """Extract requirements using legacy LangChain client."""
         prompt = self._build_extraction_prompt(text)
-        
+
         try:
             print(f"🧠 Using legacy LLM: {self.primary_llm.__class__.__name__}")
             response = self.primary_llm.invoke(prompt)

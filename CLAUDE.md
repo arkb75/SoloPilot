@@ -34,7 +34,7 @@ AWS Bedrock (us-east-2) now enforces **Inference Profile ARNs** for all Anthropi
 
 | # | Model (console label) | Inference profile ID (`modelId`) | Inference profile ARN |
 |---|-----------------------|----------------------------------|-----------------------|
-| 1 | Claude 3 Haiku | **us.anthropic.claude-3-haiku-20240307-v1:0** | **arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0** |
+| 1 | Claude 3 Haiku | us.anthropic.claude-3-haiku-20240307-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0 |
 | 2 | Claude 3.5 Haiku | us.anthropic.claude-3-5-haiku-20241022-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0 |
 | 3 | Claude 3.5 Sonnet | us.anthropic.claude-3-5-sonnet-20240620-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-sonnet-20240620-v1:0 |
 | 4 | Claude 3.7 Sonnet | us.anthropic.claude-3-7-sonnet-20250219-v1:0 | arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0 |
@@ -58,6 +58,7 @@ AWS Bedrock (us-east-2) now enforces **Inference Profile ARNs** for all Anthropi
 **⚠️ Every in-repo ARN must contain this account-id (392894085110).  
 If you work in a different account, override BEDROCK_IP_ARN before running.**
 
+• **Default Model**: All agents now use **Claude 4 Sonnet** as the primary model for enhanced reasoning and code generation
 • **Analyser now uses ARN**: All agents (analyser, planner, dev) consistently use inference_profile_arn from config
 
 ## Development Commands

@@ -83,7 +83,7 @@ Build a web-based todo application with the following features:
 - Clean, maintainable code
 - Basic error handling
 """
-        
+
         with open(cls.sample_input_dir / "project_brief.md", "w") as f:
             f.write(project_brief)
 
@@ -98,7 +98,7 @@ Additional Requirements:
 - Deploy to Vercel or similar platform
 - Mobile-first responsive design
 """
-        
+
         with open(cls.sample_input_dir / "additional_requirements.txt", "w") as f:
             f.write(additional_reqs)
 
@@ -124,7 +124,7 @@ Additional Requirements:
         # Restore NO_NETWORK environment variable
         if self.original_no_network is not None:
             os.environ["NO_NETWORK"] = self.original_no_network
-        
+
         os.chdir(self.original_cwd)
 
     def test_full_pipeline_integration(self):
@@ -136,17 +136,21 @@ Additional Requirements:
 
         # Step 1: Run Analyser
         print("📝 Step 1: Running analyser...")
-        
+
         text_parser = TextParser()
         spec_builder = SpecBuilder(str(self.analysis_output_dir))
 
         # Verify analyser uses real LLM (either standardized or legacy)
         has_standardized = text_parser.standardized_client is not None
         has_legacy = text_parser.primary_llm is not None
-        self.assertTrue(has_standardized or has_legacy, "Analyser should have LLM client initialized")
+        self.assertTrue(
+            has_standardized or has_legacy, "Analyser should have LLM client initialized"
+        )
 
         # Parse files
-        text_files = list(self.sample_input_dir.glob("*.md")) + list(self.sample_input_dir.glob("*.txt"))
+        text_files = list(self.sample_input_dir.glob("*.md")) + list(
+            self.sample_input_dir.glob("*.txt")
+        )
         combined_text = ""
         for file_path in text_files:
             content = text_parser.parse_file(str(file_path))
@@ -174,13 +178,16 @@ Additional Requirements:
 
         # Step 2: Run Planning Agent
         print("🔧 Step 2: Running planning agent...")
-        
+
         planner = ProjectPlanner(output_dir=str(self.planning_output_dir))
 
         # Verify planner uses real LLM
         self.assertIsNotNone(planner.primary_llm, "Planner should have primary LLM initialized")
-        self.assertEqual(planner.primary_llm.__class__.__name__, "ChatBedrock",
-                        "Planner should use ChatBedrock, not fallback")
+        self.assertEqual(
+            planner.primary_llm.__class__.__name__,
+            "ChatBedrock",
+            "Planner should use ChatBedrock, not fallback",
+        )
 
         # Generate plan (this will use LLM)
         planning_output = planner.generate_plan(spec)
@@ -192,20 +199,25 @@ Additional Requirements:
         self.assertIsNotNone(planning_output)
         self.assertTrue(len(planning_output.milestones) > 0, "Should generate milestones")
         self.assertTrue(len(planning_output.tech_stack) > 0, "Should recommend tech stack")
-        
+
         planning_file = Path(planning_session_dir) / "planning_output.json"
         self.assertTrue(planning_file.exists(), "Should create planning_output.json")
 
-        print(f"✅ Planner completed: {len(planning_output.milestones)} milestones, "
-              f"tech stack: {', '.join(planning_output.tech_stack[:3])}")
+        print(
+            f"✅ Planner completed: {len(planning_output.milestones)} milestones, "
+            f"tech stack: {', '.join(planning_output.tech_stack[:3])}"
+        )
 
         # Step 3: Run Dev Agent
         print("⚙️ Step 3: Running dev agent...")
-        
+
         dev_agent = DevAgent()
 
         # Verify dev agent has Bedrock client
-        self.assertIsNotNone(dev_agent.bedrock_client, "Dev agent should have standardized Bedrock client initialized")
+        self.assertIsNotNone(
+            dev_agent.bedrock_client,
+            "Dev agent should have standardized Bedrock client initialized",
+        )
 
         # Process planning output (this will use LLM)
         manifest = dev_agent.process_planning_output(str(planning_file), str(self.dev_output_dir))
@@ -219,7 +231,7 @@ Additional Requirements:
         # Check that files were created
         dev_session_dir = Path(manifest["output_directory"])
         self.assertTrue(dev_session_dir.exists(), "Should create dev session directory")
-        
+
         manifest_file = dev_session_dir / "manifest.json"
         self.assertTrue(manifest_file.exists(), "Should create manifest.json")
 
@@ -232,50 +244,69 @@ Additional Requirements:
             impl_files = list(milestone_dir.glob("implementation.*"))
             test_files = list(milestone_dir.glob("test.*"))
             readme_file = milestone_dir / "README.md"
-            
-            self.assertTrue(len(impl_files) > 0, f"Milestone {milestone_dir.name} should have implementation file")
-            self.assertTrue(len(test_files) > 0, f"Milestone {milestone_dir.name} should have test file")
-            self.assertTrue(readme_file.exists(), f"Milestone {milestone_dir.name} should have README")
 
-        print(f"✅ Dev agent completed: {len(manifest['milestones'])} milestone directories created")
+            self.assertTrue(
+                len(impl_files) > 0,
+                f"Milestone {milestone_dir.name} should have implementation file",
+            )
+            self.assertTrue(
+                len(test_files) > 0, f"Milestone {milestone_dir.name} should have test file"
+            )
+            self.assertTrue(
+                readme_file.exists(), f"Milestone {milestone_dir.name} should have README"
+            )
+
+        print(
+            f"✅ Dev agent completed: {len(manifest['milestones'])} milestone directories created"
+        )
 
         # Step 4: Verify no fallbacks were used
         print("🔍 Step 4: Verifying no fallbacks were used...")
-        
+
         # Check that all agents made LLM calls
-        self.assertTrue(any(calls > 0 for calls in llm_calls["analyser"]), 
-                       "Analyser should have made LLM calls")
-        self.assertTrue(any(calls > 0 for calls in llm_calls["planner"]), 
-                       "Planner should have made LLM calls")
-        self.assertTrue(any(calls > 0 for calls in llm_calls["dev"]), 
-                       "Dev agent should have made LLM calls")
+        self.assertTrue(
+            any(calls > 0 for calls in llm_calls["analyser"]), "Analyser should have made LLM calls"
+        )
+        self.assertTrue(
+            any(calls > 0 for calls in llm_calls["planner"]), "Planner should have made LLM calls"
+        )
+        self.assertTrue(
+            any(calls > 0 for calls in llm_calls["dev"]), "Dev agent should have made LLM calls"
+        )
 
         print("✅ All agents used real LLM calls, no fallbacks detected")
 
         # Step 5: Verify output quality
         print("📊 Step 5: Verifying output quality...")
-        
+
         # Check analyser quality
         self.assertGreater(len(spec["features"]), 2, "Should extract multiple features")
         self.assertIn("tech_stack", spec.get("metadata", {}), "Should extract tech stack")
-        
-        # Check planner quality  
-        self.assertGreater(len(planning_output.milestones), 2, "Should generate multiple milestones")
+
+        # Check planner quality
+        self.assertGreater(
+            len(planning_output.milestones), 2, "Should generate multiple milestones"
+        )
         for milestone in planning_output.milestones:
             self.assertIn("tasks", milestone.__dict__, "Each milestone should have tasks")
-            self.assertGreater(len(milestone.tasks), 0, "Each milestone should have at least one task")
+            self.assertGreater(
+                len(milestone.tasks), 0, "Each milestone should have at least one task"
+            )
 
         # Check dev agent quality
         for milestone_info in manifest["milestones"]:
             milestone_dir = dev_session_dir / milestone_info["directory"]
             impl_file = milestone_dir / milestone_info["files"]["implementation"]
-            
+
             # Read implementation file and check it's not just stub
-            with open(impl_file, 'r') as f:
+            with open(impl_file, "r") as f:
                 content = f.read()
-            
-            self.assertNotIn("Generated stub code (LLM unavailable)", content, 
-                           "Should not contain LLM unavailable stub")
+
+            self.assertNotIn(
+                "Generated stub code (LLM unavailable)",
+                content,
+                "Should not contain LLM unavailable stub",
+            )
             self.assertGreater(len(content), 50, "Implementation should have substantial content")
 
         print("✅ Output quality verification passed")
@@ -292,12 +323,14 @@ Additional Requirements:
 
         # Test analyser error handling
         text_parser = TextParser()
-        
+
         # Simulate LLM failure by patching
-        with patch.object(text_parser.primary_llm, 'invoke', side_effect=Exception("Simulated LLM failure")):
+        with patch.object(
+            text_parser.primary_llm, "invoke", side_effect=Exception("Simulated LLM failure")
+        ):
             # Should fall back to keyword extraction
             requirements = text_parser.extract_requirements("Build a simple todo app with React")
-            
+
             # Should still produce some output (from fallback)
             self.assertIn("title", requirements)
             self.assertIn("features", requirements)
@@ -306,24 +339,26 @@ Additional Requirements:
 
         # Test dev agent error handling
         dev_agent = DevAgent()
-        
+
         # Create minimal planning file
         planning_data = {
             "project_title": "Test Project",
-            "milestones": [{
-                "name": "Test Milestone",
-                "description": "Test milestone",
-                "tasks": [{"name": "Test Task", "description": "Test task"}]
-            }],
-            "tech_stack": ["JavaScript"]
+            "milestones": [
+                {
+                    "name": "Test Milestone",
+                    "description": "Test milestone",
+                    "tasks": [{"name": "Test Task", "description": "Test task"}],
+                }
+            ],
+            "tech_stack": ["JavaScript"],
         }
-        
+
         planning_file = self.temp_dir / "test_planning.json"
-        with open(planning_file, 'w') as f:
+        with open(planning_file, "w") as f:
             json.dump(planning_data, f)
 
         # Simulate LLM failure
-        with patch.object(dev_agent, '_call_llm', side_effect=Exception("Simulated LLM failure")):
+        with patch.object(dev_agent, "_call_llm", side_effect=Exception("Simulated LLM failure")):
             # Should raise exception (dev agent fails hard, no fallback)
             with self.assertRaises(Exception):
                 dev_agent.process_planning_output(str(planning_file))
@@ -337,14 +372,16 @@ Additional Requirements:
 
         # Test analyser Bedrock connection
         text_parser = TextParser()
-        has_client = text_parser.standardized_client is not None or text_parser.primary_llm is not None
+        has_client = (
+            text_parser.standardized_client is not None or text_parser.primary_llm is not None
+        )
         self.assertTrue(has_client, "Analyser should initialize Bedrock client")
-        
+
         # Make a simple call
         simple_requirements = text_parser.extract_requirements("Build a hello world app")
         self.assertIn("title", simple_requirements)
 
-        # Test planner Bedrock connection  
+        # Test planner Bedrock connection
         planner = ProjectPlanner()
         self.assertIsNotNone(planner.primary_llm, "Planner should initialize Bedrock")
 
