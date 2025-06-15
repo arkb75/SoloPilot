@@ -16,6 +16,10 @@ botocore>=1.34.120
 pytesseract>=0.3.10
 Pillow>=10.0.0
 
+# Vector similarity search and context storage
+# ChromaDB for persistent context storage and retrieval
+chromadb>=0.4.15,<1.0.0
+
 # Vector similarity search (use conda-forge or brew version if faiss-cpu fails)
 # Option 1: Try faiss-cpu first
 faiss-cpu>=1.11.0; platform_system != "Darwin"

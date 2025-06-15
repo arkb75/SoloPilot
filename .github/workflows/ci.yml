@@ -53,6 +53,7 @@ jobs:
         AWS_SECRET_ACCESS_KEY: dummy
         BEDROCK_IP_ARN: arn:aws:bedrock:us-east-2:111111111111:inference-profile/dummy
         NO_NETWORK: 1
+        AI_PROVIDER: fake
       run: |
         source .venv/bin/activate
         pytest -q
@@ -137,7 +138,7 @@ jobs:
           python -m pytest tests/test_integration_pipeline.py::TestIntegrationPipeline::test_full_pipeline_integration -v --tb=short || echo "Full pipeline test failed - may be due to credentials or LLM limits"
         else
           echo "Running fallback integration test without real LLM calls..."
-          make plan-dev || echo "Integration test completed with fallbacks"
+          AI_PROVIDER=fake make plan-dev || echo "Integration test completed with fallbacks"
         fi
 
     - name: Upload test artifacts
