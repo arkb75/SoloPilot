@@ -37,10 +37,21 @@ def validate_git_url(git_url: str) -> bool:
 
     # Check for valid Git URL patterns
     valid_patterns = [
+        # HTTPS URLs
         git_url.startswith("https://")
         and (".git" in git_url or "github.com" in git_url or "gitlab.com" in git_url),
+        # SSH URLs
         git_url.startswith("git@"),
         git_url.startswith("ssh://git@"),
+        # File URLs
+        git_url.startswith("file://"),
+        # Local bare repository paths (absolute paths ending with .git)
+        (git_url.startswith("/") and git_url.endswith(".git")),
+        # Relative bare repository paths ending with .git (but not other protocols)
+        (
+            not git_url.startswith(("http", "git@", "ssh://", "file://", "ftp://"))
+            and git_url.endswith(".git")
+        ),
     ]
 
     return any(valid_patterns)
@@ -55,7 +66,12 @@ def setup_git_repo(src_path: Path, git_url: str, timestamp: str) -> Dict[str, st
         raise FileNotFoundError(f"Source path does not exist: {src_path}")
 
     if not validate_git_url(git_url):
-        raise ValueError(f"Invalid git URL format: {git_url}")
+        raise ValueError(
+            f"Invalid git URL format: {git_url}\n"
+            f"Hint: use file:///abs/path/repo.git or git@host:org/repo.git\n"
+            f"Valid formats: https://github.com/user/repo.git, git@github.com:user/repo.git, "
+            f"file:///path/to/repo.git, /path/to/bare.git"
+        )
 
     # Initialize git repository
     print(f"📁 Initializing git repository in {src_path}")
@@ -140,6 +156,8 @@ def main():
 Examples:
   python scripts/push_artifacts.py --src output/dev/20250611_123456 --remote https://github.com/user/solopilot-artifacts.git
   python scripts/push_artifacts.py --src output/dev/20250611_123456 --remote git@github.com:user/artifacts.git
+  python scripts/push_artifacts.py --src output/dev/20250611_123456 --remote file:///tmp/bare.git
+  python scripts/push_artifacts.py --src output/dev/20250611_123456 --remote /tmp/bare.git
         """,
     )
 

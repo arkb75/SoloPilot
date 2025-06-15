@@ -15,7 +15,7 @@ def _no_network(monkeypatch):
     # Skip mocking if INTEGRATION_TEST environment variable is set
     if os.getenv("INTEGRATION_TEST") == "1":
         return
-    
+
     monkeypatch.setenv("NO_NETWORK", "1")
 
     # Mock boto3 client for Bedrock

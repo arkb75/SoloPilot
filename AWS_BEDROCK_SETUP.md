@@ -9,7 +9,7 @@ This guide walks you through setting up AWS Bedrock for SoloPilot's requirement 
 1. **Ensure you have an AWS account** with Bedrock access
 2. **Request model access** in AWS Bedrock console:
    - Go to AWS Console → Amazon Bedrock → Model access
-   - Request access to: **Anthropic Claude 3.5 Haiku**
+   - Request access to: **Anthropic Claude 4 Sonnet**
    - Access is usually granted within a few minutes
 
 ### 2. AWS Credentials Setup (Choose One Method)
@@ -61,8 +61,8 @@ Edit `config/model_config.yaml` to change models:
 ```yaml
 llm:
   bedrock:
-    # Claude 3.5 Haiku (fast, cost-effective)
-    model_id: "anthropic.claude-3-5-haiku-20241022-v1:0"
+    # Claude 4 Sonnet (high-performance, reasoning-optimized)
+    inference_profile_arn: "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"
     
     # Alternative models:
     # model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"  # More capable, higher cost
@@ -79,7 +79,7 @@ Available regions for Bedrock:
 ## 💰 Cost Optimization
 
 ### Current Settings (Cost-Optimized)
-- **Primary**: Claude 3.5 Haiku ($1/$5 per 1K input/output tokens)
+- **Primary**: Claude 4 Sonnet (premium tier, enhanced reasoning)
 - **Intelligent routing**: Automatically routes complex requests to appropriate models
 - **Fallback**: OpenAI GPT-4o Mini for redundancy
 

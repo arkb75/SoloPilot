@@ -7,6 +7,7 @@ Transforms planning output into milestone-based code structure with skeleton imp
 import json
 import os
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -58,7 +59,7 @@ class DevAgent:
         return yaml.safe_load(content)
 
     def _call_llm(self, prompt: str, milestone_path: Optional[Path] = None) -> str:
-        """Call Bedrock with standardized error handling and context packing."""
+        """Call Bedrock with standardized error handling, context packing, and cost logging."""
         if not self.bedrock_client:
             raise BedrockError(
                 "❌ Bedrock client not available. "
@@ -79,13 +80,71 @@ class DevAgent:
             max_tokens = model_config.get("max_tokens", 2048)
             temperature = model_config.get("temperature", 0.1)
 
-            # Use standardized client
-            return self.bedrock_client.simple_invoke(enhanced_prompt, max_tokens, temperature)
+            # Capture timing and use metadata-enabled invoke
+            start_time = time.time()
+            response_text, metadata = self.bedrock_client.simple_invoke_with_metadata(
+                enhanced_prompt, max_tokens, temperature
+            )
+            end_time = time.time()
+
+            # Log cost information
+            self._log_bedrock_cost(start_time, end_time, metadata)
+
+            return response_text
 
         except BedrockError as e:
             error_msg = get_standardized_error_message(e, "dev-agent")
             print(error_msg)
             raise
+
+    def _log_bedrock_cost(self, start_time: float, end_time: float, metadata: dict) -> None:
+        """Log Bedrock API cost information to logs/dev_agent.log."""
+        try:
+            # Ensure logs directory exists
+            logs_dir = Path("logs")
+            logs_dir.mkdir(exist_ok=True)
+
+            # Extract cost information from metadata
+            response_metadata = metadata.get("ResponseMetadata", {})
+            http_headers = response_metadata.get("HTTPHeaders", {})
+
+            # Extract token counts from headers
+            tokens_in = http_headers.get("x-amzn-bedrock-tokens-in")
+            tokens_out = http_headers.get("x-amzn-bedrock-tokens-out")
+
+            # Convert to int if present, otherwise use None
+            try:
+                tokens_in = int(tokens_in) if tokens_in else None
+            except (ValueError, TypeError):
+                tokens_in = None
+
+            try:
+                tokens_out = int(tokens_out) if tokens_out else None
+            except (ValueError, TypeError):
+                tokens_out = None
+
+            # Calculate latency
+            latency_ms = int((end_time - start_time) * 1000)
+
+            # Create log entry
+            log_entry = {
+                "ts": datetime.fromtimestamp(start_time).isoformat(),
+                "model": metadata.get("model_id", "unknown"),
+                "tokens_in": tokens_in,
+                "tokens_out": tokens_out,
+                "latency_ms": latency_ms,
+            }
+
+            # Append to log file as JSON line
+            log_file = logs_dir / "dev_agent.log"
+            with open(log_file, "a") as f:
+                f.write(json.dumps(log_entry) + "\n")
+
+            print(f"💰 Cost logged: {tokens_in} in, {tokens_out} out, {latency_ms}ms")
+
+        except Exception as e:
+            # Don't fail the main operation if logging fails
+            print(f"⚠️ Failed to log cost information: {e}")
 
     def _generate_stub_code(self) -> str:
         """Generate basic stub code when LLM calls fail."""
