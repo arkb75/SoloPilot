@@ -98,8 +98,12 @@ class StandardizedBedrockClient:
 
     def _invoke_with_signature(
         self, model_id: str, inference_profile_arn: Optional[str], body: dict
-    ) -> str:
-        """Helper to invoke Bedrock with conditional parameters."""
+    ) -> tuple[str, dict]:
+        """Helper to invoke Bedrock with conditional parameters.
+
+        Returns:
+            Tuple of (response_text, response_metadata) where metadata includes headers.
+        """
         kwargs = {
             "modelId": model_id,
             "body": json.dumps(body),
@@ -110,7 +114,15 @@ class StandardizedBedrockClient:
 
         response = self.client.invoke_model(**kwargs)
         response_body = json.loads(response["body"].read())
-        return response_body["content"][0]["text"]
+
+        # Extract cost-related headers
+        response_metadata = {
+            "ResponseMetadata": response.get("ResponseMetadata", {}),
+            "model_id": model_id,
+            "inference_profile_arn": inference_profile_arn,
+        }
+
+        return response_body["content"][0]["text"], response_metadata
 
     def invoke_model(
         self, messages: list, max_tokens: int = 2048, temperature: float = 0.1, max_retries: int = 3
@@ -146,7 +158,10 @@ class StandardizedBedrockClient:
         for attempt in range(max_retries):
             try:
                 # Try modern signature first (ARN as modelId)
-                return self._invoke_with_signature(self.inference_profile_arn, None, body)
+                response_text, _ = self._invoke_with_signature(
+                    self.inference_profile_arn, None, body
+                )
+                return response_text
 
             except ParamValidationError as e:
                 if "inferenceProfileArn" not in str(e):
@@ -154,7 +169,10 @@ class StandardizedBedrockClient:
 
                 # Try legacy signature (modelId + inferenceProfileArn)
                 try:
-                    return self._invoke_with_signature(model_id, self.inference_profile_arn, body)
+                    response_text, _ = self._invoke_with_signature(
+                        model_id, self.inference_profile_arn, body
+                    )
+                    return response_text
                 except (ClientError, BotoCoreError) as legacy_e:
                     last_exception = legacy_e
 
@@ -202,10 +220,104 @@ class StandardizedBedrockClient:
         else:
             raise BedrockError(f"❌ Bedrock API error: {last_exception}") from last_exception
 
+    def invoke_model_with_metadata(
+        self, messages: list, max_tokens: int = 2048, temperature: float = 0.1, max_retries: int = 3
+    ) -> tuple[str, dict]:
+        """
+        Invoke Bedrock model and return both response and metadata for cost tracking.
+
+        Args:
+            messages: List of message objects in Anthropic format
+            max_tokens: Maximum tokens to generate
+            temperature: Temperature for response generation
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            Tuple of (response_text, metadata_dict)
+
+        Raises:
+            BedrockError: For various Bedrock-related failures
+        """
+        if not self.client:
+            raise BedrockError("Bedrock client not initialized")
+
+        model_id = self._model_id_from_arn()
+        body = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "messages": messages,
+        }
+
+        last_exception = None
+
+        for attempt in range(max_retries):
+            try:
+                # Try modern signature first (ARN as modelId)
+                return self._invoke_with_signature(self.inference_profile_arn, None, body)
+
+            except ParamValidationError as e:
+                if "inferenceProfileArn" not in str(e):
+                    raise BedrockValidationError(f"Parameter validation failed: {e}") from e
+
+                # Try legacy signature (modelId + inferenceProfileArn)
+                try:
+                    return self._invoke_with_signature(model_id, self.inference_profile_arn, body)
+                except (ClientError, BotoCoreError) as legacy_e:
+                    last_exception = legacy_e
+
+            except (ClientError, BotoCoreError) as e:
+                last_exception = e
+
+            # Handle retry logic (same as invoke_model)
+            if attempt < max_retries - 1:
+                error_str = str(last_exception)
+                if any(
+                    err in error_str for err in ["AccessDeniedException", "ValidationException"]
+                ):
+                    break
+
+                wait_time = (2**attempt) + random.uniform(0, 1)
+                print(
+                    f"🔄 Bedrock call failed (attempt {attempt + 1}/{max_retries}): {last_exception}"
+                )
+                print(f"   Retrying in {wait_time:.1f} seconds...")
+                time.sleep(wait_time)
+            else:
+                print(f"❌ Final Bedrock attempt failed: {last_exception}")
+
+        # Same error handling as invoke_model
+        error_str = str(last_exception)
+        if "AccessDeniedException" in error_str:
+            raise BedrockAccessError(
+                f"❌ Bedrock access denied. ARN: {self.inference_profile_arn}. "
+                "Verify you have bedrock:InvokeModel permissions and profile access."
+            ) from last_exception
+        elif "ValidationException" in error_str:
+            raise BedrockValidationError(
+                f"❌ Bedrock validation error: {last_exception}"
+            ) from last_exception
+        elif any(
+            network_err in error_str
+            for network_err in ["ConnectionError", "TimeoutError", "EndpointConnectionError"]
+        ):
+            raise BedrockNetworkError(
+                f"❌ Bedrock network error: {last_exception}"
+            ) from last_exception
+        else:
+            raise BedrockError(f"❌ Bedrock API error: {last_exception}") from last_exception
+
     def simple_invoke(self, prompt: str, max_tokens: int = 2048, temperature: float = 0.1) -> str:
         """Simple single-message invoke for convenience."""
         messages = [{"role": "user", "content": prompt}]
         return self.invoke_model(messages, max_tokens, temperature)
+
+    def simple_invoke_with_metadata(
+        self, prompt: str, max_tokens: int = 2048, temperature: float = 0.1
+    ) -> tuple[str, dict]:
+        """Simple single-message invoke with metadata for cost tracking."""
+        messages = [{"role": "user", "content": prompt}]
+        return self.invoke_model_with_metadata(messages, max_tokens, temperature)
 
 
 def create_bedrock_client(config: Dict[str, Any]) -> StandardizedBedrockClient:

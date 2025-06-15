@@ -316,7 +316,9 @@ describe('ProjectSetup', () => {
             from agents.common.bedrock_client import BedrockError
 
             mock_client = MagicMock()
-            mock_client.simple_invoke.side_effect = BedrockError("Bedrock access denied")
+            mock_client.simple_invoke_with_metadata.side_effect = BedrockError(
+                "Bedrock access denied"
+            )
             mock_client_class.return_value = mock_client
 
             with patch.dict(
@@ -384,14 +386,14 @@ describe('ProjectSetup', () => {
                 "agents.common.bedrock_client.StandardizedBedrockClient"
             ) as mock_client_class:
                 mock_client = MagicMock()
-                mock_client.simple_invoke.return_value = "Modern response"
+                mock_client.simple_invoke_with_metadata.return_value = ("Modern response", {})
                 mock_client_class.return_value = mock_client
 
                 agent = DevAgent(config_path=temp_config_file)
                 result = agent._call_llm("Test prompt")
 
                 assert result == "Modern response"
-                mock_client.simple_invoke.assert_called_once()
+                mock_client.simple_invoke_with_metadata.assert_called_once()
 
     def test_sdk_legacy_fallback(self, temp_config_file):
         """Test that standardized client handles legacy fallback internally."""
@@ -402,7 +404,7 @@ describe('ProjectSetup', () => {
                 "agents.common.bedrock_client.StandardizedBedrockClient"
             ) as mock_client_class:
                 mock_client = MagicMock()
-                mock_client.simple_invoke.return_value = "Legacy response"
+                mock_client.simple_invoke_with_metadata.return_value = ("Legacy response", {})
                 mock_client_class.return_value = mock_client
 
                 agent = DevAgent(config_path=temp_config_file)
@@ -428,7 +430,7 @@ describe('ProjectSetup', () => {
                 "agents.common.bedrock_client.StandardizedBedrockClient"
             ) as mock_client_class:
                 mock_client = MagicMock()
-                mock_client.simple_invoke.return_value = "Test response"
+                mock_client.simple_invoke_with_metadata.return_value = ("Test response", {})
                 mock_client_class.return_value = mock_client
 
                 agent = DevAgent(config_path=temp_config_file)
@@ -438,8 +440,8 @@ describe('ProjectSetup', () => {
                 assert result == "Test response"
 
                 # Verify standardized client was called with correct parameters
-                mock_client.simple_invoke.assert_called_once()
-                call_args = mock_client.simple_invoke.call_args
+                mock_client.simple_invoke_with_metadata.assert_called_once()
+                call_args = mock_client.simple_invoke_with_metadata.call_args
 
                 # Check prompt parameter
                 assert call_args[0][0] == "Test prompt"
@@ -624,6 +626,143 @@ describe('SmokeTestImplementation', () => {
         milestone = {"name": "Test", "description": "Test"}
         insights = bridge.generate_milestone_insights(milestone, ["Node.js"])
         assert isinstance(insights, dict)
+
+    def test_bedrock_cost_logging(self):
+        """Test that Bedrock cost logging writes log lines correctly."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create a dev agent with custom config
+            temp_config = Path(temp_dir) / "test_config.yaml"
+            config_content = """
+llm:
+  primary: "bedrock"
+  bedrock:
+    inference_profile_arn: "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"
+    region: "us-east-2"
+    model_kwargs:
+      temperature: 0.1
+      max_tokens: 100
+"""
+            temp_config.write_text(config_content)
+
+            # Mock the bedrock client to avoid real API calls
+            with patch("agents.dev.dev_agent.create_bedrock_client") as mock_create_client:
+                mock_client = MagicMock()
+
+                # Mock the response with metadata including cost headers
+                mock_metadata = {
+                    "ResponseMetadata": {
+                        "HTTPHeaders": {
+                            "x-amzn-bedrock-tokens-in": "50",
+                            "x-amzn-bedrock-tokens-out": "100",
+                        }
+                    },
+                    "model_id": "us.anthropic.claude-sonnet-4-20250514-v1:0",
+                }
+
+                mock_client.simple_invoke_with_metadata.return_value = (
+                    "console.log('test response');",
+                    mock_metadata,
+                )
+                mock_create_client.return_value = mock_client
+
+                # Change to temp directory so logs go there
+                original_cwd = os.getcwd()
+                try:
+                    os.chdir(temp_dir)
+
+                    # Create dev agent and call LLM
+                    agent = DevAgent(str(temp_config))
+                    result = agent._call_llm("Generate test code")
+
+                    assert result == "console.log('test response');"
+
+                    # Check that log file was created
+                    log_file = Path(temp_dir) / "logs" / "dev_agent.log"
+                    assert log_file.exists(), "Cost log file should be created"
+
+                    # Read and verify log content
+                    log_content = log_file.read_text().strip()
+                    assert log_content, "Log file should not be empty"
+
+                    # Parse JSON log line
+                    log_entry = json.loads(log_content)
+
+                    # Verify log entry structure
+                    assert "ts" in log_entry
+                    assert "model" in log_entry
+                    assert "tokens_in" in log_entry
+                    assert "tokens_out" in log_entry
+                    assert "latency_ms" in log_entry
+
+                    # Verify log entry values
+                    assert log_entry["model"] == "us.anthropic.claude-sonnet-4-20250514-v1:0"
+                    assert log_entry["tokens_in"] == 50
+                    assert log_entry["tokens_out"] == 100
+                    assert isinstance(log_entry["latency_ms"], int)
+                    assert log_entry["latency_ms"] >= 0
+
+                    # Verify timestamp format
+                    from datetime import datetime
+
+                    parsed_ts = datetime.fromisoformat(log_entry["ts"])
+                    assert isinstance(parsed_ts, datetime)
+
+                finally:
+                    os.chdir(original_cwd)
+
+    def test_bedrock_cost_logging_missing_headers(self):
+        """Test cost logging when token headers are missing."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_config = Path(temp_dir) / "test_config.yaml"
+            config_content = """
+llm:
+  primary: "bedrock"
+  bedrock:
+    inference_profile_arn: "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"
+    region: "us-east-2"
+    model_kwargs:
+      temperature: 0.1
+      max_tokens: 100
+"""
+            temp_config.write_text(config_content)
+
+            with patch("agents.dev.dev_agent.create_bedrock_client") as mock_create_client:
+                mock_client = MagicMock()
+
+                # Mock response with missing token headers
+                mock_metadata = {
+                    "ResponseMetadata": {"HTTPHeaders": {}},  # No token headers
+                    "model_id": "us.anthropic.claude-sonnet-4-20250514-v1:0",
+                }
+
+                mock_client.simple_invoke_with_metadata.return_value = (
+                    "test response",
+                    mock_metadata,
+                )
+                mock_create_client.return_value = mock_client
+
+                original_cwd = os.getcwd()
+                try:
+                    os.chdir(temp_dir)
+
+                    agent = DevAgent(str(temp_config))
+                    agent._call_llm("Generate test code")
+
+                    # Check that log file was still created
+                    log_file = Path(temp_dir) / "logs" / "dev_agent.log"
+                    assert log_file.exists()
+
+                    log_content = log_file.read_text().strip()
+                    log_entry = json.loads(log_content)
+
+                    # Verify that missing headers result in null values
+                    assert log_entry["tokens_in"] is None
+                    assert log_entry["tokens_out"] is None
+                    assert log_entry["model"] == "us.anthropic.claude-sonnet-4-20250514-v1:0"
+                    assert isinstance(log_entry["latency_ms"], int)
+
+                finally:
+                    os.chdir(original_cwd)
 
 
 if __name__ == "__main__":

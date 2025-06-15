@@ -57,12 +57,16 @@ jobs:
         source .venv/bin/activate
         pytest -q
 
-    - name: Run linting (Ubuntu only)
-      if: matrix.os == 'ubuntu-latest'
+    - name: Run linting and formatting checks
       run: |
         source .venv/bin/activate
         pip install ruff black isort
-        make lint || echo "Linting completed with warnings"
+        echo "Running ruff checks..."
+        ruff check . || echo "Ruff checks completed with warnings"
+        echo "Running black formatting check..."
+        black --check . || echo "Black formatting check completed"
+        echo "Running isort check..."
+        isort --check-only . --profile=black || echo "isort check completed"
 
   integration-test:
     runs-on: ubuntu-latest

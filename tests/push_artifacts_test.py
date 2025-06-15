@@ -49,6 +49,12 @@ class TestPushArtifacts:
             "git@github.com:user/repo.git",
             "ssh://git@github.com/user/repo.git",
             "https://gitlab.com/user/repo.git",
+            # New file:// and bare repo path support
+            "file:///tmp/bare.git",
+            "file:///absolute/path/to/repo.git",
+            "/tmp/bare.git",
+            "/absolute/path/to/repo.git",
+            "relative/path/to/repo.git",
         ]
 
         for url in valid_urls:
@@ -414,6 +420,75 @@ class TestPushArtifacts:
 
                         result = json.loads(json_outputs[0])
                         assert result["status"] == "dry-run"
+
+    def test_integration_local_bare_repo(self):
+        """Integration test: push to local bare repository under /tmp."""
+        # Create temporary directories
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Create bare repository
+            bare_repo_path = temp_path / "bare.git"
+            subprocess.run(["git", "init", "--bare", str(bare_repo_path)], check=True)
+
+            # Create source directory with artifacts
+            src_dir = temp_path / "artifacts" / "20250615_120000"
+            src_dir.mkdir(parents=True)
+
+            # Create sample artifacts
+            manifest = {
+                "project_title": "Integration Test Project",
+                "generated_at": "2025-06-15T12:00:00",
+                "milestones": [],
+            }
+            (src_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+            (src_dir / "README.md").write_text("# Integration Test Artifacts")
+
+            milestone_dir = src_dir / "milestone-1"
+            milestone_dir.mkdir()
+            (milestone_dir / "implementation.js").write_text("console.log('Hello, World!');")
+            (milestone_dir / "test.js").write_text("test('should work', () => {});")
+
+            # Test push using bare repo path
+            result = setup_git_repo(src_dir, str(bare_repo_path), "20250615_120000")
+
+            # Verify result
+            assert result["status"] == "pushed"
+            assert result["branch_name"] == "artifact/20250615_120000"
+            assert result["remote_url"] == str(bare_repo_path)
+            assert result["timestamp"] == "20250615_120000"
+            assert len(result["commit_hash"]) == 40  # SHA-1 hash length
+
+            # Verify the push worked by cloning the repo
+            clone_dir = temp_path / "clone"
+            subprocess.run(["git", "clone", str(bare_repo_path), str(clone_dir)], check=True)
+
+            subprocess.run(
+                ["git", "checkout", "artifact/20250615_120000"], cwd=clone_dir, check=True
+            )
+
+            # Verify artifacts exist in cloned repo
+            assert (clone_dir / "manifest.json").exists()
+            assert (clone_dir / "README.md").exists()
+            assert (clone_dir / "milestone-1" / "implementation.js").exists()
+            assert (clone_dir / "milestone-1" / "test.js").exists()
+
+            # Verify content
+            cloned_manifest = json.loads((clone_dir / "manifest.json").read_text())
+            assert cloned_manifest["project_title"] == "Integration Test Project"
+
+    def test_enhanced_error_message(self, temp_src_dir):
+        """Test that invalid URLs show enhanced error message with hints."""
+        invalid_url = "invalid-url-format"
+        timestamp = "20250615_120000"
+
+        with pytest.raises(ValueError) as exc_info:
+            setup_git_repo(temp_src_dir, invalid_url, timestamp)
+
+        error_message = str(exc_info.value)
+        assert "Hint: use file:///abs/path/repo.git or git@host:org/repo.git" in error_message
+        assert "file:///path/to/repo.git" in error_message
+        assert "/path/to/bare.git" in error_message
 
 
 if __name__ == "__main__":

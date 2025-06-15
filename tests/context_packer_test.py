@@ -17,7 +17,7 @@ import pytest
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from agents.dev.context_packer import build_context, get_context_summary
+from agents.dev.context_packer import ContextPathError, build_context, get_context_summary
 
 
 class TestContextPacker:
@@ -295,6 +295,97 @@ package.json
 
         # Should handle empty files gracefully
         assert "---\n" in context
+
+    def test_build_context_valid_milestone_structure(self):
+        """Test context building with proper milestone directory structure."""
+        # Create a dummy milestone directory with proper structure
+        base_dir = Path("output/dev/20250615_120000")
+        milestone_dir = base_dir / "milestone-1"
+        milestone_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            # Create milestone.json with some content
+            milestone_data = {
+                "name": "Test Milestone",
+                "description": "A test milestone",
+                "tasks": [{"name": "Task 1", "description": "First task"}],
+            }
+
+            milestone_json = milestone_dir / "milestone.json"
+            with open(milestone_json, "w") as f:
+                json.dump(milestone_data, f, indent=2)
+
+            # Create a simple package.json for more context
+            package_json = milestone_dir / "package.json"
+            with open(package_json, "w") as f:
+                json.dump({"name": "test-project", "version": "1.0.0"}, f)
+
+            context = build_context(milestone_dir)
+
+            # Assert token count > 0 (context should have content)
+            assert len(context) > 0
+            assert "## Milestone Context" in context
+            assert "Test Milestone" in context
+            assert "## Package Manifests" in context
+            assert "test-project" in context
+
+        finally:
+            # Clean up
+            shutil.rmtree(base_dir, ignore_errors=True)
+
+    def test_build_context_invalid_milestone_path_structure(self):
+        """Test context building with invalid milestone path structure."""
+        # Create directory with wrong structure (not under output/dev/)
+        wrong_dir = Path("wrong/structure/milestone-1")
+        wrong_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            # Should raise ContextPathError for invalid structure
+            with pytest.raises(ContextPathError) as exc_info:
+                build_context(wrong_dir)
+
+            assert "Invalid milestone path" in str(exc_info.value)
+            assert "Expected format: output/dev/<run-stamp>/milestone-*" in str(exc_info.value)
+
+        finally:
+            # Clean up
+            shutil.rmtree(Path("wrong"), ignore_errors=True)
+
+    def test_build_context_invalid_timestamp_format(self):
+        """Test context building with invalid timestamp format in path."""
+        # Create directory with invalid timestamp format
+        base_dir = Path("output/dev/invalid-timestamp")
+        milestone_dir = base_dir / "milestone-1"
+        milestone_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            # Should raise ContextPathError for invalid timestamp format
+            with pytest.raises(ContextPathError) as exc_info:
+                build_context(milestone_dir)
+
+            assert "Invalid milestone path" in str(exc_info.value)
+
+        finally:
+            # Clean up
+            shutil.rmtree(base_dir, ignore_errors=True)
+
+    def test_build_context_invalid_milestone_name(self):
+        """Test context building with invalid milestone directory name."""
+        # Create directory with wrong milestone naming
+        base_dir = Path("output/dev/20250615_120000")
+        wrong_milestone_dir = base_dir / "wrong-name"
+        wrong_milestone_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            # Should raise ContextPathError for invalid milestone name
+            with pytest.raises(ContextPathError) as exc_info:
+                build_context(wrong_milestone_dir)
+
+            assert "Invalid milestone path" in str(exc_info.value)
+
+        finally:
+            # Clean up
+            shutil.rmtree(base_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

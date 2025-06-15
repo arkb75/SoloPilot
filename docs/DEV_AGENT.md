@@ -44,7 +44,7 @@ The Dev Agent takes structured planning output (JSON) and generates:
 - **Documentation**: Auto-generates README files for each milestone
 
 ### LLM Integration
-- **Primary**: AWS Bedrock Claude 3.5 Haiku with exponential backoff retry
+- **Primary**: AWS Bedrock Claude 4 Sonnet with exponential backoff retry
 - **Fallback**: Stub code generation (if Bedrock fails)
 - **Retry Logic**: 3 attempts with 2^attempt + jitter backoff for stability
 - **Credentials**: Requires AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or ~/.aws/credentials
@@ -100,7 +100,7 @@ Uses the same `config/model_config.yaml` as other agents:
 ```yaml
 llm:
   bedrock:
-    inference_profile_arn: "${BEDROCK_IP_ARN:-arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0}"
+    inference_profile_arn: "${BEDROCK_IP_ARN:-arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0}"
     region: "${BEDROCK_REGION:-us-east-2}"
     model_kwargs:
       temperature: 0.1

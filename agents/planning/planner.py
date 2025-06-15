@@ -65,7 +65,7 @@ class ProjectPlanner:
                 "primary": "bedrock",
                 "fallback": "openai",
                 "bedrock": {
-                    "model_id": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+                    "model_id": "us.anthropic.claude-sonnet-4-20250514-v1:0",
                     "region": "us-east-2",
                 },
                 "openai": {"model": "gpt-4o-mini"},
@@ -86,7 +86,7 @@ class ProjectPlanner:
                 bedrock_config = self.config["llm"].get("bedrock", {})
                 self.primary_llm = ChatBedrock(
                     model_id=bedrock_config.get(
-                        "model_id", "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+                        "model_id", "us.anthropic.claude-sonnet-4-20250514-v1:0"
                     ),
                     region_name=bedrock_config.get("region", "us-east-2"),
                     model_kwargs={"temperature": 0.1, "max_tokens": 4096},
@@ -282,18 +282,23 @@ Respond with ONLY the JSON object, no additional text:
                 for feature in group:
                     feature_name = feature.get("name", f"Feature {i+1}")
                     feature_desc = feature.get("desc", feature_name)
-                    
+
                     # Create detailed task description for better dev agent code generation
                     detailed_desc = f"Implement {feature_name} functionality. {feature_desc}. "
-                    
+
                     # Add technology-specific implementation details
                     if any(tech.lower() in ["react", "vue", "angular"] for tech in tech_stack):
                         detailed_desc += "Create React components with proper state management, event handlers, and user interface elements. "
-                    elif any(tech.lower() in ["node.js", "express", "fastapi", "django"] for tech in tech_stack):
+                    elif any(
+                        tech.lower() in ["node.js", "express", "fastapi", "django"]
+                        for tech in tech_stack
+                    ):
                         detailed_desc += "Implement backend API endpoints with proper routing, validation, and database integration. "
-                    
-                    detailed_desc += "Include error handling, input validation, and comprehensive unit tests."
-                    
+
+                    detailed_desc += (
+                        "Include error handling, input validation, and comprehensive unit tests."
+                    )
+
                     milestone_tasks.append(
                         {
                             "name": f"Implement {feature_name}",
