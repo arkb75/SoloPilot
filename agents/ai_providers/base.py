@@ -6,15 +6,107 @@ Defines the standard interface that all AI providers must implement.
 Enables swapping between different LLM providers (Bedrock, OpenAI, CodeWhisperer, etc.)
 """
 
+import json
+import os
+import time
 from abc import ABC, abstractmethod
+from datetime import datetime
+from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+
+def log_call(func):
+    """
+    Decorator to log AI provider calls with timing and token usage.
+    
+    Logs to logs/llm_calls.log in JSON format:
+    {"ts": timestamp, "provider": name, "latency_ms": X, "tokens_in": Y, "tokens_out": Z, ...}
+    """
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        start_time = time.time()
+        
+        try:
+            # Call the wrapped method
+            result = func(self, *args, **kwargs)
+            end_time = time.time()
+            
+            # Extract metadata if method returns tuple (code, meta)
+            if isinstance(result, tuple) and len(result) == 2:
+                code, meta = result
+                metadata = meta or {}
+            else:
+                code = result
+                metadata = {}
+            
+            # Get provider info
+            provider_info = self.get_provider_info() if hasattr(self, 'get_provider_info') else {}
+            provider_name = provider_info.get('name', 'unknown')
+            
+            # Calculate latency
+            latency_ms = int((end_time - start_time) * 1000)
+            
+            # Extract token counts with defaults
+            tokens_in = metadata.get('tokens_in', len(args[0].split()) if args else 50)
+            tokens_out = metadata.get('tokens_out', len(str(code).split()) if code else 100)
+            
+            # Create log entry
+            log_entry = {
+                "ts": datetime.now().isoformat(),
+                "provider": provider_name,
+                "latency_ms": latency_ms,
+                "tokens_in": tokens_in,
+                "tokens_out": tokens_out,
+            }
+            
+            # Add additional metadata
+            if 'model' in metadata:
+                log_entry['model'] = metadata['model']
+            if 'cost_usd' in metadata:
+                log_entry['cost_usd'] = metadata['cost_usd']
+            
+            # Ensure logs directory exists
+            os.makedirs('logs', exist_ok=True)
+            
+            # Write to log file
+            with open('logs/llm_calls.log', 'a') as f:
+                f.write(json.dumps(log_entry) + '\n')
+            
+            return result
+            
+        except Exception as e:
+            end_time = time.time()
+            latency_ms = int((end_time - start_time) * 1000)
+            
+            # Log failed calls too
+            provider_info = self.get_provider_info() if hasattr(self, 'get_provider_info') else {}
+            provider_name = provider_info.get('name', 'unknown')
+            
+            log_entry = {
+                "ts": datetime.now().isoformat(),
+                "provider": provider_name,
+                "latency_ms": latency_ms,
+                "tokens_in": None,
+                "tokens_out": None,
+                "error": str(e),
+                "status": "failed"
+            }
+            
+            os.makedirs('logs', exist_ok=True)
+            with open('logs/llm_calls.log', 'a') as f:
+                f.write(json.dumps(log_entry) + '\n')
+            
+            raise
+    
+    return wrapper
 
 
 class BaseProvider(ABC):
     """Abstract base class for AI providers."""
 
     @abstractmethod
+    @log_call
     def generate_code(self, prompt: str, files: Optional[List[Path]] = None) -> str:
         """
         Generate code based on prompt and optional file context.

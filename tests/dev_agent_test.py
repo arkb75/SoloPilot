@@ -104,40 +104,58 @@ def temp_output_dir():
     shutil.rmtree(temp_dir)
 
 
+@pytest.fixture
+def mock_provider():
+    """Create a mock AI provider for testing."""
+    provider = MagicMock()
+    provider.get_provider_info.return_value = {"name": "fake", "model": "test-model"}
+    provider.is_available.return_value = True
+    provider.generate_code.return_value = """```javascript
+// === SKELETON CODE ===
+class TestImplementation {
+    constructor() {
+        // TODO: Initialize
+    }
+}
+
+// === UNIT TEST ===
+describe('TestImplementation', () => {
+    test('should work', () => {
+        expect(true).toBe(true);
+    });
+});
+```"""
+    return provider
+
+
 class TestDevAgent:
     """Test cases for DevAgent class."""
 
-    def test_init(self, temp_config_file):
+    def test_init(self, temp_config_file, mock_provider):
         """Test DevAgent initialization."""
-        with patch.dict(
-            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
-        ):
-            with patch("boto3.client") as mock_boto3:
-                mock_boto3.return_value = MagicMock()
-                agent = DevAgent(config_path=temp_config_file)
+        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+            mock_get_provider.return_value = mock_provider
+            agent = DevAgent(config_path=temp_config_file)
+            
         assert agent.config is not None
         assert "llm" in agent.config
+        assert agent.provider is not None
 
-    def test_load_config(self, temp_config_file):
+    def test_load_config(self, temp_config_file, mock_provider):
         """Test configuration loading."""
-        with patch.dict(
-            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
-        ):
-            with patch("boto3.client") as mock_boto3:
-                mock_boto3.return_value = MagicMock()
-                agent = DevAgent(config_path=temp_config_file)
+        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+            mock_get_provider.return_value = mock_provider
+            agent = DevAgent(config_path=temp_config_file)
+            
         config = agent._load_config(temp_config_file)
         assert "llm" in config
         assert "bedrock" in config["llm"]
 
-    def test_infer_language(self, temp_config_file):
+    def test_infer_language(self, temp_config_file, mock_provider):
         """Test language inference from tech stack."""
-        with patch.dict(
-            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
-        ):
-            with patch("boto3.client") as mock_boto3:
-                mock_boto3.return_value = MagicMock()
-                agent = DevAgent(config_path=temp_config_file)
+        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+            mock_get_provider.return_value = mock_provider
+            agent = DevAgent(config_path=temp_config_file)
 
         # Test JavaScript/TypeScript detection
         assert agent._infer_language(["React", "Node.js"], "Frontend") == "javascript"
@@ -153,14 +171,11 @@ class TestDevAgent:
         # Test default fallback
         assert agent._infer_language(["Unknown"], "Feature") == "javascript"
 
-    def test_get_file_extension(self, temp_config_file):
+    def test_get_file_extension(self, temp_config_file, mock_provider):
         """Test file extension mapping."""
-        with patch.dict(
-            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
-        ):
-            with patch("boto3.client") as mock_boto3:
-                mock_boto3.return_value = MagicMock()
-                agent = DevAgent(config_path=temp_config_file)
+        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+            mock_get_provider.return_value = mock_provider
+            agent = DevAgent(config_path=temp_config_file)
 
         assert agent._get_file_extension("javascript") == ".js"
         assert agent._get_file_extension("typescript") == ".ts"
@@ -169,14 +184,12 @@ class TestDevAgent:
         assert agent._get_file_extension("sql") == ".sql"
         assert agent._get_file_extension("unknown") == ".js"  # default
 
-    def test_generate_stub_code(self, temp_config_file):
+    def test_generate_stub_code(self, temp_config_file, mock_provider):
         """Test stub code generation."""
-        with patch.dict(
-            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
-        ):
-            with patch("boto3.client") as mock_boto3:
-                mock_boto3.return_value = MagicMock()
-                agent = DevAgent(config_path=temp_config_file)
+        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+            mock_get_provider.return_value = mock_provider
+            agent = DevAgent(config_path=temp_config_file)
+            
         stub = agent._generate_stub_code()
 
         assert "StubImplementation" in stub
@@ -184,14 +197,11 @@ class TestDevAgent:
         assert "describe(" in stub
         assert "test(" in stub
 
-    def test_parse_llm_response(self, temp_config_file):
+    def test_parse_llm_response(self, temp_config_file, mock_provider):
         """Test LLM response parsing."""
-        with patch.dict(
-            os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
-        ):
-            with patch("boto3.client") as mock_boto3:
-                mock_boto3.return_value = MagicMock()
-                agent = DevAgent(config_path=temp_config_file)
+        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+            mock_get_provider.return_value = mock_provider
+            agent = DevAgent(config_path=temp_config_file)
 
         # Test with properly formatted response
         mock_response = """

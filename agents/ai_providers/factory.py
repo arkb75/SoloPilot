@@ -183,3 +183,29 @@ def create_ai_provider(
         Initialized provider instance
     """
     return ProviderFactory.create_provider(config, provider_override)
+
+
+def get_provider(provider_name: Optional[str] = None, **config_kwargs) -> BaseProvider:
+    """
+    Get an AI provider instance with simplified interface for dev agent.
+    
+    Args:
+        provider_name: Optional provider name (falls back to AI_PROVIDER env var)
+        **config_kwargs: Configuration parameters
+        
+    Returns:
+        Initialized provider instance
+    """
+    # Build config from kwargs or use minimal default
+    config = config_kwargs or {
+        "llm": {
+            "primary": provider_name or "bedrock",
+            "bedrock": {
+                "inference_profile_arn": os.getenv("BEDROCK_IP_ARN", ""),
+                "region": "us-east-2",
+                "model_kwargs": {"temperature": 0.1, "max_tokens": 2048}
+            }
+        }
+    }
+    
+    return ProviderFactory.create_provider(config, provider_name)

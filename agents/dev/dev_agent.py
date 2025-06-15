@@ -14,11 +14,7 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from agents.common.bedrock_client import (
-    BedrockError,
-    create_bedrock_client,
-    get_standardized_error_message,
-)
+from agents.ai_providers import get_provider, ProviderError
 from agents.dev.context_packer import build_context
 
 
@@ -26,18 +22,18 @@ class DevAgent:
     def __init__(self, config_path: str = "config/model_config.yaml"):
         """Initialize the dev agent with configuration."""
         self.config = self._load_config(config_path)
-        self.bedrock_client = None
-
-        # Initialize Bedrock client with standardized error handling
+        
+        # Initialize AI provider with error handling
         try:
-            self.bedrock_client = create_bedrock_client(self.config)
-            print("✅ Bedrock client initialized successfully")
-        except BedrockError as e:
-            error_msg = get_standardized_error_message(e, "dev-agent")
-            print(error_msg)
-            if "NO_NETWORK" in str(e):
-                # Allow offline mode
-                self.bedrock_client = None
+            provider_name = os.getenv("AI_PROVIDER", "bedrock")
+            self.provider = get_provider(provider_name, **self.config)
+            print(f"✅ AI Provider ({provider_name}) initialized successfully")
+        except ProviderError as e:
+            print(f"⚠️ Provider initialization failed: {e}")
+            if "NO_NETWORK" in str(e) or os.getenv("NO_NETWORK") == "1":
+                # Fall back to fake provider for offline mode
+                self.provider = get_provider("fake")
+                print("✅ Fell back to fake provider for offline mode")
             else:
                 raise
 
@@ -59,92 +55,25 @@ class DevAgent:
         return yaml.safe_load(content)
 
     def _call_llm(self, prompt: str, milestone_path: Optional[Path] = None) -> str:
-        """Call Bedrock with standardized error handling, context packing, and cost logging."""
-        if not self.bedrock_client:
-            raise BedrockError(
-                "❌ Bedrock client not available. "
-                "Initialize client or remove NO_NETWORK=1 to enable LLM functionality."
-            )
+        """Call AI provider with context packing. Logging handled by @log_call decorator."""
+        if not self.provider:
+            raise ProviderError("❌ AI provider not available.")
 
         # Build context if milestone_path is provided
-        enhanced_prompt = prompt
+        files = [milestone_path] if milestone_path else None
         if milestone_path:
             context = build_context(milestone_path)
             if context.strip():
-                enhanced_prompt = context + prompt
+                prompt = context + prompt
                 print(f"📦 Context packed: {len(context)} chars from {milestone_path}")
 
         try:
-            # Get model configuration
-            model_config = self.config.get("llm", {}).get("bedrock", {}).get("model_kwargs", {})
-            max_tokens = model_config.get("max_tokens", 2048)
-            temperature = model_config.get("temperature", 0.1)
+            # Use provider's generate_code method (includes @log_call decorator)
+            return self.provider.generate_code(prompt, files)
 
-            # Capture timing and use metadata-enabled invoke
-            start_time = time.time()
-            response_text, metadata = self.bedrock_client.simple_invoke_with_metadata(
-                enhanced_prompt, max_tokens, temperature
-            )
-            end_time = time.time()
-
-            # Log cost information
-            self._log_bedrock_cost(start_time, end_time, metadata)
-
-            return response_text
-
-        except BedrockError as e:
-            error_msg = get_standardized_error_message(e, "dev-agent")
-            print(error_msg)
+        except ProviderError as e:
+            print(f"⚠️ Provider error: {e}")
             raise
-
-    def _log_bedrock_cost(self, start_time: float, end_time: float, metadata: dict) -> None:
-        """Log Bedrock API cost information to logs/dev_agent.log."""
-        try:
-            # Ensure logs directory exists
-            logs_dir = Path("logs")
-            logs_dir.mkdir(exist_ok=True)
-
-            # Extract cost information from metadata
-            response_metadata = metadata.get("ResponseMetadata", {})
-            http_headers = response_metadata.get("HTTPHeaders", {})
-
-            # Extract token counts from headers
-            tokens_in = http_headers.get("x-amzn-bedrock-tokens-in")
-            tokens_out = http_headers.get("x-amzn-bedrock-tokens-out")
-
-            # Convert to int if present, otherwise use None
-            try:
-                tokens_in = int(tokens_in) if tokens_in else None
-            except (ValueError, TypeError):
-                tokens_in = None
-
-            try:
-                tokens_out = int(tokens_out) if tokens_out else None
-            except (ValueError, TypeError):
-                tokens_out = None
-
-            # Calculate latency
-            latency_ms = int((end_time - start_time) * 1000)
-
-            # Create log entry
-            log_entry = {
-                "ts": datetime.fromtimestamp(start_time).isoformat(),
-                "model": metadata.get("model_id", "unknown"),
-                "tokens_in": tokens_in,
-                "tokens_out": tokens_out,
-                "latency_ms": latency_ms,
-            }
-
-            # Append to log file as JSON line
-            log_file = logs_dir / "dev_agent.log"
-            with open(log_file, "a") as f:
-                f.write(json.dumps(log_entry) + "\n")
-
-            print(f"💰 Cost logged: {tokens_in} in, {tokens_out} out, {latency_ms}ms")
-
-        except Exception as e:
-            # Don't fail the main operation if logging fails
-            print(f"⚠️ Failed to log cost information: {e}")
 
     def _generate_stub_code(self) -> str:
         """Generate basic stub code when LLM calls fail."""

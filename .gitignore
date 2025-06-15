@@ -54,3 +54,6 @@ htmlcov/
 # Logs
 *.log
 logs/
+
+# ATLAS folder
+Software-Engineer-AI-Agent-Atlas/

@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from agents.ai_providers.base import BaseProvider
+from agents.ai_providers.base import BaseProvider, log_call
 
 
 class FakeProvider(BaseProvider):
@@ -28,6 +28,7 @@ class FakeProvider(BaseProvider):
         self.call_count = 0
         self.last_cost_info = None
 
+    @log_call
     def generate_code(self, prompt: str, files: Optional[List[Path]] = None) -> str:
         """
         Generate fake code based on prompt patterns.

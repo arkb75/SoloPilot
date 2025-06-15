@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from agents.ai_providers.base import BaseProvider, ProviderError, ProviderUnavailableError
+from agents.ai_providers.base import BaseProvider, ProviderError, ProviderUnavailableError, log_call
 from agents.common.bedrock_client import (
     BedrockError,
     StandardizedBedrockClient,
@@ -42,6 +42,7 @@ class BedrockProvider(BaseProvider):
             # Store error but don't raise - let is_available() handle it
             self._init_error = e
             
+    @log_call
     def generate_code(self, prompt: str, files: Optional[List[Path]] = None) -> str:
         """
         Generate code using AWS Bedrock Claude models.

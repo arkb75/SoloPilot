@@ -27,6 +27,28 @@ The analyser module contains three main components:
 The dev agent (agents/dev/) includes:
 - `DevAgent`: Transforms planning output into milestone-based code structure with skeleton implementations
 - `Context7Bridge`: MCP adapter for enhanced development insights and best practices
+- **AI Provider Layer**: Abstraction layer supporting multiple LLM providers (Bedrock, fake, CodeWhisperer)
+
+## AI Provider Architecture (Sprint 1)
+
+The system now uses a provider-agnostic architecture for LLM interactions:
+
+**Provider Interface**: `agents/ai_providers/base.py`
+- `BaseProvider` abstract class with `generate_code(prompt, files) → str` interface
+- `@log_call` decorator for automatic logging to `logs/llm_calls.log`
+- Standardized error handling with `ProviderError` hierarchy
+
+**Available Providers**:
+- `bedrock.py`: AWS Bedrock Claude models (production)
+- `fake.py`: Deterministic responses for offline testing/CI
+- `codewhisperer.py`: AWS CodeWhisperer integration (PoC)
+
+**Provider Selection**:
+- Environment variable: `AI_PROVIDER=fake|bedrock|codewhisperer`
+- Offline mode: `NO_NETWORK=1` automatically forces fake provider
+- Factory function: `get_provider(provider_name, **config)`
+
+**Integration**: Dev agent now uses `self.provider.generate_code()` instead of direct Bedrock client calls.
 
 ## 🗺 Inference Profile Map – us-east-2
 
