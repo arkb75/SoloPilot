@@ -394,7 +394,7 @@ Additional Requirements:
 
         print("✅ Dev agent error handling verified (fails fast as expected)")
 
-    @unittest.skipIf(os.getenv("NO_NETWORK") == "1", "Skipping network test due to NO_NETWORK=1")
+    @pytest.mark.skipif(os.getenv("NO_NETWORK") == "1", reason="offline CI")
     def test_real_bedrock_connectivity(self):
         """Test that agents can actually connect to Bedrock."""
         print("\n🌐 Testing real Bedrock connectivity...")

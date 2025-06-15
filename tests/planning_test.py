@@ -3,6 +3,7 @@ Unit tests for the planning agent.
 """
 
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -119,6 +120,7 @@ class TestProjectPlanner:
         assert len(saved_plan["milestones"]) == 1
         assert saved_plan["tech_stack"] == ["React", "Node.js"]
 
+    @pytest.mark.skipif(os.getenv("NO_NETWORK") == "1", reason="offline CI")
     @patch("agents.planning.planner.ChatBedrock")
     def test_llm_integration(self, mock_bedrock):
         """Test LLM integration for plan generation."""
