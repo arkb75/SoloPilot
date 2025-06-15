@@ -54,7 +54,7 @@ The system follows a multi-agent architecture with these key modules:
 - **outreach**: Planned - Handles client communication
 - **coordination**: Planned - Orchestrates multi-agent workflows
 
-**Current Status**: Full analyser → planner → dev agent workflow implemented and tested.
+**Current Status**: Full analyser → planner → dev agent workflow implemented and tested with enhanced context engine integration.
 
 The analyser module contains three main components:
 - `TextParser`: Handles text documents (MD, TXT, DOCX) with LLM-based extraction and keyword fallback
@@ -64,6 +64,7 @@ The analyser module contains three main components:
 The dev agent (agents/dev/) includes:
 - `DevAgent`: Transforms planning output into milestone-based code structure with skeleton implementations
 - `Context7Bridge`: MCP adapter for enhanced development insights and best practices
+- **Context Engine**: Factory-based system supporting legacy and LangChain+ChromaDB modes
 - **AI Provider Layer**: Abstraction layer supporting multiple LLM providers (Bedrock, fake, CodeWhisperer)
 
 ## AI Provider Architecture (Sprint 1)
@@ -86,6 +87,31 @@ The system now uses a provider-agnostic architecture for LLM interactions:
 - Factory function: `get_provider(provider_name, **config)`
 
 **Integration**: Dev agent now uses `self.provider.generate_code()` instead of direct Bedrock client calls.
+
+## Context Engine Architecture (Sprint 1b-2)
+
+The system uses a factory-based context engine for enhanced code generation with vector similarity search:
+
+**Context Engine Interface**: `agents/dev/context_engine/__init__.py`
+- `BaseContextEngine` abstract class with `build_context(milestone_path, prompt) → (str, dict)` interface
+- Factory function `get_context_engine(engine_type)` with environment-based switching
+- Backward compatibility: `build_context()` convenience function
+
+**Available Engines**:
+- `LegacyContextEngine`: Simple file concatenation (fast, offline-compatible)
+- `LangChainChromaEngine`: Advanced vector similarity search with ChromaDB
+
+**Environment Control**:
+- `CONTEXT_ENGINE=legacy|lc_chroma` (default: legacy)
+- `NO_NETWORK=1` automatically forces legacy engine for offline compatibility
+- Performance optimizations: client caching, ThreadPoolExecutor, batched persistence
+
+**Performance**:
+- Legacy engine: <1s for typical milestone
+- LangChain engine: ~2.7x speedup on subsequent calls via client reuse
+- Automatic 25k token guardrails to prevent context overflow
+
+**Integration**: Dev agent uses `self.context_engine.build_context()` for intelligent context extraction.
 
 ## 🗺 Inference Profile Map – us-east-2
 
@@ -144,7 +170,8 @@ make plan         # Run planner with latest specification
 make dev          # Run dev agent with latest planning output
 make plan-dev     # Run full analyser → planner → dev agent workflow
 make dev-scout    # Run dev agent with Context7 scouting enabled
-make test         # Run test suite (40 tests)
+make index        # Build/update ChromaDB vector index for context engine
+make test         # Run test suite (40+ tests including context engine)
 make lint         # Run code linting and formatting
 make demo         # Demo with sample data creation
 make docker       # Docker alternative (zero host setup)

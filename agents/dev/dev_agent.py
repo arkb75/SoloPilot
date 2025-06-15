@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 import yaml
 
 from agents.ai_providers import get_provider, ProviderError
-from agents.dev.context_packer import build_context
+from agents.dev.context_engine import get_context_engine
 
 
 class DevAgent:
@@ -36,6 +36,17 @@ class DevAgent:
                 print("✅ Fell back to fake provider for offline mode")
             else:
                 raise
+        
+        # Initialize context engine
+        try:
+            self.context_engine = get_context_engine()
+            engine_info = self.context_engine.get_engine_info()
+            print(f"✅ Context Engine ({engine_info['engine']}) initialized successfully")
+        except Exception as e:
+            print(f"⚠️ Context engine initialization failed: {e}")
+            # Fallback to legacy engine
+            self.context_engine = get_context_engine("legacy")
+            print("✅ Fell back to legacy context engine")
 
     def _load_config(self, config_path: str) -> Dict[str, Any]:
         """Load configuration from YAML file with environment variable substitution."""
@@ -62,10 +73,11 @@ class DevAgent:
         # Build context if milestone_path is provided
         files = [milestone_path] if milestone_path else None
         if milestone_path:
-            context = build_context(milestone_path)
+            context, metadata = self.context_engine.build_context(milestone_path, prompt)
             if context.strip():
-                prompt = context + prompt
-                print(f"📦 Context packed: {len(context)} chars from {milestone_path}")
+                prompt = context  # context already includes the original prompt
+                print(f"📦 Context built: {metadata['token_count']} tokens, {len(context)} chars "
+                      f"via {metadata['engine']} from {milestone_path}")
 
         try:
             # Use provider's generate_code method (includes @log_call decorator)

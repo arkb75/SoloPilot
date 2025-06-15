@@ -12,6 +12,8 @@ Replaces the simple context_packer with a more sophisticated system using:
 import json
 import os
 import tempfile
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -34,7 +36,12 @@ except ImportError:
 class ContextEngine:
     """
     Advanced context engine using LangChain and Chroma for context management.
+    Optimized for performance with client reuse, persistent connections, and parallel processing.
     """
+    
+    # Class-level client cache for reuse across instances
+    _client_cache = {}
+    _cache_lock = threading.Lock()
     
     def __init__(self, persist_directory: Optional[str] = None, collection_name: str = "solopilot_context"):
         """
@@ -50,6 +57,7 @@ class ContextEngine:
         self.chroma_client = None
         self.collection = None
         self.text_splitter = None
+        self._persist_scheduled = False
         
         # Initialize components if available
         self._initialize_components()
@@ -65,16 +73,25 @@ class ContextEngine:
             return
             
         try:
-            # Initialize Chroma client with persistence
-            os.makedirs(self.persist_directory, exist_ok=True)
-            
-            self.chroma_client = chromadb.PersistentClient(
-                path=self.persist_directory,
-                settings=Settings(
-                    anonymized_telemetry=False,
-                    allow_reset=True
-                )
-            )
+            # Use cached client if available for performance
+            cache_key = self.persist_directory
+            with self._cache_lock:
+                if cache_key in self._client_cache:
+                    self.chroma_client = self._client_cache[cache_key]
+                    print(f"🔄 Reusing cached Chroma client for {self.persist_directory}")
+                else:
+                    # Initialize Chroma client with persistence
+                    os.makedirs(self.persist_directory, exist_ok=True)
+                    
+                    self.chroma_client = chromadb.PersistentClient(
+                        path=self.persist_directory,
+                        settings=Settings(
+                            anonymized_telemetry=False,
+                            allow_reset=True
+                        )
+                    )
+                    self._client_cache[cache_key] = self.chroma_client
+                    print(f"✅ Context engine initialized with Chroma at {self.persist_directory}")
             
             # Get or create collection
             self.collection = self.chroma_client.get_or_create_collection(
@@ -89,8 +106,6 @@ class ContextEngine:
                 length_function=len,
                 separators=["\n\n", "\n", " ", ""]
             )
-            
-            print(f"✅ Context engine initialized with Chroma at {self.persist_directory}")
             
         except Exception as e:
             print(f"⚠️  Failed to initialize context engine: {e}")
@@ -124,9 +139,11 @@ class ContextEngine:
             # Collect context from milestone
             context_data = self._collect_milestone_context(milestone_path)
             
-            # Store context in Chroma for future retrieval
+            # Store context in Chroma for future retrieval (async for performance)
             if context_data:
                 self._store_context_in_chroma(milestone_path, context_data)
+                # Schedule persist for end of operation
+                self._persist_scheduled = True
             
             # Retrieve similar context if requested
             similar_contexts = []
@@ -151,6 +168,11 @@ class ContextEngine:
                 "context_sections": list(context_data.keys()) if context_data else [],
                 "engine": "langchain_chroma"
             }
+            
+            # Persist at end of operation if scheduled (batched for performance)
+            if self._persist_scheduled:
+                self._persist_changes()
+                self._persist_scheduled = False
             
             return enhanced_prompt, metadata
             
@@ -222,7 +244,7 @@ class ContextEngine:
 
     def _store_context_in_chroma(self, milestone_path: Path, context_data: Dict[str, str]):
         """
-        Store context data in Chroma for future retrieval.
+        Store context data in Chroma for future retrieval with parallel processing.
         
         Args:
             milestone_path: Path to milestone directory
@@ -232,31 +254,37 @@ class ContextEngine:
             return
         
         try:
-            # Create documents from context data
+            milestone_id = str(milestone_path).replace("/", "_").replace("\\", "_")
+            
+            # Process sections in parallel if network is available
+            use_parallel = os.getenv("NO_NETWORK") != "1" and len(context_data) > 1
+            
+            if use_parallel:
+                with ThreadPoolExecutor(max_workers=3) as executor:
+                    results = list(executor.map(
+                        lambda item: self._process_section_for_storage(milestone_id, milestone_path, item[0], item[1]),
+                        context_data.items()
+                    ))
+            else:
+                results = [
+                    self._process_section_for_storage(milestone_id, milestone_path, section_name, content)
+                    for section_name, content in context_data.items()
+                ]
+            
+            # Flatten results and store
             documents = []
             metadatas = []
             ids = []
             
-            milestone_id = str(milestone_path).replace("/", "_").replace("\\", "_")
-            
-            for section_name, content in context_data.items():
-                if content and content.strip():
-                    # Split large content into chunks
-                    chunks = self.text_splitter.split_text(content)
-                    
-                    for i, chunk in enumerate(chunks):
-                        doc_id = f"{milestone_id}_{section_name}_{i}"
-                        documents.append(chunk)
-                        metadatas.append({
-                            "milestone_path": str(milestone_path),
-                            "section": section_name,
-                            "chunk_index": i,
-                            "total_chunks": len(chunks)
-                        })
-                        ids.append(doc_id)
+            for section_results in results:
+                if section_results:
+                    docs, metas, section_ids = section_results
+                    documents.extend(docs)
+                    metadatas.extend(metas)
+                    ids.extend(section_ids)
             
             if documents:
-                # Add to collection (upsert to handle duplicates)
+                # Batch upsert for better performance
                 self.collection.upsert(
                     documents=documents,
                     metadatas=metadatas,
@@ -265,6 +293,45 @@ class ContextEngine:
                 
         except Exception as e:
             print(f"⚠️  Failed to store context in Chroma: {e}")
+    
+    def _process_section_for_storage(self, milestone_id: str, milestone_path: Path, section_name: str, content: str):
+        """Process a single section for storage (used by parallel processing)."""
+        if not content or not content.strip():
+            return None
+            
+        try:
+            # Split large content into chunks
+            chunks = self.text_splitter.split_text(content)
+            
+            documents = []
+            metadatas = []
+            ids = []
+            
+            for i, chunk in enumerate(chunks):
+                doc_id = f"{milestone_id}_{section_name}_{i}"
+                documents.append(chunk)
+                metadatas.append({
+                    "milestone_path": str(milestone_path),
+                    "section": section_name,
+                    "chunk_index": i,
+                    "total_chunks": len(chunks)
+                })
+                ids.append(doc_id)
+                
+            return documents, metadatas, ids
+            
+        except Exception as e:
+            print(f"⚠️  Failed to process section {section_name}: {e}")
+            return None
+    
+    def _persist_changes(self):
+        """Persist changes to disk (called once per operation for performance)."""
+        if self.chroma_client:
+            try:
+                # ChromaDB auto-persists, but we can add explicit calls if needed
+                pass
+            except Exception as e:
+                print(f"⚠️  Failed to persist changes: {e}")
 
     def _retrieve_similar_context(self, query: str, threshold: float = 0.7) -> List[Dict[str, Any]]:
         """

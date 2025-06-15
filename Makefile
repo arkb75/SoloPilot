@@ -1,7 +1,7 @@
 # SoloPilot Development Makefile
 # Provides convenient commands for common development tasks
 
-.PHONY: help venv install run test demo plan analyze-and-plan dev plan-dev dev-scout lint clean docker docker-down test-bedrock test-bedrock-cli
+.PHONY: help venv install run test demo plan analyze-and-plan dev plan-dev dev-scout lint clean docker docker-down test-bedrock test-bedrock-cli index
 
 # Default target
 help:
@@ -18,6 +18,7 @@ help:
 	@echo "  make dev        Run dev agent with latest planning output"
 	@echo "  make plan-dev   Run analyser → planner → dev agent (end-to-end)"
 	@echo "  make dev-scout  Run dev agent with Context7 scouting enabled"
+	@echo "  make index      Build/update Chroma vector store for context engine"
 	@echo "  make test       Run test suite"
 	@echo "  make test-bedrock    Run comprehensive Bedrock API tests"
 	@echo "  make test-bedrock-cli Run AWS CLI Bedrock ping test"
@@ -113,10 +114,21 @@ clean:
 	rm -rf .pytest_cache 2>/dev/null || true
 	@echo "✅ Cleanup complete!"
 
+# Build/update Chroma vector store for context engine
+index:
+	@echo "🗂️  Building/updating context engine vector store..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	. .venv/bin/activate && python scripts/build_index.py
+
 # Run dev agent with latest planning output
 dev:
 	@echo "⚙️ Running dev agent with latest planning output..."
 	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	@# Auto-index if using lc_chroma engine and index is missing/outdated
+	@if [ "$$CONTEXT_ENGINE" = "lc_chroma" ] && [ ! -f "./vector_store/chroma.sqlite3" ]; then \
+		echo "🗂️  Context engine cache miss, building index..."; \
+		$(MAKE) index; \
+	fi
 	. .venv/bin/activate && python scripts/check_bedrock.py && python scripts/run_dev_agent.py
 	@if [ ! -z "$(PUSH_REMOTE)" ]; then \
 		echo "🚀 Pushing artifacts to remote repository..."; \
