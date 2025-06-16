@@ -331,22 +331,31 @@ describe('ProjectSetup', () => {
             )
             mock_client_class.return_value = mock_client
 
+            # Ensure NO_NETWORK is not set to prevent fallback to fake provider
             with patch.dict(
-                os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
+                os.environ, 
+                {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"},
+                clear=False
             ):
+                if "NO_NETWORK" in os.environ:
+                    del os.environ["NO_NETWORK"]
+                
                 agent = DevAgent(config_path=temp_config_file)
 
                 # Should raise exception, not return stub code
-                with pytest.raises(BedrockError, match="Bedrock access denied"):
+                # BedrockError is wrapped in ProviderError by the provider layer
+                from agents.ai_providers.base import ProviderError
+                with pytest.raises(ProviderError, match="Bedrock access denied"):
                     agent._call_llm("Test prompt")
 
     def test_credentials_missing_env_and_profile(self, temp_config_file):
         """Test credential validation when neither env vars nor profile exist."""
         with patch.dict(os.environ, {}, clear=True):  # Clear all env vars
             with patch("os.path.exists", return_value=False):  # No AWS profile
-                from agents.common.bedrock_client import BedrockAccessError
+                from agents.ai_providers.base import ProviderUnavailableError
 
-                with pytest.raises(BedrockAccessError, match="AWS credentials not found"):
+                # The DevAgent will catch credential errors and wrap them in ProviderUnavailableError
+                with pytest.raises(ProviderUnavailableError, match="Bedrock provider is not available"):
                     DevAgent(config_path=temp_config_file)
 
     def test_credentials_with_env_vars(self, temp_config_file):
@@ -372,7 +381,7 @@ describe('ProjectSetup', () => {
                     assert agent is not None
 
     def test_inference_profile_access_validation(self, temp_config_file):
-        """Test that inference profile access validation exists in standardized client."""
+        """Test that inference profile access validation exists in provider architecture."""
         with patch.dict(
             os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
         ):
@@ -381,11 +390,15 @@ describe('ProjectSetup', () => {
             ) as mock_client_class:
                 mock_client = MagicMock()
                 mock_client_class.return_value = mock_client
-                # Should not raise during initialization (validation is in standardized client)
+                # Clear NO_NETWORK to prevent fallback to fake provider
+                if "NO_NETWORK" in os.environ:
+                    del os.environ["NO_NETWORK"]
+                # Should not raise during initialization (validation is in provider)
                 agent = DevAgent(config_path=temp_config_file)
                 assert agent is not None
-                # Standardized client should exist
-                assert agent.bedrock_client is not None
+                # Provider should exist and be bedrock type
+                assert agent.provider is not None
+                assert hasattr(agent.provider, 'client')  # Bedrock provider has client attribute
 
     def test_sdk_compatibility_fallback(self, temp_config_file):
         """Test SDK compatibility through standardized client."""

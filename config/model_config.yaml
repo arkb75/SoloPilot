@@ -114,6 +114,38 @@ performance:
   # Memory management
   max_memory_mb: 1024
 
+# Real-Time Linting Configuration
+linting:
+  # Enable/disable linting during code generation
+  enabled: true
+  
+  # Maximum correction iterations per code generation
+  max_correction_iterations: 3
+  
+  # Timeout for each linter run (seconds)
+  timeout: 30
+  
+  # Languages to enable linting for
+  enabled_languages:
+    - "python"
+    - "javascript"
+    - "typescript"
+  
+  # Language-specific configurations
+  python:
+    # Python linters: ruff (style), mypy (types), bandit (security)
+    enable_ruff: true
+    enable_mypy: true
+    enable_bandit: true
+    # Fail on security issues
+    fail_on_security: true
+  
+  javascript:
+    # JavaScript/TypeScript linters
+    enable_eslint: true
+    # ESLint configuration
+    eslint_config: '{"extends": ["eslint:recommended"]}'
+
 # Logging Configuration
 logging:
   level: "INFO"

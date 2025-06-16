@@ -16,6 +16,7 @@ import yaml
 
 from agents.ai_providers import get_provider, ProviderError
 from agents.dev.context_engine import get_context_engine
+from utils.linter_integration import LinterManager
 
 
 class DevAgent:
@@ -47,6 +48,15 @@ class DevAgent:
             # Fallback to legacy engine
             self.context_engine = get_context_engine("legacy")
             print("✅ Fell back to legacy context engine")
+        
+        # Initialize linter manager
+        try:
+            linter_config = self.config.get("linting", {})
+            self.linter_manager = LinterManager(linter_config)
+            print(f"✅ Linter Manager initialized for languages: {self.linter_manager.get_available_languages()}")
+        except Exception as e:
+            print(f"⚠️ Linter Manager initialization failed: {e}")
+            self.linter_manager = None
 
     def _load_config(self, config_path: str) -> Dict[str, Any]:
         """Load configuration from YAML file with environment variable substitution."""
@@ -87,6 +97,53 @@ class DevAgent:
             print(f"⚠️ Provider error: {e}")
             raise
 
+    def _generate_with_linting(self, prompt: str, language: str, milestone_path: Optional[Path] = None, max_iterations: int = 3) -> str:
+        """Generate code with real-time linting feedback and self-correction."""
+        if not self.linter_manager or language not in self.linter_manager.get_available_languages():
+            # No linting available, fall back to standard generation
+            return self._call_llm(prompt, milestone_path)
+        
+        print(f"🔍 Generating {language} code with real-time linting feedback...")
+        
+        for iteration in range(max_iterations):
+            print(f"  Iteration {iteration + 1}/{max_iterations}")
+            
+            # Generate code
+            try:
+                code = self._call_llm(prompt, milestone_path)
+            except Exception as e:
+                print(f"  ❌ Code generation failed: {e}")
+                return self._generate_stub_code()
+            
+            # Lint the generated code
+            lint_results = self.linter_manager.lint_code(code, language)
+            
+            if not lint_results:
+                print(f"  ✅ No linters available for {language}, using generated code")
+                return code
+            
+            # Check if there are critical errors
+            if not self.linter_manager.has_critical_errors(lint_results):
+                summary = self.linter_manager.get_summary(lint_results)
+                if summary['total_warnings'] > 0:
+                    print(f"  ✅ Code generated with {summary['total_warnings']} warnings (acceptable)")
+                else:
+                    print(f"  ✅ Code generated with no issues")
+                return code
+            
+            # Generate correction prompt and retry
+            summary = self.linter_manager.get_summary(lint_results)
+            print(f"  ⚠️ Found {summary['total_errors']} errors, {summary['total_warnings']} warnings - attempting correction...")
+            
+            if iteration < max_iterations - 1:  # Don't correct on the last iteration
+                correction_prompt = self.linter_manager.generate_correction_prompt(lint_results, code)
+                prompt = correction_prompt  # Update prompt for next iteration
+            else:
+                print(f"  ❌ Max iterations reached, using code with {summary['total_errors']} errors")
+                return code
+        
+        return code
+    
     def _generate_stub_code(self) -> str:
         """Generate basic stub code when LLM calls fail."""
         return """// Generated stub code (LLM unavailable)
@@ -256,11 +313,11 @@ Focus on creating a solid foundation that a developer can build upon."""
             language = self._infer_language(planning_data.get("tech_stack", []), milestone["name"])
             file_ext = self._get_file_extension(language)
 
-            # Generate code using LLM
+            # Generate code using LLM with real-time linting
             prompt = self._create_milestone_prompt(
                 milestone, planning_data.get("tech_stack", []), language
             )
-            llm_response = self._call_llm(prompt, milestone_dir)
+            llm_response = self._generate_with_linting(prompt, language, milestone_dir)
 
             # Parse response
             skeleton_code, unit_test = self._parse_llm_response(llm_response, language)
