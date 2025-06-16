@@ -156,7 +156,6 @@ jobs:
     name: SonarCloud Analysis
     runs-on: ubuntu-latest
     needs: test
-    if: env.CI_SKIP_SONAR != '1'
     
     steps:
     - name: Checkout code
@@ -184,7 +183,6 @@ jobs:
 
     - name: SonarCloud Scan
       uses: SonarSource/sonarcloud-github-action@master
-      if: env.CI_SKIP_SONAR != '1'
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

@@ -17,6 +17,7 @@ import yaml
 
 from agents.ai_providers import get_provider
 from agents.ai_providers.base import BaseProvider, ProviderError
+from utils.sonarcloud_integration import SonarCloudClient
 
 
 class ReviewerAgent:
@@ -31,6 +32,7 @@ class ReviewerAgent:
         """
         self.config = self._load_config(config_path)
         self.provider = self._initialize_provider()
+        self.sonarcloud = SonarCloudClient()
         
     def _load_config(self, config_path: Optional[str] = None) -> Dict[str, Any]:
         """Load configuration from file or use defaults."""
@@ -96,14 +98,17 @@ class ReviewerAgent:
         # Run static analysis
         static_results = self._run_static_analysis(milestone_dir)
         
+        # Fetch SonarCloud findings
+        sonarcloud_results = self._get_sonarcloud_findings()
+        
         # Collect code files for AI review
         code_files = self._collect_code_files(milestone_dir)
         
-        # AI-powered code review
-        ai_review = self._ai_code_review(code_files, static_results)
+        # AI-powered code review with SonarCloud integration
+        ai_review = self._ai_code_review(code_files, static_results, sonarcloud_results)
         
-        # Determine overall status
-        overall_status = self._determine_status(static_results, ai_review)
+        # Determine overall status including SonarCloud findings
+        overall_status = self._determine_status(static_results, ai_review, sonarcloud_results)
         
         # Generate review report
         review_result = {
@@ -111,6 +116,7 @@ class ReviewerAgent:
             "summary": ai_review.get("summary", "Code review completed"),
             "comments": ai_review.get("comments", []),
             "static_analysis": static_results,
+            "sonarcloud_analysis": sonarcloud_results,
             "ai_insights": ai_review.get("insights", []),
             "timestamp": time.time(),
             "milestone_dir": str(milestone_dir)
@@ -132,6 +138,33 @@ class ReviewerAgent:
         }
         
         return results
+    
+    def _get_sonarcloud_findings(self) -> Dict[str, Any]:
+        """Fetch SonarCloud quality findings."""
+        if not self.sonarcloud.is_available():
+            return {
+                "available": False,
+                "reason": "offline_mode" if self.sonarcloud.no_network else "no_token",
+                "metrics": {},
+                "issues": [],
+                "quality_gate": None
+            }
+        
+        print("🔍 Fetching SonarCloud quality findings...")
+        try:
+            summary = self.sonarcloud.generate_review_summary()
+            print(f"✅ SonarCloud: {len(summary.get('issues', []))} issues found")
+            return summary
+        except Exception as e:
+            print(f"❌ SonarCloud fetch failed: {e}")
+            return {
+                "available": False,
+                "reason": "api_error",
+                "error": str(e),
+                "metrics": {},
+                "issues": [],
+                "quality_gate": None
+            }
     
     def _run_ruff(self, milestone_dir: Path) -> Dict[str, Any]:
         """Run ruff linter on milestone directory."""
@@ -311,7 +344,7 @@ class ReviewerAgent:
         
         return code_files
     
-    def _ai_code_review(self, code_files: List[Dict[str, Any]], static_results: Dict[str, Any]) -> Dict[str, Any]:
+    def _ai_code_review(self, code_files: List[Dict[str, Any]], static_results: Dict[str, Any], sonarcloud_results: Dict[str, Any]) -> Dict[str, Any]:
         """Perform AI-powered code review."""
         if not code_files:
             return {
@@ -321,8 +354,8 @@ class ReviewerAgent:
             }
         
         try:
-            # Build review prompt
-            prompt = self._build_review_prompt(code_files, static_results)
+            # Build review prompt with SonarCloud integration
+            prompt = self._build_review_prompt(code_files, static_results, sonarcloud_results)
             
             # Get AI review
             ai_response = self.provider.generate_code(prompt)
@@ -337,7 +370,7 @@ class ReviewerAgent:
                 "insights": [f"AI review error: {e}"]
             }
     
-    def _build_review_prompt(self, code_files: List[Dict[str, Any]], static_results: Dict[str, Any]) -> str:
+    def _build_review_prompt(self, code_files: List[Dict[str, Any]], static_results: Dict[str, Any], sonarcloud_results: Dict[str, Any]) -> str:
         """Build comprehensive review prompt for AI."""
         prompt_parts = [
             "# CODE REVIEW REQUEST",
@@ -375,6 +408,49 @@ class ReviewerAgent:
             test_count = pytest_results.get("test_files", 0)
             prompt_parts.extend([
                 f"**Tests**: {test_status} ({test_count} test files)",
+                ""
+            ])
+        
+        # Add SonarCloud findings if available
+        if sonarcloud_results.get("available"):
+            metrics = sonarcloud_results.get("metrics", {})
+            issues = sonarcloud_results.get("issues", [])
+            analysis = sonarcloud_results.get("analysis", {})
+            
+            prompt_parts.extend([
+                "## SONARCLOUD QUALITY ANALYSIS",
+                "",
+                f"**Overall Rating**: {analysis.get('overall_rating', 'unknown').upper()}",
+                f"**Bugs**: {metrics.get('bugs', 0)}",
+                f"**Vulnerabilities**: {metrics.get('vulnerabilities', 0)}",
+                f"**Code Smells**: {metrics.get('code_smells', 0)}",
+                f"**Coverage**: {metrics.get('coverage', 0):.1f}%",
+                f"**Critical Issues**: {analysis.get('critical_issues', 0)}",
+                ""
+            ])
+            
+            if analysis.get("blockers"):
+                prompt_parts.extend([
+                    "**BLOCKING ISSUES**:",
+                    ""
+                ])
+                for blocker in analysis["blockers"][:3]:  # Limit to 3 blockers
+                    prompt_parts.append(f"- {blocker}")
+                prompt_parts.append("")
+            
+            if analysis.get("recommendations"):
+                prompt_parts.extend([
+                    "**SONARCLOUD RECOMMENDATIONS**:",
+                    ""
+                ])
+                for rec in analysis["recommendations"][:3]:  # Limit to 3 recommendations
+                    prompt_parts.append(f"- {rec}")
+                prompt_parts.append("")
+        else:
+            prompt_parts.extend([
+                "## SONARCLOUD QUALITY ANALYSIS",
+                "",
+                f"**Status**: Not available ({sonarcloud_results.get('reason', 'unknown')})",
                 ""
             ])
         
@@ -458,7 +534,7 @@ class ReviewerAgent:
                 "insights": [ai_response[:500] + "..." if len(ai_response) > 500 else ai_response]
             }
     
-    def _determine_status(self, static_results: Dict[str, Any], ai_review: Dict[str, Any]) -> str:
+    def _determine_status(self, static_results: Dict[str, Any], ai_review: Dict[str, Any], sonarcloud_results: Dict[str, Any]) -> str:
         """Determine overall review status based on static analysis and AI review."""
         # Check for critical static analysis failures
         ruff_results = static_results.get("ruff", {})
@@ -481,6 +557,28 @@ class ReviewerAgent:
         
         if high_severity_count > 2:  # More than 2 high severity issues
             return "fail"
+        
+        # Check SonarCloud findings for critical issues
+        if sonarcloud_results.get("available"):
+            metrics = sonarcloud_results.get("metrics", {})
+            analysis = sonarcloud_results.get("analysis", {})
+            
+            # Fail on security vulnerabilities
+            if metrics.get("vulnerabilities", 0) > 0:
+                return "fail"
+            
+            # Fail on blocking issues
+            if analysis.get("blockers"):
+                return "fail"
+            
+            # Fail if too many bugs
+            if metrics.get("bugs", 0) > 5:
+                return "fail"
+            
+            # Fail if coverage is too low (only if coverage data is available)
+            coverage = metrics.get("coverage", 100)  # Default to 100 if not available
+            if coverage > 0 and coverage < 50:  # Only fail if coverage is reported and very low
+                return "fail"
         
         # Check for file size violations
         file_stats = static_results.get("file_stats", {})
@@ -511,6 +609,7 @@ class ReviewerAgent:
         
         # Add static analysis details
         static_results = review_result.get("static_analysis", {})
+        sonarcloud_results = review_result.get("sonarcloud_analysis", {})
         
         # Ruff results
         ruff_results = static_results.get("ruff", {})
@@ -550,6 +649,57 @@ class ReviewerAgent:
                 f"- Status: {status_text}",
                 f"- Test files: {pytest_results.get('test_files', 0)}",
                 f""
+            ])
+        
+        # SonarCloud results
+        if sonarcloud_results.get("available"):
+            metrics = sonarcloud_results.get("metrics", {})
+            analysis = sonarcloud_results.get("analysis", {})
+            quality_gate = sonarcloud_results.get("quality_gate", {})
+            
+            overall_rating = analysis.get("overall_rating", "unknown")
+            status_icon = {
+                "good": "✅",
+                "fair": "🟡", 
+                "needs_improvement": "⚠️",
+                "poor": "❌"
+            }.get(overall_rating, "❓")
+            
+            report_lines.extend([
+                f"### {status_icon} SonarCloud Quality Analysis",
+                f"- Overall Rating: {overall_rating.upper()}",
+                f"- Bugs: {metrics.get('bugs', 0)}",
+                f"- Vulnerabilities: {metrics.get('vulnerabilities', 0)}",
+                f"- Code Smells: {metrics.get('code_smells', 0)}",
+                f"- Coverage: {metrics.get('coverage', 0):.1f}%",
+                f"- Critical Issues: {analysis.get('critical_issues', 0)}",
+                ""
+            ])
+            
+            if analysis.get("blockers"):
+                report_lines.extend([
+                    "#### 🚫 Blocking Issues:",
+                    ""
+                ])
+                for blocker in analysis["blockers"]:
+                    report_lines.append(f"- {blocker}")
+                report_lines.append("")
+            
+            if analysis.get("recommendations"):
+                report_lines.extend([
+                    "#### 💡 SonarCloud Recommendations:",
+                    ""
+                ])
+                for rec in analysis["recommendations"]:
+                    report_lines.append(f"- {rec}")
+                report_lines.append("")
+        else:
+            reason = sonarcloud_results.get("reason", "unknown")
+            status_icon = "⚠️" if reason == "offline_mode" else "❌"
+            report_lines.extend([
+                f"### {status_icon} SonarCloud Quality Analysis",
+                f"- Status: Not available ({reason})",
+                ""
             ])
         
         # AI Review Comments

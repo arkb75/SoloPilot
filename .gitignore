@@ -6,6 +6,9 @@
 
 # Temporary files
 /tmp/
+temp_review/
+temp_announce/
+promotion_review/
 
 # Cache and build artifacts
 __pycache__/
@@ -50,7 +53,17 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+coverage.xml
+test-results.xml
 
 # Logs
 *.log
 logs/
+
+# Vector store and context engine cache
+vector_store/
+chroma_db/
+*.sqlite3
+
+# SonarCloud scanner cache
+.scannerwork/
