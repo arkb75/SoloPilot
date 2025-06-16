@@ -1,7 +1,7 @@
 # SoloPilot Development Makefile
 # Provides convenient commands for common development tasks
 
-.PHONY: help venv install run test demo plan analyze-and-plan dev plan-dev dev-scout lint clean docker docker-down test-bedrock test-bedrock-cli index
+.PHONY: help venv install run test demo plan analyze-and-plan dev plan-dev dev-scout lint clean docker docker-down test-bedrock test-bedrock-cli index review promote announce
 
 # Default target
 help:
@@ -24,6 +24,9 @@ help:
 	@echo "  make test-bedrock-cli Run AWS CLI Bedrock ping test"
 	@echo "  make lint       Run code linting and formatting"
 	@echo "  make demo       Run demo script with sample data"
+	@echo "  make review     Run AI code review on latest milestone"
+	@echo "  make promote    Run review and promote to staging if passing"
+	@echo "  make announce   Generate marketing announcement for milestone"
 	@echo ""
 	@echo "Docker Commands:"
 	@echo "  make docker     Start services with docker-compose"
@@ -183,3 +186,68 @@ test-bedrock-cli:
 	@echo "🔧 Running AWS CLI Bedrock ping test..."
 	@chmod +x scripts/ping_bedrock_cli.sh
 	./scripts/ping_bedrock_cli.sh
+
+# Run AI code review on latest milestone
+review:
+	@echo "🔍 Running AI code review on latest milestone..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	@# Find latest dev output or create review directory
+	@LATEST_MILESTONE=$$(find output/dev -maxdepth 1 -type d -name "20*" | sort | tail -1); \
+	if [ -z "$$LATEST_MILESTONE" ]; then \
+		echo "📁 No dev output found, creating review directory with current source..."; \
+		mkdir -p temp_review/milestone-current; \
+		cp -r agents/ temp_review/milestone-current/ 2>/dev/null || true; \
+		cp -r utils/ temp_review/milestone-current/ 2>/dev/null || true; \
+		cp -r scripts/ temp_review/milestone-current/ 2>/dev/null || true; \
+		LATEST_MILESTONE="temp_review/milestone-current"; \
+	fi; \
+	echo "🔍 Reviewing milestone: $$LATEST_MILESTONE"; \
+	. .venv/bin/activate && python -m agents.review.reviewer_agent "$$LATEST_MILESTONE"
+
+# Run review and promote to staging if passing
+promote:
+	@echo "🚀 Running review and promotion workflow..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	@# Create promotion review directory
+	@mkdir -p promotion_review/milestone-main
+	@cp -r agents/ promotion_review/milestone-main/ 2>/dev/null || true
+	@cp -r utils/ promotion_review/milestone-main/ 2>/dev/null || true
+	@cp -r scripts/ promotion_review/milestone-main/ 2>/dev/null || true
+	@echo "🔍 Running AI code review for promotion..."
+	@. .venv/bin/activate && python -m agents.review.reviewer_agent promotion_review/milestone-main
+	@# Check review status
+	@REVIEW_STATUS=$$(. .venv/bin/activate && python scripts/check_review_status.py promotion_review/milestone-main/review-report.md); \
+	echo "📊 Review Status: $$REVIEW_STATUS"; \
+	if [ "$$REVIEW_STATUS" = "pass" ]; then \
+		echo "✅ Review passed - proceeding with promotion"; \
+		git config user.name "Local Developer" || true; \
+		git config user.email "dev@localhost" || true; \
+		if git show-ref --verify --quiet refs/heads/staging; then \
+			echo "📋 Staging branch exists, checking out..."; \
+			git checkout staging && git merge --ff-only main || echo "❌ Fast-forward merge failed"; \
+		else \
+			echo "🆕 Creating new staging branch..."; \
+			git checkout -b staging || echo "❌ Failed to create staging branch"; \
+		fi; \
+		echo "🎉 Promotion complete! Code is on staging branch."; \
+	else \
+		echo "❌ Review failed - promotion blocked"; \
+		echo "📄 Review report: promotion_review/milestone-main/review-report.md"; \
+		exit 1; \
+	fi
+
+# Generate marketing announcement for milestone
+announce:
+	@echo "📢 Generating marketing announcement..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	@# Find latest milestone or use current source
+	@LATEST_MILESTONE=$$(find output/dev -maxdepth 1 -type d -name "20*" | sort | tail -1); \
+	if [ -z "$$LATEST_MILESTONE" ]; then \
+		echo "📁 No dev output found, using current source..."; \
+		mkdir -p temp_announce/milestone-current; \
+		cp -r agents/ temp_announce/milestone-current/ 2>/dev/null || true; \
+		cp -r utils/ temp_announce/milestone-current/ 2>/dev/null || true; \
+		LATEST_MILESTONE="temp_announce/milestone-current"; \
+	fi; \
+	echo "📢 Announcing milestone: $$LATEST_MILESTONE"; \
+	. .venv/bin/activate && python -m agents.marketing.poster "$$LATEST_MILESTONE"

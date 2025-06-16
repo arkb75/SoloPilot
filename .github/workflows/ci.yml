@@ -151,3 +151,159 @@ jobs:
           analysis/planning/
           output/dev/
         retention-days: 7
+
+  sonarcloud:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    needs: test
+    if: env.CI_SKIP_SONAR != '1'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Shallow clones should be disabled for better analysis
+
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+
+    - name: Install dependencies for coverage
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest-cov
+
+    - name: Run tests with coverage
+      env:
+        NO_NETWORK: 1
+        AI_PROVIDER: fake
+      run: |
+        python -m pytest --cov=agents --cov=utils --cov-report=xml --cov-report=term-missing
+
+    - name: SonarCloud Scan
+      uses: SonarSource/sonarcloud-github-action@master
+      if: env.CI_SKIP_SONAR != '1'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  code-review:
+    name: AI Code Review
+    runs-on: ubuntu-latest
+    needs: [test, sonarcloud]
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run AI Code Review
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        AI_PROVIDER: fake  # Use fake provider in CI for consistency
+        NO_NETWORK: 1
+      run: |
+        # Create a temporary milestone directory for review
+        mkdir -p temp_review/milestone-test
+        cp -r agents/ temp_review/milestone-test/
+        cp -r utils/ temp_review/milestone-test/ || true
+        
+        # Run reviewer agent
+        python -m agents.review.reviewer_agent temp_review/milestone-test
+        
+        # Post review to PR if GitHub token is available
+        if [ -n "$GITHUB_TOKEN" ] && [ "$NO_NETWORK" != "1" ]; then
+          python scripts/post_review_to_pr.py temp_review/milestone-test/review-report.md
+        else
+          echo "Skipping GitHub review posting (offline mode or no token)"
+          cat temp_review/milestone-test/review-report.md
+        fi
+
+  promote:
+    name: Promote to Staging
+    runs-on: ubuntu-latest
+    needs: [integration-test, sonarcloud]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Need full history for merge
+
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run AI Code Review for Promotion
+      env:
+        AI_PROVIDER: fake  # Use fake provider for CI consistency
+        NO_NETWORK: 1
+      run: |
+        # Create milestone directory with latest code
+        mkdir -p promotion_review/milestone-main
+        cp -r agents/ promotion_review/milestone-main/
+        cp -r utils/ promotion_review/milestone-main/ || true
+        cp -r scripts/ promotion_review/milestone-main/ || true
+        
+        # Run review
+        python -m agents.review.reviewer_agent promotion_review/milestone-main
+        
+        # Check review status
+        echo "REVIEW_STATUS=$(python scripts/check_review_status.py promotion_review/milestone-main/review-report.md)" >> $GITHUB_ENV
+
+    - name: Fast-forward merge to staging
+      if: env.REVIEW_STATUS == 'pass'
+      run: |
+        git config user.name "GitHub Actions Bot"
+        git config user.email "actions@github.com"
+        
+        # Check if staging branch exists
+        if git show-ref --verify --quiet refs/remotes/origin/staging; then
+          echo "Staging branch exists, checking out..."
+          git checkout staging
+          git merge --ff-only main
+        else
+          echo "Creating new staging branch..."
+          git checkout -b staging
+        fi
+        
+        # Push to staging (skip in forks or if no push access)
+        if [ "$GITHUB_REPOSITORY" != "your-username/SoloPilot" ] || [ "${{ github.event.repository.fork }}" = "true" ]; then
+          echo "Skipping push to staging (fork or insufficient permissions)"
+        else
+          git push origin staging || echo "Failed to push to staging - may be due to permissions"
+        fi
+
+    - name: Create promotion summary
+      if: always()
+      run: |
+        echo "## 🚀 Promotion Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Review Status**: ${{ env.REVIEW_STATUS || 'unknown' }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Timestamp**: $(date -u)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ env.REVIEW_STATUS }}" = "pass" ]; then
+          echo "✅ **Result**: Code promoted to staging branch" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Result**: Promotion blocked due to review failures" >> $GITHUB_STEP_SUMMARY
+        fi

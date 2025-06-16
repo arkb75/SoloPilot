@@ -53,8 +53,20 @@ flowchart TD
         F --> |Enhanced Context| E
     end
     
+    subgraph "Quality & Review"
+        E --> L[AI Reviewer Agent]
+        L --> |Static Analysis| M[Ruff + MyPy + Pytest]
+        L --> |SonarCloud| N[Security + Quality Scan]
+        M --> O{Review Status}
+        N --> O
+        O --> |Pass| P[GitHub Integration]
+        O --> |Pass| Q[Promote to Staging]
+        O --> |Fail| R[Block Promotion]
+    end
+    
     subgraph "Marketing & Outreach"
-        G[Marketing Agent] --> H[Content Creation]
+        P --> G[Marketing Agent]
+        G --> H[Content Creation]
         I[Outreach Agent] --> J[Client Communication]
     end
     
@@ -62,6 +74,7 @@ flowchart TD
         K[Coordination Agent] --> B
         K --> C
         K --> D
+        K --> L
         K --> G
         K --> I
     end
@@ -74,7 +87,8 @@ flowchart TD
 | **analyser** | ✅ Active | Parse client requirements into machine-readable specs |
 | **planning** | ✅ Active | Convert specs into development roadmaps |
 | **dev** | ✅ Active | Generate milestone-based code with Context7 integration |
-| **marketing** | 🔄 Planned | Create marketing materials and content |
+| **review** | ✅ Active | AI-powered code review with static analysis integration |
+| **marketing** | ✅ Active | Generate marketing announcements and content |
 | **outreach** | 🔄 Planned | Handle client communication and proposals |
 | **coordination** | 🔄 Planned | Orchestrate multi-agent workflows |
 
@@ -165,6 +179,11 @@ make plan-dev
 # Enhanced dev agent with Context7 scouting
 make dev-scout
 
+# Code review and promotion workflow
+make review      # Run AI code review on latest milestone
+make promote     # Review and promote to staging if passing
+make announce    # Generate marketing announcement
+
 # Local development commands
 python scripts/run_analyser.py --path ./tests/fixtures
 python scripts/run_planner.py --latest
@@ -175,6 +194,40 @@ python scripts/run_dev_agent.py
 
 # Docker development
 docker-compose up --build
+```
+
+## 🔍 Code Review & Quality Gates
+
+SoloPilot includes automated code review and promotion pipeline:
+
+### AI Reviewer Agent
+- **Static Analysis**: Integrates ruff, mypy --strict, and pytest
+- **AI Review**: Uses Claude 4 Sonnet for code quality assessment
+- **Security Scan**: Identifies vulnerabilities and best practices
+- **Output**: Generates detailed review-report.md with pass/fail status
+
+### GitHub Integration
+- **Inline Comments**: Posts specific issues on PR lines
+- **Summary Comments**: Comprehensive review findings
+- **Offline Mode**: Gracefully handles NO_NETWORK=1 environments
+- **Requirements**: GitHub CLI (gh) and GITHUB_TOKEN
+
+### Promotion Workflow
+- **Quality Gate**: Only code passing AI review gets promoted
+- **Staging Branch**: Fast-forward merge to staging on pass
+- **CI Integration**: Automated promotion in GitHub Actions
+- **SonarCloud**: Additional static analysis and security scanning
+
+### Usage
+```bash
+# Review current code
+make review
+
+# Full promotion workflow (review + staging deployment)
+make promote
+
+# Manual GitHub review posting
+python scripts/post_review_to_pr.py path/to/review-report.md
 ```
 
 ## 📝 Contributing
