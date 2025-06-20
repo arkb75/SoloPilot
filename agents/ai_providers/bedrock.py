@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from agents.ai_providers.base import BaseProvider, ProviderError, ProviderUnavailableError, log_call
+from agents.ai_providers.base import BaseProvider, ProviderError, ProviderUnavailableError, ProviderTimeoutError, log_call
 from agents.common.bedrock_client import (
     BedrockError,
     StandardizedBedrockClient,
@@ -43,19 +43,21 @@ class BedrockProvider(BaseProvider):
             self._init_error = e
             
     @log_call
-    def generate_code(self, prompt: str, files: Optional[List[Path]] = None) -> str:
+    def generate_code(self, prompt: str, files: Optional[List[Path]] = None, timeout: Optional[int] = None) -> str:
         """
         Generate code using AWS Bedrock Claude models.
         
         Args:
             prompt: The instruction prompt for code generation
             files: Optional list of file paths to include as context
+            timeout: Optional timeout in seconds (default: 30s)
             
         Returns:
             Generated code as a string
             
         Raises:
             ProviderError: If code generation fails
+            ProviderTimeoutError: If request times out
         """
         if not self.is_available():
             raise ProviderUnavailableError(
@@ -71,12 +73,31 @@ class BedrockProvider(BaseProvider):
             model_config = self.config.get("llm", {}).get("bedrock", {}).get("model_kwargs", {})
             max_tokens = model_config.get("max_tokens", 2048)
             temperature = model_config.get("temperature", 0.1)
+            
+            # Set timeout (default 30s, fail fast at 15s for validation)
+            request_timeout = timeout or model_config.get("timeout", 30)
+            
+            # Add performance guard for complex prompts
+            prompt_size = len(enhanced_prompt)
+            if prompt_size > 50000 and request_timeout < 60:
+                print(f"⚠️ Large prompt ({prompt_size} chars), extending timeout to 60s")
+                request_timeout = 60
 
-            # Capture timing and use metadata-enabled invoke
+            # Capture timing and use metadata-enabled invoke with timeout
             start_time = time.time()
-            response_text, metadata = self.client.simple_invoke_with_metadata(
-                enhanced_prompt, max_tokens, temperature
-            )
+            try:
+                response_text, metadata = self.client.simple_invoke_with_metadata(
+                    enhanced_prompt, max_tokens, temperature, timeout=request_timeout
+                )
+            except Exception as e:
+                if "timeout" in str(e).lower() or "timed out" in str(e).lower():
+                    raise ProviderTimeoutError(
+                        f"Bedrock request timed out after {request_timeout}s (prompt: {prompt_size} chars)",
+                        provider_name="bedrock",
+                        timeout_seconds=request_timeout,
+                        original_error=e
+                    )
+                raise
             end_time = time.time()
 
             # Store cost information

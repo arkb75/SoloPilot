@@ -29,13 +29,14 @@ class FakeProvider(BaseProvider):
         self.last_cost_info = None
 
     @log_call
-    def generate_code(self, prompt: str, files: Optional[List[Path]] = None) -> str:
+    def generate_code(self, prompt: str, files: Optional[List[Path]] = None, timeout: Optional[int] = None) -> str:
         """
         Generate fake code based on prompt patterns.
         
         Args:
             prompt: The instruction prompt for code generation
             files: Optional list of file paths (used for context awareness)
+            timeout: Optional timeout in seconds (ignored for fake provider)
             
         Returns:
             Generated fake code as a string

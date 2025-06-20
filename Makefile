@@ -1,7 +1,7 @@
 # SoloPilot Development Makefile
 # Provides convenient commands for common development tasks
 
-.PHONY: help venv install run test demo plan analyze-and-plan dev plan-dev dev-scout lint clean docker docker-down test-bedrock test-bedrock-cli index review promote announce
+.PHONY: help venv install run test demo plan analyze-and-plan dev plan-dev dev-scout lint clean docker docker-down test-bedrock test-bedrock-cli index review promote announce validate benchmark
 
 # Default target
 help:
@@ -27,6 +27,8 @@ help:
 	@echo "  make review     Run AI code review on latest milestone"
 	@echo "  make promote    Run review and promote to staging if passing"
 	@echo "  make announce   Generate marketing announcement for milestone"
+	@echo "  make validate   Run complex project validation with real providers"
+	@echo "  make benchmark  Run performance benchmark suite"
 	@echo ""
 	@echo "Docker Commands:"
 	@echo "  make docker     Start services with docker-compose"
@@ -251,3 +253,18 @@ announce:
 	fi; \
 	echo "📢 Announcing milestone: $$LATEST_MILESTONE"; \
 	. .venv/bin/activate && python -m agents.marketing.poster "$$LATEST_MILESTONE"
+
+# Run complex project validation with real providers
+validate:
+	@echo "🔍 Running complex project validation suite..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	@echo "⚠️  This will use REAL AI providers if configured (not fake). Set AI_PROVIDER=fake for offline testing."
+	@echo "📊 Testing with complex projects (500+ files each)..."
+	. .venv/bin/activate && python scripts/validate_complex_projects.py
+
+# Run performance benchmark suite
+benchmark:
+	@echo "📊 Running performance benchmark suite..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	@echo "🔧 Testing timeout behavior, performance guards, and complex project handling..."
+	. .venv/bin/activate && python tests/performance/benchmark_suite.py

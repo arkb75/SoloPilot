@@ -8,6 +8,7 @@ import json
 import os
 import re
 import time
+import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -75,25 +76,97 @@ class DevAgent:
         content = re.sub(r"\$\{([^}]+)\}", env_substitute, content)
         return yaml.safe_load(content)
 
-    def _call_llm(self, prompt: str, milestone_path: Optional[Path] = None) -> str:
-        """Call AI provider with context packing. Logging handled by @log_call decorator."""
+    def _log_performance_metrics(self, metrics: Dict[str, Any]) -> None:
+        """Log performance metrics for dev agent operations."""
+        os.makedirs('logs', exist_ok=True)
+        
+        log_entry = {
+            'timestamp': datetime.now().isoformat(),
+            'component': 'dev_agent',
+            'operation': 'llm_generation',
+            **metrics
+        }
+        
+        # Log to performance file
+        with open('logs/dev_agent_performance.log', 'a') as f:
+            f.write(json.dumps(log_entry) + '\n')
+        
+        # Log slow operations
+        if metrics.get('generation_time', 0) > 30:
+            print(f"⚠️ Slow LLM generation: {metrics['generation_time']:.2f}s "
+                  f"(prompt: {metrics['prompt_size']} chars)")
+            
+            # Capture stack trace for slow operations
+            if metrics.get('success', True):
+                slow_trace = {
+                    'timestamp': datetime.now().isoformat(),
+                    'component': 'dev_agent',
+                    'operation': 'slow_generation_trace',
+                    'stack_trace': ''.join(traceback.format_stack()),
+                    **metrics
+                }
+                with open('logs/slow_operations.log', 'a') as f:
+                    f.write(json.dumps(slow_trace) + '\n')
+
+    def _call_llm(self, prompt: str, milestone_path: Optional[Path] = None, timeout: Optional[int] = None) -> str:
+        """Call AI provider with context packing and performance monitoring."""
         if not self.provider:
             raise ProviderError("❌ AI provider not available.")
 
         # Build context if milestone_path is provided
         files = [milestone_path] if milestone_path else None
+        context_start_time = time.time()
+        
         if milestone_path:
             context, metadata = self.context_engine.build_context(milestone_path, prompt)
             if context.strip():
                 prompt = context  # context already includes the original prompt
+                context_time = time.time() - context_start_time
                 print(f"📦 Context built: {metadata['token_count']} tokens, {len(context)} chars "
-                      f"via {metadata['engine']} from {milestone_path}")
+                      f"via {metadata['engine']} from {milestone_path} ({context_time:.2f}s)")
+
+        # Performance monitoring
+        prompt_size = len(prompt)
+        generation_start_time = time.time()
+        
+        # Set default timeout based on prompt complexity
+        if not timeout:
+            if prompt_size < 10000:
+                timeout = 15  # Fast timeout for simple prompts
+            elif prompt_size < 50000:
+                timeout = 30  # Standard timeout
+            else:
+                timeout = 60  # Extended timeout for complex prompts
 
         try:
-            # Use provider's generate_code method (includes @log_call decorator)
-            return self.provider.generate_code(prompt, files)
+            # Use provider's generate_code method with timeout
+            result = self.provider.generate_code(prompt, files, timeout=timeout)
+            
+            # Log performance metrics
+            generation_time = time.time() - generation_start_time
+            self._log_performance_metrics({
+                'prompt_size': prompt_size,
+                'generation_time': generation_time,
+                'timeout_used': timeout,
+                'milestone_path': str(milestone_path) if milestone_path else None,
+                'context_time': time.time() - context_start_time,
+                'success': True
+            })
+            
+            return result
 
         except ProviderError as e:
+            # Log failed performance metrics
+            generation_time = time.time() - generation_start_time
+            self._log_performance_metrics({
+                'prompt_size': prompt_size,
+                'generation_time': generation_time,
+                'timeout_used': timeout,
+                'milestone_path': str(milestone_path) if milestone_path else None,
+                'context_time': time.time() - context_start_time,
+                'success': False,
+                'error': str(e)
+            })
             print(f"⚠️ Provider error: {e}")
             raise
 
@@ -108,9 +181,12 @@ class DevAgent:
         for iteration in range(max_iterations):
             print(f"  Iteration {iteration + 1}/{max_iterations}")
             
+            # Use shorter timeout for linting iterations (fail fast)
+            timeout = 15 if iteration > 0 else None  # First iteration uses default
+            
             # Generate code
             try:
-                code = self._call_llm(prompt, milestone_path)
+                code = self._call_llm(prompt, milestone_path, timeout=timeout)
             except Exception as e:
                 print(f"  ❌ Code generation failed: {e}")
                 return self._generate_stub_code()

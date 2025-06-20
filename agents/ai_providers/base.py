@@ -107,19 +107,21 @@ class BaseProvider(ABC):
 
     @abstractmethod
     @log_call
-    def generate_code(self, prompt: str, files: Optional[List[Path]] = None) -> str:
+    def generate_code(self, prompt: str, files: Optional[List[Path]] = None, timeout: Optional[int] = None) -> str:
         """
         Generate code based on prompt and optional file context.
         
         Args:
             prompt: The instruction prompt for code generation
             files: Optional list of file paths to include as context
+            timeout: Optional timeout in seconds (overrides provider default)
             
         Returns:
             Generated code as a string
             
         Raises:
             ProviderError: If code generation fails
+            ProviderTimeoutError: If request times out
         """
         pass
 
@@ -169,7 +171,9 @@ class ProviderUnavailableError(ProviderError):
 
 class ProviderTimeoutError(ProviderError):
     """Raised when a provider request times out."""
-    pass
+    def __init__(self, message: str, provider_name: str = "unknown", timeout_seconds: int = 0, original_error: Optional[Exception] = None):
+        self.timeout_seconds = timeout_seconds
+        super().__init__(message, provider_name, original_error)
 
 
 class ProviderQuotaError(ProviderError):

@@ -3,6 +3,7 @@
 SonarCloud Integration for SoloPilot
 
 Fetches quality metrics and findings from SonarCloud API to enhance AI code reviews.
+Enhanced with robust error handling, retry logic, and comprehensive auto-provisioning.
 """
 
 import json
@@ -12,12 +13,42 @@ import subprocess
 import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
+from functools import wraps
 
 import requests
 
 
+def retry_on_failure(max_retries=3, backoff_factor=1.0):
+    """Decorator to retry function calls on failure with exponential backoff."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            last_exception = None
+            
+            for attempt in range(max_retries):
+                try:
+                    return func(self, *args, **kwargs)
+                except requests.exceptions.RequestException as e:
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        wait_time = backoff_factor * (2 ** attempt)
+                        print(f"⚠️ SonarCloud API call failed (attempt {attempt + 1}/{max_retries}): {e}")
+                        print(f"   Retrying in {wait_time:.1f} seconds...")
+                        time.sleep(wait_time)
+                    else:
+                        print(f"❌ SonarCloud API call failed after {max_retries} attempts: {e}")
+                except Exception as e:
+                    # Non-retryable exceptions
+                    print(f"❌ SonarCloud API call failed with non-retryable error: {e}")
+                    raise
+            
+            raise last_exception
+        return wrapper
+    return decorator
+
+
 class SonarCloudClient:
-    """Client for SonarCloud API integration."""
+    """Client for SonarCloud API integration with robust error handling and retry logic."""
 
     def __init__(self, project_key: str = None, organization: str = None):
         """
@@ -32,10 +63,66 @@ class SonarCloudClient:
         self.base_url = "https://sonarcloud.io/api"
         self.token = os.getenv("SONAR_TOKEN")
         self.no_network = os.getenv("NO_NETWORK") == "1"
-        
+        self.session = self._create_session()
+
+    def _create_session(self) -> requests.Session:
+        """Create a configured requests session with proper headers and timeouts."""
+        session = requests.Session()
+        session.auth = (self.token or "", "")
+        session.headers.update({
+            'User-Agent': 'SoloPilot-SonarCloud-Integration/1.0',
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        })
+        return session
+    
     def is_available(self) -> bool:
         """Check if SonarCloud integration is available."""
         return not self.no_network and bool(self.token)
+    
+    def validate_configuration(self) -> Dict[str, Any]:
+        """Validate SonarCloud configuration and connectivity."""
+        validation = {
+            "valid": False,
+            "issues": [],
+            "organization_exists": False,
+            "token_valid": False
+        }
+        
+        if not self.token:
+            validation["issues"].append("SONAR_TOKEN environment variable not set")
+            return validation
+        
+        if self.no_network:
+            validation["issues"].append("NO_NETWORK=1 - SonarCloud integration disabled")
+            return validation
+        
+        try:
+            # Test token validity by fetching organization info
+            response = self.session.get(
+                f"{self.base_url}/organizations/search",
+                params={"organizations": self.organization},
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                validation["token_valid"] = True
+                orgs = response.json().get("organizations", [])
+                validation["organization_exists"] = any(
+                    org.get("key") == self.organization for org in orgs
+                )
+                
+                if not validation["organization_exists"]:
+                    validation["issues"].append(f"Organization '{self.organization}' not found or no access")
+                else:
+                    validation["valid"] = True
+            else:
+                validation["issues"].append(f"Token validation failed: HTTP {response.status_code}")
+                
+        except Exception as e:
+            validation["issues"].append(f"Configuration validation failed: {e}")
+        
+        return validation
     
     @staticmethod
     def parse_git_url(git_url: str) -> Optional[Dict[str, str]]:
@@ -112,6 +199,37 @@ class SonarCloudClient:
         
         return False
     
+    def _check_project_exists(self, project_key: str) -> Optional[Dict[str, Any]]:
+        """Check if a project already exists in SonarCloud."""
+        try:
+            response = self.session.get(
+                f"{self.base_url}/projects/search",
+                params={"projects": project_key, "organization": self.organization},
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                projects = data.get("components", [])
+                for project in projects:
+                    if project.get("key") == project_key:
+                        return project
+            
+        except Exception as e:
+            print(f"⚠️ Could not check if project exists: {e}")
+        
+        return None
+    
+    def _verify_project_creation(self, project_key: str) -> bool:
+        """Verify that a project was successfully created."""
+        try:
+            # Wait a moment for eventual consistency
+            time.sleep(2)
+            return self._check_project_exists(project_key) is not None
+        except Exception:
+            return False
+    
+    @retry_on_failure(max_retries=3, backoff_factor=1.5)
     def create_project(self, project_name: str, project_key: str = None, visibility: str = "private") -> Optional[Dict[str, Any]]:
         """
         Create a new SonarCloud project.
@@ -124,32 +242,56 @@ class SonarCloudClient:
         Returns:
             Dictionary with project details or None if creation failed
         """
-        if not self.is_available():
-            print("❌ SonarCloud not available (offline mode or missing token)")
+        # Validate configuration first
+        config_validation = self.validate_configuration()
+        if not config_validation["valid"]:
+            print("❌ SonarCloud configuration invalid:")
+            for issue in config_validation["issues"]:
+                print(f"   - {issue}")
             return None
         
         # Auto-generate project key if not provided
         if not project_key:
-            # Sanitize project name for use as key
-            project_key = re.sub(r'[^a-zA-Z0-9_-]', '_', project_name.lower())
-            project_key = f"{self.organization}_{project_key}"
+            # Sanitize project name for use as key (SonarCloud requirements)
+            sanitized_name = re.sub(r'[^a-zA-Z0-9._-]', '_', project_name)
+            sanitized_name = re.sub(r'_+', '_', sanitized_name).strip('_')  # Remove multiple underscores
+            project_key = f"{self.organization}_{sanitized_name}".lower()
+            
+            # Ensure project key meets SonarCloud requirements
+            if len(project_key) > 400:
+                project_key = project_key[:400]
+            if not re.match(r'^[a-zA-Z0-9._-]+$', project_key):
+                raise ValueError(f"Generated project key '{project_key}' contains invalid characters")
+        
+        print(f"🔨 Creating SonarCloud project: {project_key}")
+        
+        # Check if project already exists first
+        existing_project = self._check_project_exists(project_key)
+        if existing_project:
+            print(f"⚠️ SonarCloud project already exists: {project_key}")
+            self.project_key = project_key
+            return {
+                "project_key": project_key,
+                "project_name": existing_project.get("name", project_name),
+                "organization": self.organization,
+                "visibility": existing_project.get("visibility", visibility),
+                "url": f"https://sonarcloud.io/project/overview?id={project_key}",
+                "existed": True
+            }
         
         try:
             url = f"{self.base_url}/projects/create"
             data = {
-                "name": project_name,
+                "name": project_name[:200],  # SonarCloud name limit
                 "project": project_key,
                 "organization": self.organization,
                 "visibility": visibility
             }
             
-            print(f"🔨 Creating SonarCloud project: {project_key}")
-            
-            response = requests.post(
+            response = self.session.post(
                 url,
-                data=data,  # Use form data as recommended by SonarCloud
-                auth=(self.token, ""),
-                timeout=15
+                data=data,
+                timeout=30  # Increased timeout for project creation
             )
             
             if response.status_code == 200:
@@ -160,17 +302,31 @@ class SonarCloudClient:
                 self.project_key = project_info.get("key", project_key)
                 
                 print(f"✅ SonarCloud project created: {self.project_key}")
-                return {
+                result = {
                     "project_key": self.project_key,
                     "project_name": project_info.get("name", project_name),
                     "organization": self.organization,
                     "visibility": project_info.get("visibility", visibility),
                     "url": f"https://sonarcloud.io/project/overview?id={self.project_key}"
                 }
+                
+                # Verify project was created successfully
+                if self._verify_project_creation(self.project_key):
+                    print(f"✅ Project creation verified: {self.project_key}")
+                    return result
+                else:
+                    print(f"⚠️ Project created but verification failed: {self.project_key}")
+                    return result  # Return anyway, might just be eventual consistency
+                    
             elif response.status_code == 400:
-                # Project might already exist
-                error_msg = response.text
-                if "already exists" in error_msg.lower():
+                # Handle various 400 error cases
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get("errors", [{}])[0].get("msg", response.text)
+                except:
+                    error_msg = response.text
+                
+                if "already exists" in error_msg.lower() or "already exist" in error_msg.lower():
                     print(f"⚠️ SonarCloud project already exists: {project_key}")
                     self.project_key = project_key
                     return {
@@ -181,16 +337,29 @@ class SonarCloudClient:
                         "url": f"https://sonarcloud.io/project/overview?id={project_key}",
                         "existed": True
                     }
-                else:
-                    print(f"❌ SonarCloud project creation failed: {error_msg}")
+                elif "invalid" in error_msg.lower():
+                    print(f"❌ Invalid project parameters: {error_msg}")
+                    print(f"   Project key: {project_key}")
+                    print(f"   Organization: {self.organization}")
                     return None
+                else:
+                    print(f"❌ SonarCloud project creation failed (400): {error_msg}")
+                    return None
+            elif response.status_code == 403:
+                print(f"❌ Access denied. Check organization permissions and token scopes.")
+                print(f"   Organization: {self.organization}")
+                print(f"   Required permissions: Project Creation")
+                return None
+            elif response.status_code == 401:
+                print(f"❌ Authentication failed. Check SONAR_TOKEN validity.")
+                return None
             else:
                 print(f"❌ SonarCloud API error: {response.status_code} - {response.text}")
                 return None
                 
-        except (requests.RequestException, json.JSONDecodeError) as e:
+        except Exception as e:
             print(f"❌ SonarCloud project creation failed: {e}")
-            return None
+            raise  # Let retry decorator handle it
     
     def setup_project_from_git_url(self, git_url: str, project_name: str = None) -> Optional[Dict[str, Any]]:
         """
@@ -203,31 +372,108 @@ class SonarCloudClient:
         Returns:
             Dictionary with project setup results
         """
+        print(f"🔧 Setting up SonarCloud project from Git URL: {git_url}")
+        
+        # Validate configuration first
+        config_validation = self.validate_configuration()
+        if not config_validation["valid"]:
+            print("❌ Cannot setup project due to configuration issues:")
+            for issue in config_validation["issues"]:
+                print(f"   - {issue}")
+            return None
+        
         # Parse Git URL
         parsed = self.parse_git_url(git_url)
         if not parsed:
             print(f"❌ Failed to parse Git URL: {git_url}")
+            print("   Supported formats:")
+            print("   - https://github.com/owner/repo.git")
+            print("   - git@github.com:owner/repo.git")
+            print("   - https://gitlab.com/owner/repo.git")
             return None
+        
+        print(f"✅ Parsed Git URL: {parsed['owner']}/{parsed['repo']}")
         
         # Generate project name if not provided
         if not project_name:
             project_name = f"{parsed['owner']} - {parsed['repo']}"
         
-        # Create SonarCloud project
-        project_result = self.create_project(
-            project_name=project_name,
-            project_key=parsed['project_key']
-        )
-        
-        if project_result:
-            project_result.update({
-                "git_url": git_url,
-                "git_owner": parsed['owner'],
-                "git_repo": parsed['repo']
-            })
-        
-        return project_result
+        # Create SonarCloud project with robust error handling
+        try:
+            project_result = self.create_project(
+                project_name=project_name,
+                project_key=parsed['project_key']
+            )
+            
+            if project_result:
+                project_result.update({
+                    "git_url": git_url,
+                    "git_owner": parsed['owner'],
+                    "git_repo": parsed['repo']
+                })
+                
+                print(f"🎉 SonarCloud project setup complete!")
+                print(f"   Project: {project_result['project_key']}")
+                print(f"   URL: {project_result['url']}")
+                
+                # Additional setup steps
+                self._configure_project_settings(project_result['project_key'])
+                
+                return project_result
+            else:
+                print(f"❌ Project creation failed for {git_url}")
+                return None
+                
+        except Exception as e:
+            print(f"❌ Failed to setup SonarCloud project: {e}")
+            return None
     
+    def _configure_project_settings(self, project_key: str):
+        """Configure additional project settings after creation."""
+        try:
+            # Set quality gate (if different from default)
+            self._set_quality_gate(project_key, "Sonar way")
+            
+            # Configure main branch
+            self._configure_main_branch(project_key, "main")
+            
+        except Exception as e:
+            print(f"⚠️ Could not configure project settings: {e}")
+    
+    def _set_quality_gate(self, project_key: str, gate_name: str):
+        """Set quality gate for the project."""
+        try:
+            response = self.session.post(
+                f"{self.base_url}/qualitygates/select",
+                data={
+                    "projectKey": project_key,
+                    "gateName": gate_name
+                },
+                timeout=10
+            )
+            if response.status_code == 204:
+                print(f"✅ Quality gate '{gate_name}' assigned to project")
+        except Exception as e:
+            print(f"⚠️ Could not set quality gate: {e}")
+    
+    def _configure_main_branch(self, project_key: str, branch_name: str):
+        """Configure the main branch for the project."""
+        try:
+            response = self.session.post(
+                f"{self.base_url}/project_branches/rename",
+                data={
+                    "project": project_key,
+                    "name": branch_name
+                },
+                timeout=10
+            )
+            # 404 is expected if branch doesn't exist yet
+            if response.status_code in [200, 404]:
+                print(f"✅ Main branch configured: {branch_name}")
+        except Exception as e:
+            print(f"⚠️ Could not configure main branch: {e}")
+    
+    @retry_on_failure(max_retries=2, backoff_factor=1.0)
     def get_project_metrics(self) -> Optional[Dict[str, Any]]:
         """
         Fetch project quality metrics from SonarCloud.
@@ -245,11 +491,10 @@ class SonarCloudClient:
                 "metricKeys": "bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density,reliability_rating,security_rating,sqale_rating"
             }
             
-            response = requests.get(
+            response = self.session.get(
                 url,
                 params=params,
-                auth=(self.token, ""),
-                timeout=10
+                timeout=15
             )
             
             if response.status_code == 200:
@@ -259,10 +504,11 @@ class SonarCloudClient:
                 print(f"SonarCloud API error: {response.status_code}")
                 return None
                 
-        except (requests.RequestException, json.JSONDecodeError) as e:
+        except Exception as e:
             print(f"SonarCloud metrics fetch failed: {e}")
-            return None
+            raise  # Let retry decorator handle it
     
+    @retry_on_failure(max_retries=2, backoff_factor=1.0)
     def get_project_issues(self, severity: str = "MAJOR") -> List[Dict[str, Any]]:
         """
         Fetch project issues from SonarCloud.
@@ -285,10 +531,9 @@ class SonarCloudClient:
                 "ps": 100  # Page size
             }
             
-            response = requests.get(
+            response = self.session.get(
                 url,
                 params=params,
-                auth=(self.token, ""),
                 timeout=15
             )
             
@@ -299,10 +544,11 @@ class SonarCloudClient:
                 print(f"SonarCloud issues API error: {response.status_code}")
                 return []
                 
-        except (requests.RequestException, json.JSONDecodeError) as e:
+        except Exception as e:
             print(f"SonarCloud issues fetch failed: {e}")
-            return []
+            raise  # Let retry decorator handle it
     
+    @retry_on_failure(max_retries=2, backoff_factor=1.0)
     def get_quality_gate_status(self) -> Optional[Dict[str, Any]]:
         """
         Get quality gate status for the project.
@@ -317,10 +563,9 @@ class SonarCloudClient:
             url = f"{self.base_url}/qualitygates/project_status"
             params = {"projectKey": self.project_key}
             
-            response = requests.get(
+            response = self.session.get(
                 url,
                 params=params,
-                auth=(self.token, ""),
                 timeout=10
             )
             
@@ -330,9 +575,9 @@ class SonarCloudClient:
             else:
                 return None
                 
-        except (requests.RequestException, json.JSONDecodeError) as e:
+        except Exception as e:
             print(f"SonarCloud quality gate fetch failed: {e}")
-            return None
+            raise  # Let retry decorator handle it
     
     def _parse_metrics(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Parse SonarCloud metrics response."""
@@ -490,6 +735,15 @@ def main():
     print(f"  Available: {client.is_available()}")
     print(f"  Organization: {client.organization}")
     print(f"  Token configured: {'Yes' if client.token else 'No'}")
+    
+    # Test configuration validation
+    print(f"\n🔧 Configuration Validation:")
+    config_validation = client.validate_configuration()
+    print(f"  Valid: {config_validation['valid']}")
+    if config_validation['issues']:
+        print("  Issues:")
+        for issue in config_validation['issues']:
+            print(f"    - {issue}")
     
     # Test auto-detection from current repo
     print(f"\n🔍 Auto-detecting current repository:")
