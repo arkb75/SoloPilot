@@ -6,7 +6,9 @@ Provides symbol-aware context management using Serena's Language Server Protocol
 Replaces chunk-based context with precise symbol lookups for 30-50% token reduction.
 """
 
+import asyncio
 import json
+import logging
 import os
 import subprocess
 import time
@@ -41,7 +43,8 @@ class SerenaContextEngine(BaseContextEngine):
         """
         self.project_root = project_root or Path.cwd()
         self.serena_dir = self.project_root / ".serena"
-        self._connection = None
+        self.serena_process: Optional[subprocess.Popen] = None
+        self._request_id = 0
         self._stats = {
             "queries_performed": 0,
             "symbols_found": 0,
@@ -53,33 +56,229 @@ class SerenaContextEngine(BaseContextEngine):
         self._initialize_workspace()
     
     def _initialize_workspace(self) -> None:
-        """Initialize Serena workspace and language servers."""
-        # Check if Serena is available, but don't fail initialization
-        self._serena_available = self._check_serena_available()
+        """Initialize Serena workspace and start MCP server."""
+        # Check if Serena is available and start server
+        self._serena_available = self._start_serena_server()
         
         if not self._serena_available:
-            print(f"⚠️ Serena LSP not available. Will fallback to legacy context for {self.project_root}")
+            print(f"⚠️ Serena MCP server not available. Will fallback to legacy context for {self.project_root}")
             return
         
         # Create .serena directory if it doesn't exist
         self.serena_dir.mkdir(exist_ok=True)
         
-        # Initialize language servers for the project
-        self._init_language_servers()
+        # Initialize project with Serena
+        self._initialize_serena_project()
     
-    def _check_serena_available(self) -> bool:
-        """Check if Serena is installed and accessible."""
+    def _start_serena_server(self) -> bool:
+        """Start Serena MCP server subprocess or connect to existing SSE server."""
+        # Check if we should use SSE mode (for CI)
+        sse_url = os.getenv("SERENA_SSE_URL")
+        if sse_url:
+            return self._connect_sse_server(sse_url)
+        
         try:
-            # Try to import serena
-            result = subprocess.run(
-                ["python", "-c", "import serena; print('available')"],
+            # Check if uvx and serena are available
+            check_result = subprocess.run(
+                ["uvx", "--from", "git+https://github.com/oraios/serena", "serena-mcp-server", "--help"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=30
             )
-            return result.returncode == 0 and "available" in result.stdout
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+            
+            if check_result.returncode != 0:
+                print(f"⚠️ Serena uvx check failed: {check_result.stderr}")
+                return False
+            
+            # Start the MCP server with stdio communication
+            print(f"🚀 Starting Serena MCP server for project: {self.project_root}")
+            
+            self.serena_process = subprocess.Popen(
+                [
+                    "uvx", "--from", "git+https://github.com/oraios/serena", 
+                    "serena-mcp-server",
+                    "--context", "ide-assistant",  # Use IDE assistant context
+                    "--project", str(self.project_root),
+                    "--transport", "stdio",
+                    "--enable-web-dashboard", "false",  # Disable dashboard for headless operation
+                    "--enable-gui-log-window", "false"
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=0  # Unbuffered for real-time communication
+            )
+            
+            # Wait a moment for server to initialize
+            time.sleep(2)
+            
+            # Check if process is still running
+            if self.serena_process.poll() is not None:
+                stderr_output = self.serena_process.stderr.read() if self.serena_process.stderr else "No stderr"
+                print(f"❌ Serena MCP server exited early: {stderr_output}")
+                return False
+            
+            print(f"✅ Serena MCP server started successfully (PID: {self.serena_process.pid})")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Failed to start Serena MCP server: {e}")
             return False
+    
+    def _connect_sse_server(self, sse_url: str) -> bool:
+        """Connect to existing Serena SSE server (for CI)."""
+        try:
+            import requests
+            
+            # Test connection to SSE server
+            response = requests.get(f"{sse_url}/health", timeout=10)
+            if response.status_code == 200:
+                print(f"✅ Connected to Serena SSE server at {sse_url}")
+                self._sse_url = sse_url
+                return True
+            else:
+                print(f"❌ Serena SSE server not healthy: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Failed to connect to Serena SSE server: {e}")
+            return False
+    
+    def _initialize_serena_project(self) -> None:
+        """Initialize the project with Serena."""
+        try:
+            # Send initialize request to MCP server
+            init_request = {
+                "jsonrpc": "2.0",
+                "id": self._next_request_id(),
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {
+                        "tools": {}
+                    },
+                    "clientInfo": {
+                        "name": "SoloPilot",
+                        "version": "1.0.0"
+                    }
+                }
+            }
+            
+            response = self._send_mcp_request(init_request)
+            if not response or "result" not in response:
+                print(f"⚠️ Failed to initialize Serena MCP server")
+                return
+            
+            print(f"✅ Serena MCP server initialized for project")
+            
+            # Send activated project notification
+            self._activate_project()
+            
+        except Exception as e:
+            print(f"⚠️ Error initializing Serena project: {e}")
+    
+    def _activate_project(self) -> None:
+        """Activate the project in Serena."""
+        try:
+            # Call activate_project tool
+            activate_request = {
+                "jsonrpc": "2.0",
+                "id": self._next_request_id(),
+                "method": "tools/call",
+                "params": {
+                    "name": "activate_project",
+                    "arguments": {
+                        "project_path_or_name": str(self.project_root)
+                    }
+                }
+            }
+            
+            response = self._send_mcp_request(activate_request)
+            if response and "result" in response:
+                print(f"✅ Project activated in Serena: {self.project_root.name}")
+            else:
+                print(f"⚠️ Failed to activate project in Serena")
+                
+        except Exception as e:
+            print(f"⚠️ Error activating project: {e}")
+    
+    def _next_request_id(self) -> int:
+        """Generate next request ID."""
+        self._request_id += 1
+        return self._request_id
+    
+    def _send_mcp_request(self, request: Dict[str, Any], timeout: float = 30.0) -> Optional[Dict[str, Any]]:
+        """
+        Send MCP request to Serena server and get response.
+        
+        Args:
+            request: JSON-RPC request dictionary
+            timeout: Request timeout in seconds
+            
+        Returns:
+            Response dictionary or None if failed
+        """
+        if not self.serena_process or not self.serena_process.stdin:
+            return None
+            
+        try:
+            # Send request
+            request_line = json.dumps(request) + "\n"
+            self.serena_process.stdin.write(request_line)
+            self.serena_process.stdin.flush()
+            
+            # Read response (with timeout)
+            import select
+            import sys
+            
+            # Wait for response
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                # Check if process is still running
+                if self.serena_process.poll() is not None:
+                    print(f"❌ Serena process died during request")
+                    return None
+                
+                # Try to read response (non-blocking)
+                if self.serena_process.stdout:
+                    try:
+                        # Use select for non-blocking read on Unix
+                        if sys.platform != "win32":
+                            ready, _, _ = select.select([self.serena_process.stdout], [], [], 0.1)
+                            if ready:
+                                response_line = self.serena_process.stdout.readline()
+                                if response_line:
+                                    return json.loads(response_line.strip())
+                        else:
+                            # For Windows, use readline with short timeout
+                            response_line = self.serena_process.stdout.readline()
+                            if response_line:
+                                return json.loads(response_line.strip())
+                    except json.JSONDecodeError as e:
+                        print(f"⚠️ Invalid JSON response from Serena: {e}")
+                        continue
+                
+                time.sleep(0.1)
+            
+            print(f"⚠️ Timeout waiting for Serena response after {timeout}s")
+            return None
+            
+        except Exception as e:
+            print(f"❌ Error sending MCP request: {e}")
+            return None
+    
+    def __del__(self):
+        """Cleanup: terminate Serena process."""
+        if self.serena_process and self.serena_process.poll() is None:
+            try:
+                self.serena_process.terminate()
+                self.serena_process.wait(timeout=5)
+            except:
+                try:
+                    self.serena_process.kill()
+                except:
+                    pass
     
     def _init_language_servers(self) -> None:
         """Initialize language servers for detected languages."""
@@ -172,6 +371,7 @@ class SerenaContextEngine(BaseContextEngine):
                 "symbols_found": symbols_found,
                 "response_time_ms": response_time_ms,
                 "tokens_estimated": actual_tokens,
+                "token_count": actual_tokens,  # Compatibility with dev agent
                 "tokens_saved": tokens_saved,
                 "context_length": len(context),
                 "lsp_available": True
@@ -365,6 +565,7 @@ class SerenaContextEngine(BaseContextEngine):
                 "error": str(e),
                 "milestone_path": str(milestone_path),
                 "context_length": len(context),
+                "token_count": len(context) // 4,  # Compatibility with dev agent
                 "lsp_available": False
             }
             
@@ -392,7 +593,7 @@ class SerenaContextEngine(BaseContextEngine):
     # Symbol-aware editing methods (Phase 2 Implementation)
     def find_symbol(self, name: str) -> Optional[Dict[str, Any]]:
         """
-        Find a symbol by name using LSP.
+        Find a symbol by name using real Serena MCP tools.
         
         Args:
             name: Symbol name to search for
@@ -400,18 +601,48 @@ class SerenaContextEngine(BaseContextEngine):
         Returns:
             Symbol information dict or None if not found
         """
+        if not getattr(self, '_serena_available', False):
+            return self._fallback_find_symbol(name)
+            
         try:
-            # Try to import and use Serena's find_symbol
-            # from serena import find_symbol
-            # return find_symbol(name)
+            # Use real Serena find_symbol tool via MCP
+            request = {
+                "jsonrpc": "2.0",
+                "id": self._next_request_id(),
+                "method": "tools/call",
+                "params": {
+                    "name": "find_symbol",
+                    "arguments": {
+                        "query": name
+                    }
+                }
+            }
             
-            # Fallback implementation using file search
+            response = self._send_mcp_request(request)
+            if response and "result" in response:
+                # Parse Serena's response
+                result = response["result"]
+                if "content" in result and isinstance(result["content"], list):
+                    # Extract symbols from Serena's text response
+                    content_text = ""
+                    for content_item in result["content"]:
+                        if isinstance(content_item, dict) and "text" in content_item:
+                            content_text += content_item["text"]
+                    
+                    # Parse the text response for symbol information
+                    if content_text and name.lower() in content_text.lower():
+                        return {
+                            "name": name,
+                            "found": True,
+                            "content": content_text,
+                            "source": "serena_mcp"
+                        }
+            
+            # Fallback if MCP call didn't work
             return self._fallback_find_symbol(name)
             
-        except ImportError:
-            return self._fallback_find_symbol(name)
         except Exception as e:
-            print(f"⚠️ Serena find_symbol failed: {e}")
+            print(f"⚠️ Serena MCP find_symbol failed: {e}")
             return self._fallback_find_symbol(name)
     
     def _fallback_find_symbol(self, name: str) -> Optional[Dict[str, Any]]:
@@ -529,7 +760,7 @@ class SerenaContextEngine(BaseContextEngine):
     
     def get_symbols_overview(self, file_path: Path) -> List[Dict[str, Any]]:
         """
-        Get overview of all symbols in a file.
+        Get overview of all symbols in a file using real Serena MCP tools.
         
         Args:
             file_path: Path to file to analyze
@@ -537,18 +768,67 @@ class SerenaContextEngine(BaseContextEngine):
         Returns:
             List of symbol information dictionaries
         """
+        if not getattr(self, '_serena_available', False):
+            return self._fallback_get_symbols(file_path)
+            
         try:
-            # Try to use Serena's symbols overview
-            # from serena import get_symbols_overview
-            # return get_symbols_overview(file_path)
+            # Use real Serena get_symbols_overview tool via MCP
+            request = {
+                "jsonrpc": "2.0",
+                "id": self._next_request_id(),
+                "method": "tools/call",
+                "params": {
+                    "name": "get_symbols_overview",
+                    "arguments": {
+                        "file_or_directory_path": str(file_path)
+                    }
+                }
+            }
             
-            # Fallback implementation
+            response = self._send_mcp_request(request)
+            if response and "result" in response:
+                # Parse Serena's response
+                result = response["result"]
+                if "content" in result and isinstance(result["content"], list):
+                    symbols = []
+                    content_text = ""
+                    for content_item in result["content"]:
+                        if isinstance(content_item, dict) and "text" in content_item:
+                            content_text += content_item["text"]
+                    
+                    # Parse symbols from text response
+                    if content_text:
+                        # Extract symbol information from Serena's formatted output
+                        lines = content_text.split('\n')
+                        for line in lines:
+                            line = line.strip()
+                            if line and ('class ' in line or 'def ' in line):
+                                # Extract symbol info from line
+                                if line.startswith('class '):
+                                    name = line.split('class ')[1].split('(')[0].split(':')[0].strip()
+                                    symbols.append({
+                                        "name": name,
+                                        "type": "class",
+                                        "definition": line,
+                                        "source": "serena_mcp"
+                                    })
+                                elif line.startswith('def '):
+                                    name = line.split('def ')[1].split('(')[0].strip()
+                                    symbols.append({
+                                        "name": name,
+                                        "type": "function",
+                                        "definition": line,
+                                        "source": "serena_mcp"
+                                    })
+                    
+                    if symbols:
+                        return symbols
+            
+            # Fallback if MCP call didn't work
             return self._fallback_get_symbols(file_path)
             
-        except ImportError:
-            return self._fallback_get_symbols(file_path)
         except Exception as e:
-            print(f"⚠️ Serena get_symbols_overview failed: {e}")
+            print(f"⚠️ Serena MCP get_symbols_overview failed: {e}")
             return self._fallback_get_symbols(file_path)
     
     def _fallback_get_symbols(self, file_path: Path) -> List[Dict[str, Any]]:
@@ -605,7 +885,7 @@ class SerenaContextEngine(BaseContextEngine):
     
     def replace_symbol_body(self, symbol: str, new_code: str) -> bool:
         """
-        Replace symbol body with new code using AST-aware editing.
+        Replace symbol body with new code using real Serena MCP tools.
         
         Args:
             symbol: Symbol name to replace
@@ -614,18 +894,43 @@ class SerenaContextEngine(BaseContextEngine):
         Returns:
             True if replacement was successful, False otherwise
         """
+        if not getattr(self, '_serena_available', False):
+            return self._fallback_replace_symbol(symbol, new_code)
+            
         try:
-            # Try to use Serena's symbol replacement
-            # from serena import replace_symbol_body
-            # return replace_symbol_body(symbol, new_code)
+            # Use real Serena replace_symbol_body tool via MCP
+            request = {
+                "jsonrpc": "2.0",
+                "id": self._next_request_id(),
+                "method": "tools/call",
+                "params": {
+                    "name": "replace_symbol_body",
+                    "arguments": {
+                        "symbol_name": symbol,
+                        "new_body": new_code
+                    }
+                }
+            }
             
-            # Fallback implementation
+            response = self._send_mcp_request(request)
+            if response and "result" in response:
+                # Check if the replacement was successful
+                result = response["result"]
+                if "content" in result and isinstance(result["content"], list):
+                    content_text = ""
+                    for content_item in result["content"]:
+                        if isinstance(content_item, dict) and "text" in content_item:
+                            content_text += content_item["text"]
+                    
+                    # Check for success indicators in response
+                    if content_text and ("success" in content_text.lower() or "replaced" in content_text.lower()):
+                        return True
+            
+            # Fallback if MCP call didn't work
             return self._fallback_replace_symbol(symbol, new_code)
             
-        except ImportError:
-            return self._fallback_replace_symbol(symbol, new_code)
         except Exception as e:
-            print(f"⚠️ Serena replace_symbol_body failed: {e}")
+            print(f"⚠️ Serena MCP replace_symbol_body failed: {e}")
             return self._fallback_replace_symbol(symbol, new_code)
     
     def _fallback_replace_symbol(self, symbol: str, new_code: str) -> bool:
