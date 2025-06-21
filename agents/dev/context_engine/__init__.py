@@ -121,14 +121,14 @@ def get_context_engine(engine_type: str = None, **kwargs) -> BaseContextEngine:
     Factory function to create appropriate context engine.
     
     Args:
-        engine_type: Type of engine ("legacy" or "lc_chroma")
+        engine_type: Type of engine ("legacy", "lc_chroma", or "serena")
         **kwargs: Additional arguments for engine initialization
         
     Returns:
         BaseContextEngine instance
         
     Environment Variables:
-        CONTEXT_ENGINE: Override engine type (legacy|lc_chroma)
+        CONTEXT_ENGINE: Override engine type (legacy|lc_chroma|serena)
         NO_NETWORK: Force legacy mode when set to "1"
     """
     # Determine engine type from environment or parameter
@@ -141,7 +141,15 @@ def get_context_engine(engine_type: str = None, **kwargs) -> BaseContextEngine:
         engine_type = "legacy"
     
     # Create appropriate engine
-    if engine_type == "lc_chroma":
+    if engine_type == "serena":
+        try:
+            from agents.dev.context_engine.serena_engine import SerenaContextEngine
+            return SerenaContextEngine(**kwargs)
+        except Exception as e:
+            print(f"⚠️  Failed to initialize Serena LSP engine: {e}")
+            print("🔧 Falling back to legacy context engine")
+            return LegacyContextEngine()
+    elif engine_type == "lc_chroma":
         try:
             return LangChainChromaEngine(**kwargs)
         except RuntimeError as e:
@@ -151,7 +159,7 @@ def get_context_engine(engine_type: str = None, **kwargs) -> BaseContextEngine:
     elif engine_type == "legacy":
         return LegacyContextEngine()
     else:
-        raise ValueError(f"Unknown context engine type: {engine_type}")
+        raise ValueError(f"Unknown context engine type: {engine_type}. Supported: legacy, lc_chroma, serena")
 
 
 # Convenience function for backward compatibility

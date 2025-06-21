@@ -48,3 +48,6 @@ flake8==7.1.1
 
 # Optional: Jupyter for interactive development
 # jupyter==1.1.1  # Uncomment if needed for development
+
+# Serena LSP Integration for symbol-aware context management
+# Installed via uvx: uvx --from git+https://github.com/oraios/serena install

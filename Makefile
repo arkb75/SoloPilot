@@ -18,6 +18,8 @@ help:
 	@echo "  make dev        Run dev agent with latest planning output"
 	@echo "  make plan-dev   Run analyser → planner → dev agent (end-to-end)"
 	@echo "  make dev-scout  Run dev agent with Context7 scouting enabled"
+	@echo "  make dev-serena Run dev agent with Serena LSP context engine"
+	@echo "  make setup-serena Install and configure Serena LSP integration"
 	@echo "  make index      Build/update Chroma vector store for context engine"
 	@echo "  make test       Run test suite"
 	@echo "  make test-bedrock    Run comprehensive Bedrock API tests"
@@ -268,3 +270,19 @@ benchmark:
 	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
 	@echo "🔧 Testing timeout behavior, performance guards, and complex project handling..."
 	. .venv/bin/activate && python tests/performance/benchmark_suite.py
+
+# Install and configure Serena LSP integration
+setup-serena:
+	@echo "🔧 Setting up Serena LSP integration..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	. .venv/bin/activate && python scripts/setup_serena.py
+
+# Run dev agent with Serena LSP context engine
+dev-serena:
+	@echo "🔍 Running dev agent with Serena LSP context engine..."
+	@if [ ! -d ".venv" ]; then echo "❌ Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	@if [ ! -d ".serena" ]; then \
+		echo "⚠️  Serena not configured. Running setup first..."; \
+		$(MAKE) setup-serena; \
+	fi
+	. .venv/bin/activate && CONTEXT_ENGINE=serena python scripts/check_bedrock.py && CONTEXT_ENGINE=serena python scripts/run_dev_agent.py

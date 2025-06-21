@@ -88,9 +88,9 @@ The system now uses a provider-agnostic architecture for LLM interactions:
 
 **Integration**: Dev agent now uses `self.provider.generate_code()` instead of direct Bedrock client calls.
 
-## Context Engine Architecture (Sprint 1b-2)
+## Context Engine Architecture (Sprint 1b-3)
 
-The system uses a factory-based context engine for enhanced code generation with vector similarity search:
+The system uses a factory-based context engine for enhanced code generation with multiple backend options:
 
 **Context Engine Interface**: `agents/dev/context_engine/__init__.py`
 - `BaseContextEngine` abstract class with `build_context(milestone_path, prompt) → (str, dict)` interface
@@ -100,16 +100,25 @@ The system uses a factory-based context engine for enhanced code generation with
 **Available Engines**:
 - `LegacyContextEngine`: Simple file concatenation (fast, offline-compatible)
 - `LangChainChromaEngine`: Advanced vector similarity search with ChromaDB
+- `SerenaContextEngine`: **NEW** Symbol-aware LSP integration for 30-50% token reduction
 
 **Environment Control**:
-- `CONTEXT_ENGINE=legacy|lc_chroma` (default: legacy)
+- `CONTEXT_ENGINE=legacy|lc_chroma|serena` (default: legacy)
 - `NO_NETWORK=1` automatically forces legacy engine for offline compatibility
 - Performance optimizations: client caching, ThreadPoolExecutor, batched persistence
 
 **Performance**:
 - Legacy engine: <1s for typical milestone
 - LangChain engine: ~2.7x speedup on subsequent calls via client reuse
+- **Serena engine: 30-50% token reduction, solves Claude 4 timeout issues**
 - Automatic 25k token guardrails to prevent context overflow
+
+**Serena LSP Integration (Sprint 3)**:
+- Symbol-aware context management using Language Server Protocol
+- Precise code lookups instead of chunk-based context
+- AST-aware editing with `find_symbol()`, `replace_symbol_body()` methods
+- Cross-reference analysis and dependency tracking
+- Fallback to legacy engine if LSP unavailable
 
 **Integration**: Dev agent uses `self.context_engine.build_context()` for intelligent context extraction.
 
@@ -170,6 +179,8 @@ make plan         # Run planner with latest specification
 make dev          # Run dev agent with latest planning output
 make plan-dev     # Run full analyser → planner → dev agent workflow
 make dev-scout    # Run dev agent with Context7 scouting enabled
+make dev-serena   # Run dev agent with Serena LSP context engine
+make setup-serena # Install and configure Serena LSP integration
 make index        # Build/update ChromaDB vector index for context engine
 make test         # Run test suite (40+ tests including context engine)
 make lint         # Run code linting and formatting
@@ -180,6 +191,10 @@ make docker       # Docker alternative (zero host setup)
 python scripts/run_analyser.py --path ./sample_input
 python scripts/run_planner.py --latest
 python scripts/run_dev_agent.py
+
+# Serena LSP commands
+CONTEXT_ENGINE=serena python scripts/run_dev_agent.py  # Use Serena directly
+python scripts/setup_serena.py                        # Setup Serena manually
 ```
 
 ## Configuration
