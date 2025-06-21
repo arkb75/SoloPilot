@@ -1,0 +1,123 @@
+{
+  "success": false,
+  "limits_valid": true,
+  "balanced_target_met": false,
+  "results": {
+    "tests_passed": 13,
+    "tests_failed": 0,
+    "violations": [],
+    "performance_metrics": {
+      "Simple Fix": {
+        "tokens": 328,
+        "processing_time_ms": 127.87890434265137,
+        "mode": "MINIMAL",
+        "warnings": 0,
+        "symbols_skipped": 0
+      },
+      "Add Docstring": {
+        "tokens": 328,
+        "processing_time_ms": 1.8420219421386719,
+        "mode": "MINIMAL",
+        "warnings": 0,
+        "symbols_skipped": 0
+      },
+      "Rename Variable": {
+        "tokens": 328,
+        "processing_time_ms": 1.7931461334228516,
+        "mode": "MINIMAL",
+        "warnings": 0,
+        "symbols_skipped": 0
+      },
+      "Update Import": {
+        "tokens": 328,
+        "processing_time_ms": 2.160787582397461,
+        "mode": "MINIMAL",
+        "warnings": 0,
+        "symbols_skipped": 0
+      },
+      "Format Code": {
+        "tokens": 328,
+        "processing_time_ms": 2.384185791015625,
+        "mode": "MINIMAL",
+        "warnings": 0,
+        "symbols_skipped": 0
+      },
+      "OAuth Implementation": {
+        "tokens": 695,
+        "processing_time_ms": 14.81771469116211,
+        "mode": "BALANCED",
+        "warnings": 2,
+        "symbols_skipped": 1
+      },
+      "Error Handling": {
+        "tokens": 328,
+        "processing_time_ms": 2.407073974609375,
+        "mode": "BALANCED",
+        "warnings": 0,
+        "symbols_skipped": 0
+      },
+      "Session Management": {
+        "tokens": 328,
+        "processing_time_ms": 4.870891571044922,
+        "mode": "BALANCED",
+        "warnings": 0,
+        "symbols_skipped": 0
+      },
+      "Rate Limiting": {
+        "tokens": 328,
+        "processing_time_ms": 2.3190975189208984,
+        "mode": "BALANCED",
+        "warnings": 0,
+        "symbols_skipped": 0
+      },
+      "Input Validation": {
+        "tokens": 328,
+        "processing_time_ms": 1.8308162689208984,
+        "mode": "BALANCED",
+        "warnings": 0,
+        "symbols_skipped": 0
+      },
+      "Performance Optimization": {
+        "tokens": 328,
+        "processing_time_ms": 1.9989013671875,
+        "mode": "BALANCED",
+        "warnings": 0,
+        "symbols_skipped": 0
+      },
+      "Architecture Review": {
+        "tokens": 328,
+        "processing_time_ms": 1.7230510711669922,
+        "mode": "COMPREHENSIVE",
+        "warnings": 0,
+        "symbols_skipped": 0
+      },
+      "System Design": {
+        "tokens": 328,
+        "processing_time_ms": 1.7790794372558594,
+        "mode": "COMPREHENSIVE",
+        "warnings": 0,
+        "symbols_skipped": 0
+      }
+    },
+    "mode_averages": {
+      "MINIMAL": {
+        "average": 328.0,
+        "min": 328,
+        "max": 328,
+        "count": 5
+      },
+      "BALANCED": {
+        "average": 389.1666666666667,
+        "min": 328,
+        "max": 695,
+        "count": 6
+      },
+      "COMPREHENSIVE": {
+        "average": 328.0,
+        "min": 328,
+        "max": 328,
+        "count": 2
+      }
+    }
+  }
+}

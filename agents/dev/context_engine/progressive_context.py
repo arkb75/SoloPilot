@@ -32,23 +32,39 @@ class ProgressiveContextBuilder:
     - Cost control for simple tasks
     """
     
-    def __init__(self, max_tokens: int = 1800):
+    def __init__(self, max_tokens: int = 1800, tier_budgets: Dict[ContextTier, int] = None):
         """
         Initialize progressive context builder.
         
         Args:
             max_tokens: Maximum tokens allowed (hard limit for Claude timeouts)
+            tier_budgets: Per-tier token budgets
         """
         self.max_tokens = max_tokens
         self.current_tokens = 0
         self.tier = ContextTier.STUB
         self.context_parts: List[Dict[str, Any]] = []
+        
+        # Per-tier token tracking
+        self.tier_budgets = tier_budgets or {
+            ContextTier.STUB: 500,
+            ContextTier.LOCAL_BODY: 600,
+            ContextTier.DEPENDENCIES: 300,
+            ContextTier.FULL: 100
+        }
+        self.tier_tokens = {tier: 0 for tier in ContextTier}
+        
+        # Track skipped contexts for telemetry
+        self.skipped_contexts: List[Dict[str, Any]] = []
+        
         self.metadata: Dict[str, Any] = {
             "tier_progression": [ContextTier.STUB.name],
             "escalation_reasons": [],
             "symbols_processed": 0,
+            "symbols_skipped": 0,
             "tokens_used": 0,
-            "tokens_saved_estimate": 0
+            "tokens_saved_estimate": 0,
+            "warnings": []
         }
         
         # Complex task patterns that trigger escalation
@@ -141,6 +157,25 @@ class ProgressiveContextBuilder:
         
         return False
     
+    def _estimate_tokens(self, text: str) -> int:
+        """
+        Accurately estimate tokens using tiktoken if available.
+        
+        Args:
+            text: Text to count tokens for
+            
+        Returns:
+            Estimated token count
+        """
+        try:
+            import tiktoken
+            # Use GPT-4 encoding for most accurate estimation
+            enc = tiktoken.encoding_for_model("gpt-4")
+            return len(enc.encode(text))
+        except (ImportError, Exception):
+            # Fallback to character-based estimation (1 token ≈ 4 chars)
+            return max(1, len(text) // 4)
+    
     def can_add_context(self, content: str, tier: ContextTier = None) -> bool:
         """
         Check if we can add more context without exceeding limits.
@@ -152,25 +187,20 @@ class ProgressiveContextBuilder:
         Returns:
             True if content can be added
         """
-        # Estimate tokens (rough: 4 chars per token)
-        estimated_tokens = len(content) // 4
+        # Use accurate token estimation
+        estimated_tokens = self._estimate_tokens(content)
+        target_tier = tier or self.tier
         
-        # Check hard limit
+        # Check tier budget
+        tier_budget = self.tier_budgets.get(target_tier, 500)
+        if self.tier_tokens[target_tier] + estimated_tokens > tier_budget:
+            return False
+        
+        # Check total budget
         if self.current_tokens + estimated_tokens > self.max_tokens:
             return False
         
-        # Check tier-specific limits
-        tier_limits = {
-            ContextTier.STUB: 400,
-            ContextTier.LOCAL_BODY: 800,
-            ContextTier.DEPENDENCIES: 1200,
-            ContextTier.FULL: 1800
-        }
-        
-        target_tier = tier or self.tier
-        tier_limit = tier_limits.get(target_tier, self.max_tokens)
-        
-        return self.current_tokens + estimated_tokens <= tier_limit
+        return True
     
     def add_context(self, content: str, tier: ContextTier = None, symbol_name: str = "", 
                    context_type: str = "symbol") -> bool:
@@ -186,7 +216,27 @@ class ProgressiveContextBuilder:
         Returns:
             True if content was added successfully
         """
-        if not self.can_add_context(content, tier):
+        # Use accurate token estimation
+        estimated_tokens = self._estimate_tokens(content)
+        target_tier = tier or self.tier
+        
+        # Check budgets BEFORE adding
+        tier_budget = self.tier_budgets.get(target_tier, 500)
+        
+        if (self.tier_tokens[target_tier] + estimated_tokens > tier_budget or
+            self.current_tokens + estimated_tokens > self.max_tokens):
+            
+            # Log what we're skipping for telemetry
+            skip_reason = "tier_budget_exceeded" if self.tier_tokens[target_tier] + estimated_tokens > tier_budget else "total_budget_exceeded"
+            
+            self.skipped_contexts.append({
+                "symbol": symbol_name,
+                "tier": target_tier.name,
+                "context_type": context_type,
+                "tokens": estimated_tokens,
+                "reason": skip_reason
+            })
+            self.metadata["symbols_skipped"] += 1
             return False
         
         # Update tier if necessary
@@ -194,14 +244,14 @@ class ProgressiveContextBuilder:
             self.tier = tier
             self.metadata["tier_progression"].append(tier.name)
         
-        # Estimate and track tokens
-        estimated_tokens = len(content) // 4
+        # Track tokens accurately
         self.current_tokens += estimated_tokens
+        self.tier_tokens[target_tier] += estimated_tokens
         
         # Store context part
         context_part = {
             "content": content,
-            "tier": (tier or self.tier).name,
+            "tier": target_tier.name,
             "symbol_name": symbol_name,
             "context_type": context_type,
             "token_estimate": estimated_tokens
@@ -250,6 +300,75 @@ class ProgressiveContextBuilder:
         tier_limit = tier_limits.get(self.tier, self.max_tokens)
         return max(0, tier_limit - self.current_tokens)
     
+    def _apply_smart_truncation(self):
+        """
+        Apply intelligent truncation when approaching token limits.
+        Preserves T0 stubs (essential) and removes by reverse priority.
+        """
+        if self.current_tokens <= self.max_tokens:
+            return  # No truncation needed
+        
+        # Removal order: T3 -> T2 -> T1 (never remove T0 stubs)
+        removal_order = [
+            ContextTier.FULL,        # Remove T3 first
+            ContextTier.DEPENDENCIES, # Then T2
+            ContextTier.LOCAL_BODY,  # Then T1 (keep some)
+            # Never remove T0 stubs - they're essential
+        ]
+        
+        for tier in removal_order:
+            if self.current_tokens <= self.max_tokens:
+                break
+                
+            # Remove least relevant contexts from this tier
+            if self._remove_least_relevant_from_tier(tier):
+                continue
+    
+    def _remove_least_relevant_from_tier(self, tier: ContextTier) -> bool:
+        """
+        Remove the least relevant context from a specific tier.
+        
+        Args:
+            tier: Tier to remove context from
+            
+        Returns:
+            True if something was removed
+        """
+        tier_contexts = [
+            (i, part) for i, part in enumerate(self.context_parts)
+            if part["tier"] == tier.name
+        ]
+        
+        if not tier_contexts:
+            return False  # Nothing to remove from this tier
+        
+        # Find least relevant (simple heuristic: smallest context)
+        # In future: use more sophisticated relevance scoring
+        least_relevant_idx, least_relevant = min(
+            tier_contexts, 
+            key=lambda x: len(x[1]["content"])
+        )
+        
+        # Remove from context_parts
+        removed_part = self.context_parts.pop(least_relevant_idx)
+        
+        # Update token counts
+        removed_tokens = removed_part["token_estimate"]
+        self.current_tokens -= removed_tokens
+        self.tier_tokens[tier] -= removed_tokens
+        
+        # Track for telemetry
+        self.skipped_contexts.append({
+            "symbol": removed_part["symbol_name"],
+            "tier": tier.name,
+            "context_type": removed_part["context_type"],
+            "tokens": removed_tokens,
+            "reason": "smart_truncation"
+        })
+        self.metadata["symbols_skipped"] += 1
+        
+        return True
+    
     def build_final_context(self, prompt: str = "", milestone_name: str = "") -> str:
         """
         Build the final context string from all parts.
@@ -259,8 +378,11 @@ class ProgressiveContextBuilder:
             milestone_name: Name of current milestone
             
         Returns:
-            Final formatted context string
+            Final formatted context string with truncation warnings
         """
+        # Apply smart truncation if needed
+        self._apply_smart_truncation()
+        
         if not self.context_parts:
             return self._build_minimal_context(prompt, milestone_name)
         
@@ -269,6 +391,16 @@ class ProgressiveContextBuilder:
             f"# Tokens: {self.current_tokens}/{self.max_tokens}",
             ""
         ]
+        
+        # Add truncation warning if contexts were skipped
+        if self.skipped_contexts:
+            warning_msg = f"⚠️ Context truncated: {len(self.skipped_contexts)} symbols omitted to stay within {self.max_tokens} token budget"
+            sections.extend([
+                f"## ⚠️ Budget Management Warning",
+                warning_msg,
+                ""
+            ])
+            self.metadata["warnings"].append(warning_msg)
         
         if milestone_name:
             sections.extend([
@@ -295,15 +427,18 @@ class ProgressiveContextBuilder:
         for tier_enum in ContextTier:
             tier_name = tier_enum.name
             if tier_name in tier_groups:
+                tier_budget = self.tier_budgets.get(tier_enum, 500)
+                tier_used = self.tier_tokens[tier_enum]
+                
                 sections.extend([
-                    f"## Tier {tier_enum.value}: {tier_name} Context",
+                    f"## Tier {tier_enum.value}: {tier_name} Context ({tier_used}/{tier_budget} tokens)",
                     ""
                 ])
                 
                 for i, part in enumerate(tier_groups[tier_name]):
                     symbol_name = part["symbol_name"] or f"Context-{i+1}"
                     sections.extend([
-                        f"### {symbol_name} ({part['context_type']})",
+                        f"### {symbol_name} ({part['context_type']}) - {part['token_estimate']} tokens",
                         part["content"],
                         ""
                     ])
@@ -315,11 +450,26 @@ class ProgressiveContextBuilder:
             f"- **Final Tier**: {self.tier.name}",
             f"- **Tokens Used**: {self.current_tokens}/{self.max_tokens}",
             f"- **Symbols Processed**: {self.metadata['symbols_processed']}",
+            f"- **Symbols Skipped**: {self.metadata['symbols_skipped']}",
             f"- **Tier Progression**: {' → '.join(self.metadata['tier_progression'])}",
         ])
         
         if self.metadata["escalation_reasons"]:
             sections.append(f"- **Escalation Reasons**: {', '.join(self.metadata['escalation_reasons'])}")
+        
+        if self.skipped_contexts:
+            sections.extend([
+                "",
+                "### Skipped Contexts (Budget Management)",
+                "| Symbol | Tier | Tokens | Reason |",
+                "|--------|------|--------|--------|"
+            ])
+            
+            for skip in self.skipped_contexts[:10]:  # Show max 10 for brevity
+                sections.append(f"| {skip['symbol']} | {skip['tier']} | {skip['tokens']} | {skip['reason']} |")
+            
+            if len(self.skipped_contexts) > 10:
+                sections.append(f"| ... | ... | ... | +{len(self.skipped_contexts) - 10} more |")
         
         return '\n'.join(sections)
     
@@ -376,12 +526,16 @@ class ProgressiveContextBuilder:
         self.current_tokens = 0
         self.tier = ContextTier.STUB
         self.context_parts.clear()
+        self.tier_tokens = {tier: 0 for tier in ContextTier}
+        self.skipped_contexts.clear()
         self.metadata = {
             "tier_progression": [ContextTier.STUB.name],
             "escalation_reasons": [],
             "symbols_processed": 0,
+            "symbols_skipped": 0,
             "tokens_used": 0,
-            "tokens_saved_estimate": 0
+            "tokens_saved_estimate": 0,
+            "warnings": []
         }
 
 

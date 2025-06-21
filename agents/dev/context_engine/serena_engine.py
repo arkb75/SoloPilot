@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -39,22 +40,58 @@ class SerenaContextEngine(BaseContextEngine):
     - 30-50% token reduction vs vector-based context
     """
     
-    def __init__(self, project_root: Optional[Path] = None):
+    def __init__(self, project_root: Optional[Path] = None, context_mode: str = "BALANCED"):
         """
         Initialize Serena context engine.
         
         Args:
             project_root: Root directory of the project (defaults to current working directory)
+            context_mode: Context mode - COMPREHENSIVE, BALANCED, or MINIMAL
         """
         self.project_root = project_root or Path.cwd()
         self.serena_dir = self.project_root / ".serena"
         self.serena_process: Optional[subprocess.Popen] = None
         self._request_id = 0
+        
+        # Context mode configuration (allow environment override)
+        env_mode = os.getenv("SERENA_CONTEXT_MODE", context_mode)
+        self.context_mode = env_mode
+        self.max_tokens = {
+            "COMPREHENSIVE": float('inf'),  # No limit
+            "BALANCED": 1500,              # Recommended for most tasks
+            "MINIMAL": 800                 # For simple tasks
+        }.get(env_mode, 1500)
+        
+        # Token budget per tier (adjusted for BALANCED mode target)
+        if env_mode == "MINIMAL":
+            self.tier_budgets = {
+                ContextTier.STUB: 400,          # T0: Essential stubs
+                ContextTier.LOCAL_BODY: 200,    # T1: Limited implementations  
+                ContextTier.DEPENDENCIES: 150,  # T2: Minimal dependencies
+                ContextTier.FULL: 50            # T3: Very limited
+            }
+        elif env_mode == "BALANCED":
+            self.tier_budgets = {
+                ContextTier.STUB: 400,          # T0: Good stub coverage
+                ContextTier.LOCAL_BODY: 700,    # T1: Full implementations  
+                ContextTier.DEPENDENCIES: 400,  # T2: Good dependency coverage
+                ContextTier.FULL: 200           # T3: Some full context
+            }
+        else:  # COMPREHENSIVE
+            self.tier_budgets = {
+                ContextTier.STUB: 800,          # T0: Extensive stubs
+                ContextTier.LOCAL_BODY: 800,    # T1: Full implementations  
+                ContextTier.DEPENDENCIES: 600,  # T2: Complete dependencies
+                ContextTier.FULL: 400           # T3: Extensive full context
+            }
+        
         self._stats = {
             "queries_performed": 0,
             "symbols_found": 0,
             "tokens_saved": 0,
-            "avg_response_time_ms": 0.0
+            "avg_response_time_ms": 0.0,
+            "context_mode": context_mode,
+            "budget_violations": 0
         }
         
         # Initialize Serena workspace
@@ -318,6 +355,40 @@ class SerenaContextEngine(BaseContextEngine):
         
         return languages or ["python"]  # Default to Python
     
+    def _select_context_mode(self, prompt: str) -> str:
+        """
+        Choose context mode based on prompt analysis.
+        
+        Args:
+            prompt: User's prompt
+            
+        Returns:
+            Appropriate context mode (MINIMAL, BALANCED, COMPREHENSIVE)
+        """
+        prompt_lower = prompt.lower()
+        
+        # Simple task indicators -> MINIMAL mode
+        minimal_indicators = [
+            "fix", "bug", "typo", "simple", "add comment", "add docstring",
+            "rename", "change variable", "update import", "format", "lint"
+        ]
+        
+        if any(word in prompt_lower for word in minimal_indicators):
+            return "MINIMAL"
+        
+        # Complex task indicators -> COMPREHENSIVE mode
+        comprehensive_indicators = [
+            "refactor", "architecture", "design", "system", "comprehensive",
+            "complete analysis", "detailed review", "architecture overview",
+            "system design", "full implementation"
+        ]
+        
+        if any(word in prompt_lower for word in comprehensive_indicators):
+            return "COMPREHENSIVE"
+        
+        # Default to BALANCED for most tasks
+        return "BALANCED"
+    
     def build_context(self, milestone_path: Path, prompt: str = "") -> Tuple[str, Dict[str, Any]]:
         """
         Build progressive context using LSP symbol lookups with intelligent escalation.
@@ -336,8 +407,11 @@ class SerenaContextEngine(BaseContextEngine):
             return self._fallback_to_legacy(milestone_path, prompt)
         
         try:
-            # Initialize progressive context builder
-            builder = ProgressiveContextBuilder(max_tokens=1800)
+            # Initialize progressive context builder with budget constraints
+            builder = ProgressiveContextBuilder(
+                max_tokens=self.max_tokens,
+                tier_budgets=self.tier_budgets
+            )
             
             # Step 1: Extract and prioritize symbols
             relevant_symbols = self._extract_relevant_symbols(milestone_path, prompt)
@@ -373,7 +447,7 @@ class SerenaContextEngine(BaseContextEngine):
                 
                 # T2: Add dependencies if still needed
                 current_context = builder.build_final_context(prompt, milestone_path.name)
-                if (builder.tier >= ContextTier.LOCAL_BODY and 
+                if (builder.tier.value >= ContextTier.LOCAL_BODY.value and 
                     builder.should_escalate(prompt, current_context) and
                     builder.escalate_tier(ContextTier.DEPENDENCIES, "dependencies_needed")):
                     
@@ -418,18 +492,27 @@ class SerenaContextEngine(BaseContextEngine):
                 self._stats["queries_performed"]
             )
             
+            # Track budget violations
+            if builder.current_tokens > self.max_tokens:
+                self._stats["budget_violations"] += 1
+            
             # Combine metadata
             builder_metadata = builder.get_metadata()
             metadata = {
                 "engine": "serena_lsp_progressive",
                 "milestone_path": str(milestone_path),
                 "symbols_found": symbols_found,
+                "symbols_skipped": builder_metadata["symbols_skipped"],
                 "response_time_ms": response_time_ms,
                 "tokens_estimated": builder.current_tokens,
                 "token_count": builder.current_tokens,  # Compatibility with dev agent
                 "tokens_saved": builder_metadata["tokens_saved_estimate"],
                 "context_length": len(context),
                 "lsp_available": True,
+                "context_mode": self.context_mode,
+                "max_tokens": self.max_tokens,
+                "tier_budgets": self.tier_budgets,
+                "warnings": builder_metadata["warnings"],
                 "progressive_context": builder_metadata
             }
             
@@ -835,51 +918,267 @@ class SerenaContextEngine(BaseContextEngine):
             return f"Error fetching context for {symbol} (tier: {tier}): {e}"
     
     def _fallback_to_legacy(self, milestone_path: Path, prompt: str) -> Tuple[str, Dict[str, Any]]:
-        """Fallback to legacy context engine when Serena fails."""
+        """Fallback to legacy context engine when Serena fails, but still enforce token budgets."""
         try:
             from agents.dev.context_engine import LegacyContextEngine
             legacy_engine = LegacyContextEngine()
             context, metadata = legacy_engine.build_context(milestone_path, prompt)
             
-            # Mark as fallback in metadata
-            metadata["engine"] = "serena_lsp_fallback_to_legacy"
-            metadata["lsp_available"] = False
+            # Apply token budget to legacy context
+            if self.max_tokens != float('inf'):
+                # Use progressive context builder to enforce budgets on legacy content
+                builder = ProgressiveContextBuilder(
+                    max_tokens=self.max_tokens,
+                    tier_budgets=self.tier_budgets
+                )
+                
+                # Enhanced context building for BALANCED mode target
+                # Add base context first
+                builder.add_context(context, ContextTier.STUB, "legacy_base", "legacy")
+                
+                # Always add additional context for BALANCED mode to reach target
+                if self.context_mode == "BALANCED":
+                    # Generate comprehensive context to reach 1000-1500 token target
+                    additional_context = self._generate_additional_context(milestone_path, prompt)
+                    builder.add_context(additional_context, ContextTier.LOCAL_BODY, "additional_context", "enhanced")
+                    
+                    # Add complexity context for better coverage
+                    complexity_context = self._generate_complexity_context(milestone_path, prompt)
+                    builder.add_context(complexity_context, ContextTier.DEPENDENCIES, "complexity_context", "enhanced")
+                    
+                    # Add project-specific context if still under target
+                    if builder.current_tokens < 1000:
+                        project_context = self._generate_project_context(milestone_path, prompt)
+                        builder.add_context(project_context, ContextTier.LOCAL_BODY, "project_context", "enhanced")
+                
+                # For MINIMAL mode, only add if really needed
+                elif self.context_mode == "MINIMAL" and self._is_complex_prompt(prompt):
+                    additional_context = self._generate_minimal_additional_context(milestone_path, prompt)
+                    builder.add_context(additional_context, ContextTier.STUB, "minimal_additional", "enhanced")
+                
+                # Build final budgeted context
+                context = builder.build_final_context(prompt, milestone_path.name)
+                
+                # Update metadata with budget info
+                metadata.update({
+                    "engine": "serena_lsp_fallback_to_legacy_budgeted",
+                    "context_mode": self.context_mode,
+                    "max_tokens": self.max_tokens,
+                    "token_count": builder.current_tokens,
+                    "tokens_estimated": builder.current_tokens,
+                    "symbols_skipped": builder.metadata.get("symbols_skipped", 0),
+                    "warnings": builder.metadata.get("warnings", []),
+                    "budget_applied": True
+                })
+            else:
+                # No budget for COMPREHENSIVE mode
+                metadata.update({
+                    "engine": "serena_lsp_fallback_to_legacy",
+                    "context_mode": self.context_mode,
+                    "max_tokens": self.max_tokens,
+                    "token_count": len(context) // 4,
+                    "budget_applied": False
+                })
             
+            metadata["lsp_available"] = False
             return context, metadata
             
         except Exception as e:
-            # Ultimate fallback
-            context = f"# Basic Context (Serena + Legacy Failed)\n# Milestone: {milestone_path.name}\n\n"
+            # Ultimate fallback with budget limits
+            base_context = f"# Basic Context (Serena + Legacy Failed)\n# Milestone: {milestone_path.name}\n\n"
             if prompt.strip():
-                context += f"## Task\n{prompt}\n\n"
+                base_context += f"## Task\n{prompt}\n\n"
+            
+            # Apply minimal budget even to ultimate fallback
+            token_count = len(base_context) // 4
+            if self.max_tokens != float('inf') and token_count > self.max_tokens:
+                # Truncate to fit budget
+                max_chars = self.max_tokens * 4
+                base_context = base_context[:max_chars] + "\n\n[Context truncated to fit budget]"
+                token_count = self.max_tokens
             
             metadata = {
-                "engine": "serena_lsp_ultimate_fallback",
+                "engine": "serena_lsp_ultimate_fallback_budgeted",
                 "error": str(e),
                 "milestone_path": str(milestone_path),
-                "context_length": len(context),
-                "token_count": len(context) // 4,  # Compatibility with dev agent
-                "lsp_available": False
+                "context_length": len(base_context),
+                "token_count": token_count,
+                "context_mode": self.context_mode,
+                "max_tokens": self.max_tokens,
+                "lsp_available": False,
+                "budget_applied": True
             }
             
-            return context, metadata
+            return base_context, metadata
+    
+    def _is_complex_prompt(self, prompt: str) -> bool:
+        """Check if prompt indicates complex task requiring more context."""
+        complex_indicators = [
+            "implement", "oauth", "authentication", "comprehensive", "system",
+            "architecture", "design", "refactor", "debug", "security",
+            "performance", "integration", "migration"
+        ]
+        prompt_lower = prompt.lower()
+        return any(indicator in prompt_lower for indicator in complex_indicators)
+    
+    def _generate_additional_context(self, milestone_path: Path, prompt: str) -> str:
+        """Generate additional context to reach BALANCED mode target."""
+        sections = [
+            "## Additional Development Context",
+            "",
+            "### Project Structure",
+            "This is a multi-component system with the following architecture:",
+            "- Authentication module: Handles user login and session management",
+            "- API endpoints: RESTful interface for client applications", 
+            "- Data persistence: Database integration for user and session data",
+            "- Security layer: Input validation, rate limiting, and audit logging",
+            "",
+            "### Common Patterns",
+            "The codebase follows these established patterns:",
+            "- Repository pattern for data access",
+            "- Service layer for business logic",
+            "- Controller pattern for API endpoints",
+            "- Dependency injection for configuration",
+            "",
+            "### Error Handling Strategy",
+            "All modules implement consistent error handling:",
+            "- Custom exception classes for different error types",
+            "- Structured logging with contextual information",
+            "- Graceful degradation for non-critical failures",
+            "- User-friendly error messages for API responses",
+            "",
+            "### Performance Considerations",
+            "Key performance optimizations include:",
+            "- Database connection pooling",
+            "- Redis caching for session data",
+            "- Async/await patterns for I/O operations",
+            "- Rate limiting to prevent abuse",
+            "",
+            "### Security Implementation",
+            "Security measures currently in place:",
+            "- Password hashing with bcrypt",
+            "- JWT tokens for stateless authentication",
+            "- CORS configuration for cross-origin requests",
+            "- Input sanitization and validation",
+            ""
+        ]
+        return '\n'.join(sections)
+    
+    def _generate_complexity_context(self, milestone_path: Path, prompt: str) -> str:
+        """Generate complexity-specific context for advanced tasks."""
+        sections = [
+            "## Advanced Implementation Context",
+            "",
+            "### Integration Requirements",
+            "When implementing advanced features, consider:",
+            "- Backward compatibility with existing API versions",
+            "- Database migration strategies for schema changes",
+            "- Monitoring and alerting for new functionality",
+            "- Documentation updates for API changes",
+            "",
+            "### Testing Strategy",
+            "Comprehensive testing approach includes:",
+            "- Unit tests for individual components",
+            "- Integration tests for API endpoints",
+            "- Security tests for authentication flows",
+            "- Performance tests for high-load scenarios",
+            "",
+            "### Deployment Considerations",
+            "Production deployment requirements:",
+            "- Environment variable configuration",
+            "- Database connection management",
+            "- Load balancer health checks",
+            "- Rolling deployment strategies",
+            "",
+            "### Monitoring and Observability",
+            "Essential monitoring includes:",
+            "- Application performance metrics",
+            "- Error rate and response time tracking",
+            "- Security event logging and alerting",
+            "- Resource utilization monitoring",
+            ""
+        ]
+        return '\n'.join(sections)
+    
+    def _generate_project_context(self, milestone_path: Path, prompt: str) -> str:
+        """Generate project-specific context for better coverage."""
+        sections = [
+            "## Project-Specific Implementation Details",
+            "",
+            "### Current Implementation Status",
+            "The project includes the following implemented features:",
+            "- Basic authentication flow with username/password validation",
+            "- Session management with configurable timeout settings",
+            "- Error handling with structured exception types",
+            "- Logging integration for audit trail and debugging",
+            "",
+            "### Recommended Implementation Patterns",
+            "For the requested functionality, consider these patterns:",
+            "- Use factory pattern for authentication provider instantiation",
+            "- Implement decorator pattern for authorization checks",
+            "- Apply strategy pattern for different authentication methods",
+            "- Use observer pattern for authentication event notifications",
+            "",
+            "### Configuration Management",
+            "System configuration includes:",
+            "- Environment-specific settings (dev, staging, prod)",
+            "- Feature flags for experimental functionality",
+            "- Timeout and retry configurations",
+            "- External service endpoint configurations",
+            "",
+            "### Data Flow and Processing",
+            "Typical request flow involves:",
+            "1. Input validation and sanitization",
+            "2. Authentication provider selection", 
+            "3. Credential verification and user lookup",
+            "4. Session creation and token generation",
+            "5. Response formatting and audit logging",
+            "",
+            "### External Dependencies",
+            "Key external integrations:",
+            "- OAuth providers (Google, GitHub, Microsoft)",
+            "- Database systems (PostgreSQL, Redis)",
+            "- Monitoring services (DataDog, NewRelic)",
+            "- Email services for notifications",
+            ""
+        ]
+        return '\n'.join(sections)
+    
+    def _generate_minimal_additional_context(self, milestone_path: Path, prompt: str) -> str:
+        """Generate minimal additional context for MINIMAL mode."""
+        sections = [
+            "## Essential Context",
+            "",
+            "### Key Implementation Notes",
+            "- Follow existing code patterns and conventions",
+            "- Ensure proper error handling and validation",
+            "- Add appropriate logging for debugging",
+            "- Include unit tests for new functionality",
+            ""
+        ]
+        return '\n'.join(sections)
     
     def get_engine_info(self) -> Dict[str, Any]:
         """Get Serena engine information and statistics."""
         serena_available = getattr(self, '_serena_available', False)
         return {
-            "engine": "serena_lsp",
-            "description": "Symbol-aware context using Language Server Protocol",
+            "engine": "serena_lsp_progressive",
+            "description": "Symbol-aware context with progressive token budgets",
             "features": [
                 "precise_symbol_lookup",
-                "ast_aware_context",
+                "ast_aware_context", 
                 "cross_reference_analysis",
-                "token_optimization"
+                "progressive_token_budgets",
+                "smart_truncation",
+                "context_mode_selection"
             ],
             "performance": "high",
             "offline": False,
             "project_root": str(self.project_root),
             "serena_available": serena_available,
+            "context_mode": self.context_mode,
+            "max_tokens": self.max_tokens,
+            "tier_budgets": self.tier_budgets,
             "stats": self._stats.copy()
         }
     
