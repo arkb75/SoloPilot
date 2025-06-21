@@ -16,6 +16,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from agents.dev.context_engine import BaseContextEngine
+from agents.dev.context_engine.progressive_context import (
+    ProgressiveContextBuilder,
+    ContextTier,
+    SymbolSelector
+)
 
 
 class SerenaLSPError(Exception):
@@ -315,7 +320,7 @@ class SerenaContextEngine(BaseContextEngine):
     
     def build_context(self, milestone_path: Path, prompt: str = "") -> Tuple[str, Dict[str, Any]]:
         """
-        Build precise context using LSP symbol lookups.
+        Build progressive context using LSP symbol lookups with intelligent escalation.
         
         Args:
             milestone_path: Path to milestone directory
@@ -331,57 +336,108 @@ class SerenaContextEngine(BaseContextEngine):
             return self._fallback_to_legacy(milestone_path, prompt)
         
         try:
-            # Step 1: Extract symbols/keywords from prompt and milestone
+            # Initialize progressive context builder
+            builder = ProgressiveContextBuilder(max_tokens=1800)
+            
+            # Step 1: Extract and prioritize symbols
             relevant_symbols = self._extract_relevant_symbols(milestone_path, prompt)
+            prioritized_symbols = SymbolSelector.prioritize_symbols_by_relevance(prompt, relevant_symbols)
             
-            # Step 2: Use LSP to find precise symbol definitions
-            context_parts = []
+            # Step 2: Always start with stubs (T0)
             symbols_found = 0
-            
-            for symbol in relevant_symbols:
-                symbol_context = self._find_symbol_context(symbol)
-                if symbol_context:
-                    context_parts.append(symbol_context)
+            for symbol in prioritized_symbols[:12]:  # Top 12 most relevant
+                stub_context = self._get_symbol_stub(symbol)
+                if stub_context and builder.add_context(
+                    stub_context, 
+                    ContextTier.STUB, 
+                    symbol, 
+                    "stub"
+                ):
                     symbols_found += 1
             
-            # Step 3: Build final context with symbol-aware structure
-            context = self._build_structured_context(context_parts, milestone_path, prompt)
+            # Step 3: Check if we need to escalate
+            if builder.should_escalate(prompt, builder.build_final_context(prompt, milestone_path.name)):
+                # T1: Add full body of primary targets
+                primary_symbols = SymbolSelector.identify_primary_targets(prompt, prioritized_symbols)
+                
+                if builder.escalate_tier(ContextTier.LOCAL_BODY, "complex_task_detected"):
+                    for symbol in primary_symbols[:3]:  # Top 3 primary targets
+                        full_body = self._get_symbol_full_body(symbol)
+                        if full_body and builder.add_context(
+                            full_body, 
+                            ContextTier.LOCAL_BODY, 
+                            symbol, 
+                            "full_body"
+                        ):
+                            symbols_found += 1
+                
+                # T2: Add dependencies if still needed
+                current_context = builder.build_final_context(prompt, milestone_path.name)
+                if (builder.tier >= ContextTier.LOCAL_BODY and 
+                    builder.should_escalate(prompt, current_context) and
+                    builder.escalate_tier(ContextTier.DEPENDENCIES, "dependencies_needed")):
+                    
+                    if primary_symbols:
+                        deps = self._get_symbol_dependencies(primary_symbols[0])
+                        for dep in deps[:5]:  # Top 5 dependencies
+                            dep_body = self._get_symbol_full_body(dep)
+                            if dep_body and builder.add_context(
+                                dep_body, 
+                                ContextTier.DEPENDENCIES, 
+                                dep, 
+                                "dependency"
+                            ):
+                                symbols_found += 1
+                
+                # T3: Full context if explicitly requested or extremely complex
+                if self._requires_full_context(prompt) and builder.escalate_tier(ContextTier.FULL, "full_context_required"):
+                    # Add complete file context for primary symbols
+                    for symbol in primary_symbols[:2]:  # Top 2 for full context
+                        file_context = self._get_full_file_context(symbol)
+                        if file_context and builder.add_context(
+                            file_context, 
+                            ContextTier.FULL, 
+                            symbol, 
+                            "full_file"
+                        ):
+                            symbols_found += 1
             
-            # Step 4: Calculate statistics
+            # Step 4: Build final context
+            context = builder.build_final_context(prompt, milestone_path.name)
+            
+            # Step 5: Calculate statistics
             end_time = time.time()
-            response_time_ms = max(1, int((end_time - start_time) * 1000))  # Ensure > 0
+            response_time_ms = max(1, int((end_time - start_time) * 1000))
             
-            # Estimate token savings (compared to typical chunk-based approach)
-            estimated_chunk_tokens = len(context) * 1.5  # Chunks typically 50% more verbose
-            actual_tokens = len(context) // 4  # Simple token estimation
-            tokens_saved = max(0, int(estimated_chunk_tokens // 4 - actual_tokens))
-            
-            # Update statistics
+            # Update global statistics
             self._stats["queries_performed"] += 1
             self._stats["symbols_found"] += symbols_found
-            self._stats["tokens_saved"] += tokens_saved
+            self._stats["tokens_saved"] += builder.get_metadata()["tokens_saved_estimate"]
             self._stats["avg_response_time_ms"] = (
                 (self._stats["avg_response_time_ms"] * (self._stats["queries_performed"] - 1) + response_time_ms) /
                 self._stats["queries_performed"]
             )
             
+            # Combine metadata
+            builder_metadata = builder.get_metadata()
             metadata = {
-                "engine": "serena_lsp",
+                "engine": "serena_lsp_progressive",
                 "milestone_path": str(milestone_path),
                 "symbols_found": symbols_found,
                 "response_time_ms": response_time_ms,
-                "tokens_estimated": actual_tokens,
-                "token_count": actual_tokens,  # Compatibility with dev agent
-                "tokens_saved": tokens_saved,
+                "tokens_estimated": builder.current_tokens,
+                "token_count": builder.current_tokens,  # Compatibility with dev agent
+                "tokens_saved": builder_metadata["tokens_saved_estimate"],
                 "context_length": len(context),
-                "lsp_available": True
+                "lsp_available": True,
+                "progressive_context": builder_metadata
             }
             
             return context, metadata
             
         except Exception as e:
             # Fallback to legacy context if Serena fails
-            print(f"⚠️ Serena LSP failed ({e}), falling back to legacy context")
+            print(f"⚠️ Serena LSP progressive context failed ({e}), falling back to legacy context")
             return self._fallback_to_legacy(milestone_path, prompt)
     
     def _extract_relevant_symbols(self, milestone_path: Path, prompt: str) -> List[str]:
@@ -540,6 +596,243 @@ class SerenaContextEngine(BaseContextEngine):
                 pass
         
         return '\n'.join(sections)
+    
+    def _get_symbol_stub(self, symbol: str) -> Optional[str]:
+        """
+        Get minimal stub context for a symbol (T0 tier).
+        
+        Returns:
+            Stub context string with signature, docstring, and key lines
+        """
+        try:
+            # Search for symbol definition
+            for py_file in self.project_root.glob("**/*.py"):
+                if py_file.name.startswith('.'):
+                    continue
+                    
+                try:
+                    content = py_file.read_text(encoding='utf-8')
+                    lines = content.split('\n')
+                    
+                    for i, line in enumerate(lines):
+                        if symbol in line and ('class ' in line or 'def ' in line):
+                            # Extract minimal context
+                            stub_lines = [line.strip()]  # Definition line
+                            
+                            # Add docstring if present
+                            j = i + 1
+                            while j < len(lines) and j < i + 5:  # Look ahead max 5 lines
+                                next_line = lines[j].strip()
+                                if next_line.startswith('"""') or next_line.startswith("'''"):
+                                    # Found docstring start
+                                    quote = '"""' if '"""' in next_line else "'''"
+                                    stub_lines.append(next_line)
+                                    
+                                    # Find docstring end
+                                    if next_line.count(quote) == 2:  # Single line docstring
+                                        break
+                                    else:
+                                        j += 1
+                                        while j < len(lines):
+                                            doc_line = lines[j].strip()
+                                            stub_lines.append(doc_line)
+                                            if quote in doc_line:
+                                                break
+                                            j += 1
+                                    break
+                                elif next_line and not next_line.startswith('#'):
+                                    # Stop at first non-comment, non-empty line
+                                    break
+                                j += 1
+                            
+                            # Add ellipsis to indicate there's more
+                            if len(stub_lines) == 1:  # Only definition line
+                                stub_lines.append("    ...")
+                            
+                            return f"# {py_file.relative_to(self.project_root)}:{i+1}\n" + '\n'.join(stub_lines)
+                            
+                except (UnicodeDecodeError, FileNotFoundError):
+                    continue
+                    
+        except Exception:
+            pass
+        
+        return None
+    
+    def _get_symbol_full_body(self, symbol: str) -> Optional[str]:
+        """
+        Get full implementation body for a symbol (T1 tier).
+        
+        Returns:
+            Complete symbol implementation
+        """
+        symbol_info = self.find_symbol(symbol)
+        if symbol_info and "full_definition" in symbol_info:
+            file_path = symbol_info.get("file", "unknown")
+            line_num = symbol_info.get("line", 0)
+            return f"# {file_path}:{line_num}\n{symbol_info['full_definition']}"
+        
+        # Fallback to basic context
+        return self._find_symbol_context(symbol)
+    
+    def _get_symbol_dependencies(self, symbol: str) -> List[str]:
+        """
+        Get direct dependencies for a symbol (T2 tier).
+        
+        Returns:
+            List of dependency symbol names
+        """
+        dependencies = []
+        
+        try:
+            # Find the symbol's file and extract imports/calls
+            symbol_info = self.find_symbol(symbol)
+            if not symbol_info:
+                return dependencies
+            
+            file_path = self.project_root / symbol_info["file"]
+            if not file_path.exists():
+                return dependencies
+            
+            content = file_path.read_text(encoding='utf-8')
+            lines = content.split('\n')
+            
+            # Extract imports
+            for line in lines:
+                line = line.strip()
+                if line.startswith('from ') and 'import ' in line:
+                    # from module import symbol1, symbol2
+                    parts = line.split('import ', 1)
+                    if len(parts) == 2:
+                        imports = [imp.strip() for imp in parts[1].split(',')]
+                        dependencies.extend(imports[:3])  # Max 3 imports per line
+                elif line.startswith('import '):
+                    # import module
+                    module = line.replace('import ', '').split('.')[0].strip()
+                    dependencies.append(module)
+            
+            # Extract function/class calls within symbol definition
+            if "full_definition" in symbol_info:
+                definition = symbol_info["full_definition"]
+                # Simple pattern matching for function calls
+                import re
+                call_patterns = [
+                    r'(\w+)\(',  # function_name(
+                    r'self\.(\w+)',  # self.method_name
+                    r'(\w+)\.(\w+)',  # module.function
+                ]
+                
+                for pattern in call_patterns:
+                    matches = re.findall(pattern, definition)
+                    for match in matches:
+                        if isinstance(match, tuple):
+                            dependencies.extend(match)
+                        else:
+                            dependencies.append(match)
+            
+        except Exception as e:
+            print(f"⚠️ Error extracting dependencies for {symbol}: {e}")
+        
+        # Remove duplicates and common keywords
+        common_keywords = {'self', 'super', 'print', 'len', 'str', 'int', 'list', 'dict', 'set', 'tuple'}
+        unique_deps = []
+        seen = set()
+        
+        for dep in dependencies:
+            if dep and dep not in common_keywords and dep not in seen and len(dep) > 1:
+                unique_deps.append(dep)
+                seen.add(dep)
+                if len(unique_deps) >= 10:  # Max 10 dependencies
+                    break
+        
+        return unique_deps
+    
+    def _get_full_file_context(self, symbol: str) -> Optional[str]:
+        """
+        Get complete file context for a symbol (T3 tier).
+        
+        Returns:
+            Complete file content where symbol is defined
+        """
+        try:
+            symbol_info = self.find_symbol(symbol)
+            if not symbol_info:
+                return None
+            
+            file_path = self.project_root / symbol_info["file"]
+            if not file_path.exists():
+                return None
+            
+            content = file_path.read_text(encoding='utf-8')
+            return f"# Complete file: {file_path.relative_to(self.project_root)}\n{content}"
+            
+        except Exception as e:
+            print(f"⚠️ Error getting full file context for {symbol}: {e}")
+            return None
+    
+    def _requires_full_context(self, prompt: str) -> bool:
+        """
+        Check if prompt explicitly requires full context (T3 tier).
+        
+        Returns:
+            True if full context is needed
+        """
+        full_context_patterns = [
+            r'complete.*file',
+            r'entire.*module',
+            r'full.*implementation',
+            r'whole.*codebase',
+            r'comprehensive.*analysis',
+            r'detailed.*review',
+            r'architecture.*overview',
+            r'system.*design'
+        ]
+        
+        prompt_lower = prompt.lower()
+        for pattern in full_context_patterns:
+            if re.search(pattern, prompt_lower):
+                return True
+        
+        return False
+    
+    def fetch_more_context(self, symbol: str, tier: str = "body") -> str:
+        """
+        Tool for AI to request additional context on demand.
+        
+        Args:
+            symbol: Symbol name to get context for
+            tier: Context tier ('stub', 'body', 'dependencies', 'file')
+            
+        Returns:
+            Additional context string
+        """
+        try:
+            if tier == "stub":
+                return self._get_symbol_stub(symbol) or f"No stub context found for {symbol}"
+            elif tier == "body":
+                return self._get_symbol_full_body(symbol) or f"No full body found for {symbol}"
+            elif tier == "dependencies":
+                deps = self._get_symbol_dependencies(symbol)
+                if not deps:
+                    return f"No dependencies found for {symbol}"
+                
+                dep_contexts = []
+                for dep in deps[:5]:  # Top 5 dependencies
+                    dep_context = self._get_symbol_full_body(dep)
+                    if dep_context:
+                        dep_contexts.append(dep_context)
+                
+                if dep_contexts:
+                    return f"# Dependencies for {symbol}\n\n" + '\n\n'.join(dep_contexts)
+                else:
+                    return f"No dependency context found for {symbol}"
+            elif tier == "file":
+                return self._get_full_file_context(symbol) or f"No file context found for {symbol}"
+            else:
+                return f"Unknown context tier: {tier}. Available: stub, body, dependencies, file"
+                
+        except Exception as e:
+            return f"Error fetching context for {symbol} (tier: {tier}): {e}"
     
     def _fallback_to_legacy(self, milestone_path: Path, prompt: str) -> Tuple[str, Dict[str, Any]]:
         """Fallback to legacy context engine when Serena fails."""

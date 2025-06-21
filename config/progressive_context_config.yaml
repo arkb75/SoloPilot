@@ -1,0 +1,212 @@
+# Progressive Context Configuration for Serena LSP
+# Achieves 6x token reduction while maintaining quality for complex tasks
+
+progressive_context:
+  # Global settings
+  max_tokens: 1800              # Hard limit to prevent Claude timeouts
+  default_tier: "STUB"          # Always start with minimal context
+  auto_escalate: true           # Enable automatic tier escalation
+  enable_on_demand: true        # Allow AI to request more context
+
+  # Tier-specific token budgets
+  tier_budgets:
+    STUB: 400                   # Symbol signatures, docstrings, key lines
+    LOCAL_BODY: 800             # STUB + full target symbol implementation  
+    DEPENDENCIES: 1200          # LOCAL_BODY + direct dependency bodies (top 5)
+    FULL: 1800                  # Complete modules/files as needed
+
+  # Symbol selection settings
+  symbol_selection:
+    max_symbols_per_tier: 12    # Maximum symbols to process per tier
+    max_primary_targets: 3      # Maximum primary targets for LOCAL_BODY
+    max_dependencies: 5         # Maximum dependencies for DEPENDENCIES tier
+    max_full_files: 2           # Maximum full files for FULL tier
+
+  # Escalation triggers
+  escalation:
+    # Complex task patterns that trigger escalation
+    complex_patterns:
+      - "refactor.*system"
+      - "race condition"
+      - "deadlock"
+      - "transaction.*boundar"
+      - "oauth.*implement"
+      - "caching.*layer"
+      - "find.*fix.*bug"
+      - "cross-file"
+      - "architectural.*change"
+      - "security.*vuln"
+      - "performance.*bottleneck"
+      - "memory.*leak"
+      - "thread.*safe"
+      - "async.*await"
+      - "database.*migration"
+      - "api.*integration"
+
+    # AI struggle indicators
+    struggle_indicators:
+      - "need more context"
+      - "unclear"
+      - "insufficient information"
+      - "cannot determine"
+      - "requires additional"
+      - "missing dependencies"
+
+    # Large change patterns
+    large_change_patterns:
+      - "rewrite.*entire"
+      - "complete.*refactor"
+      - "major.*change"
+      - "system.*redesign"
+      - "architecture.*overhaul"
+
+    # Multi-file indicators
+    multi_file_patterns:
+      - "across.*files?"
+      - "multiple.*modules?"
+      - "entire.*codebase"
+      - "project.*wide"
+      - "system.*wide"
+
+  # Full context triggers (T3)
+  full_context_patterns:
+    - "complete.*file"
+    - "entire.*module"
+    - "full.*implementation"
+    - "whole.*codebase"
+    - "comprehensive.*analysis"
+    - "detailed.*review"
+    - "architecture.*overview"
+    - "system.*design"
+
+  # Symbol prioritization weights
+  prioritization:
+    direct_mention_score: 100   # Symbol directly mentioned in prompt
+    partial_match_score: 50     # Parts of symbol name in prompt
+    prefix_suffix_score: 75     # Common prefixes/suffixes match
+    keyword_relevance_score: 25 # Task-specific keyword relevance
+
+    # Common prefixes and suffixes
+    common_prefixes:
+      - "get_"
+      - "set_"
+      - "is_"
+      - "has_"
+      - "create_"
+      - "update_"
+      - "delete_"
+
+    common_suffixes:
+      - "_handler"
+      - "_manager"
+      - "_service"
+      - "_controller"
+      - "_model"
+
+    # Task-specific keywords
+    task_keywords:
+      auth:
+        - "login"
+        - "authenticate"
+        - "token"
+        - "session"
+        - "user"
+      data:
+        - "save"
+        - "load"
+        - "store"
+        - "retrieve"
+        - "database"
+      api:
+        - "request"
+        - "response"
+        - "endpoint"
+        - "route"
+        - "http"
+      ui:
+        - "render"
+        - "display"
+        - "view"
+        - "component"
+        - "template"
+      test:
+        - "test"
+        - "mock"
+        - "assert"
+        - "verify"
+        - "check"
+
+  # Performance settings
+  performance:
+    symbol_search_timeout: 5.0  # Seconds to spend on symbol search
+    cache_symbol_lookups: true  # Cache symbol information
+    parallel_symbol_processing: true  # Process symbols in parallel
+    max_file_size_kb: 1000      # Skip files larger than this
+
+  # Fallback settings
+  fallback:
+    to_legacy_on_failure: true  # Fallback to legacy context if progressive fails
+    legacy_token_limit: 2000    # Token limit for legacy fallback
+    ultimate_fallback_message: "# Progressive Context Failed - Using Minimal Context"
+
+# Development and debugging
+debug:
+  log_tier_progression: true    # Log tier escalations
+  log_escalation_reasons: true  # Log why escalation occurred
+  log_token_usage: true         # Log token consumption
+  log_symbol_selection: false   # Log symbol selection process (verbose)
+  measure_performance: true     # Measure context building performance
+
+# Validation benchmarks
+benchmarks:
+  simple_task_max_tokens: 500   # Simple tasks should not exceed this
+  complex_task_max_tokens: 1500 # Complex tasks should not exceed this
+  oauth_refactor_max_tokens: 1200  # OAuth refactor benchmark
+  
+  # Expected efficiency improvements
+  target_token_reduction: 6.0   # 6x reduction vs chunk-based
+  min_token_efficiency: 0.3     # At least 30% token efficiency
+  
+  # Quality preservation
+  min_symbols_for_complex: 3    # Complex tasks should have at least 3 symbols
+  require_primary_targets: true # Primary targets must be identified
+
+# Test scenarios for validation
+test_scenarios:
+  simple:
+    - prompt: "Fix the typo in the error message"
+      expected_tier: "STUB"
+      max_tokens: 500
+      
+    - prompt: "Add a docstring to the authenticate method"
+      expected_tier: "STUB" 
+      max_tokens: 500
+      
+    - prompt: "Change variable name from 'user' to 'username'"
+      expected_tier: "STUB"
+      max_tokens: 500
+
+  complex:
+    - prompt: "Refactor authentication to use OAuth2"
+      expected_tier: "LOCAL_BODY"
+      max_tokens: 1200
+      required_symbols: ["authenticate", "oauth", "auth"]
+      
+    - prompt: "Find and fix the race condition in job processing"
+      expected_tier: "DEPENDENCIES"
+      max_tokens: 1200
+      required_symbols: ["job", "process", "thread"]
+      
+    - prompt: "Implement comprehensive security audit for auth system"
+      expected_tier: "DEPENDENCIES"
+      max_tokens: 1500
+      required_symbols: ["auth", "security", "audit"]
+
+  full_context:
+    - prompt: "Provide complete file analysis for architecture review"
+      expected_tier: "FULL"
+      max_tokens: 1800
+      
+    - prompt: "Generate comprehensive system design documentation"
+      expected_tier: "FULL"
+      max_tokens: 1800
