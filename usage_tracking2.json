@@ -1,0 +1,35 @@
+{
+  "user_id": "9c367d95-21ad-47ec-9b83-1044c3fe9e1d",
+  "first_run": "2025-06-24T18:44:34.370754",
+  "runs": [
+    {
+      "timestamp": "2025-06-24T18:44:35.535701",
+      "plan": "pro",
+      "timezone": "Europe_Warsaw",
+      "filename": "XXXNEW_pro_Europe_Warsaw_9c367d95-21ad-47ec-9b83-1044c3fe9e1d_20250624_184434.json"
+    },
+    {
+      "timestamp": "2025-06-24T18:45:21.149359",
+      "plan": "max5",
+      "timezone": "Europe_Warsaw",
+      "filename": "XXXNEW_max5_Europe_Warsaw_9c367d95-21ad-47ec-9b83-1044c3fe9e1d_20250624_184520.json"
+    },
+    {
+      "timestamp": "2025-06-24T18:46:23.788492",
+      "plan": "pro",
+      "timezone": "US_Pacific",
+      "filename": "XXXNEW_pro_US_Pacific_9c367d95-21ad-47ec-9b83-1044c3fe9e1d_20250624_184622.json"
+    },
+    {
+      "timestamp": "2025-06-24T18:47:16.796556",
+      "plan": "max5",
+      "timezone": "US_Pacific",
+      "filename": "XXXNEW_max5_US_Pacific_9c367d95-21ad-47ec-9b83-1044c3fe9e1d_20250624_184716.json"
+    }
+  ],
+  "last_upload_config": {
+    "plan": "max5",
+    "timezone": "US_Pacific",
+    "timestamp": "2025-06-24T18:47:16.797622"
+  }
+}

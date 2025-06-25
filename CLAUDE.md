@@ -120,7 +120,45 @@ The system uses a factory-based context engine for enhanced code generation with
 - Cross-reference analysis and dependency tracking
 - Fallback to legacy engine if LSP unavailable
 
+**Token Budget Configuration**:
+- `SERENA_BALANCED_TARGET=1500`: Override BALANCED mode token limit (default: 1500)
+- `SERENA_CONTEXT_MODE=MINIMAL|BALANCED|COMPREHENSIVE`: Force specific context mode
+- `SERENA_TELEMETRY_ENABLED=1`: Enable production telemetry logging to `serena_telemetry.jsonl`
+
 **Integration**: Dev agent uses `self.context_engine.build_context()` for intelligent context extraction.
+
+### Serena Token Budget Tuning
+
+The Serena context engine uses progressive token budgets to balance quality with cost control:
+
+**Context Modes**:
+- **MINIMAL** (800 tokens): Simple fixes, typos, basic changes
+- **BALANCED** (1500 tokens): Most development tasks, configurable via `SERENA_BALANCED_TARGET`
+- **COMPREHENSIVE** (unlimited): Complex architecture reviews, full system analysis
+
+**Runtime Tuning Examples**:
+```bash
+# Increase BALANCED mode for more comprehensive context
+export SERENA_BALANCED_TARGET=2000
+python scripts/run_dev_agent.py
+
+# Force minimal context for cost control
+export SERENA_CONTEXT_MODE=MINIMAL
+python scripts/run_dev_agent.py
+
+# Enable production telemetry for monitoring
+export SERENA_TELEMETRY_ENABLED=1
+python scripts/run_dev_agent.py
+```
+
+**Telemetry Data** (when enabled):
+- Token usage per request
+- Response times and performance metrics
+- Symbol processing statistics
+- Budget violations and warnings
+- Privacy-safe prompt identification (hash)
+
+**CI Validation**: The system enforces a hard 2000-token limit in CI to prevent API cost overruns and Claude timeout issues.
 
 ## 🗺 Inference Profile Map – us-east-2
 

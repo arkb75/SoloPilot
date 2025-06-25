@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -56,11 +57,15 @@ class SerenaContextEngine(BaseContextEngine):
         # Context mode configuration (allow environment override)
         env_mode = os.getenv("SERENA_CONTEXT_MODE", context_mode)
         self.context_mode = env_mode
+        
+        # Allow runtime tuning of BALANCED mode target
+        balanced_target = int(os.getenv("SERENA_BALANCED_TARGET", "1500"))
+        
         self.max_tokens = {
             "COMPREHENSIVE": float('inf'),  # No limit
-            "BALANCED": 1500,              # Recommended for most tasks
+            "BALANCED": balanced_target,    # Configurable via SERENA_BALANCED_TARGET
             "MINIMAL": 800                 # For simple tasks
-        }.get(env_mode, 1500)
+        }.get(env_mode, balanced_target)
         
         # Token budget per tier (adjusted for BALANCED mode target)
         if env_mode == "MINIMAL":
@@ -532,6 +537,28 @@ class SerenaContextEngine(BaseContextEngine):
                 "warnings": builder_metadata["warnings"],
                 "progressive_context": builder_metadata
             }
+            
+            # Production telemetry logging (optional)
+            if os.getenv("SERENA_TELEMETRY_ENABLED"):
+                telemetry = {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "context_mode": self.context_mode,
+                    "tokens_used": builder.current_tokens,
+                    "symbols_found": symbols_found,
+                    "symbols_skipped": builder_metadata["symbols_skipped"],
+                    "response_time_ms": response_time_ms,
+                    "prompt_hash": hash(prompt),  # Privacy-safe prompt identification
+                    "milestone": milestone_path.name,
+                    "tier_reached": builder.tier.name,
+                    "budget_violations": 1 if builder.current_tokens > self.max_tokens else 0
+                }
+                # Log to file or monitoring service
+                try:
+                    with open("serena_telemetry.jsonl", "a") as f:
+                        f.write(json.dumps(telemetry) + "\n")
+                except Exception as e:
+                    # Don't fail context generation due to telemetry issues
+                    logging.warning(f"Failed to write telemetry data: {e}")
             
             return context, metadata
             
