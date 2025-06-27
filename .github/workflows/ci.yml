@@ -252,7 +252,7 @@ jobs:
   promote:
     name: Promote to Staging
     runs-on: ubuntu-latest
-    needs: [integration-test, sonarcloud]
+    needs: [integration-test, sonarcloud, code-review]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
     steps:

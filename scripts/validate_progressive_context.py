@@ -9,57 +9,57 @@ Run this to ensure the 6x token reduction is achieved while maintaining code gen
 import json
 import tempfile
 import time
-import yaml
 from pathlib import Path
-from typing import Dict, List, Any, Tuple
+from typing import Any, Dict, List
+
+import yaml
 
 from agents.dev.context_engine.progressive_context import (
-    ProgressiveContextBuilder,
     ContextTier,
-    SymbolSelector
+    ProgressiveContextBuilder,
+    SymbolSelector,
 )
-from agents.dev.context_engine.serena_engine import SerenaContextEngine
 
 
 class ProgressiveContextValidator:
     """Validates progressive context implementation against benchmarks."""
-    
+
     def __init__(self, config_path: str = None):
         """Initialize validator with configuration."""
         if config_path:
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 self.config = yaml.safe_load(f)
         else:
             # Default configuration
             self.config = {
-                'progressive_context': {
-                    'max_tokens': 1800,
-                    'tier_budgets': {
-                        'STUB': 400,
-                        'LOCAL_BODY': 800,
-                        'DEPENDENCIES': 1200,
-                        'FULL': 1800
-                    }
+                "progressive_context": {
+                    "max_tokens": 1800,
+                    "tier_budgets": {
+                        "STUB": 400,
+                        "LOCAL_BODY": 800,
+                        "DEPENDENCIES": 1200,
+                        "FULL": 1800,
+                    },
                 },
-                'benchmarks': {
-                    'simple_task_max_tokens': 500,
-                    'complex_task_max_tokens': 1500,
-                    'target_token_reduction': 6.0,
-                    'min_token_efficiency': 0.3
-                }
+                "benchmarks": {
+                    "simple_task_max_tokens": 500,
+                    "complex_task_max_tokens": 1500,
+                    "target_token_reduction": 6.0,
+                    "min_token_efficiency": 0.3,
+                },
             }
-        
+
         self.results = {
-            'tests_passed': 0,
-            'tests_failed': 0,
-            'benchmark_results': {},
-            'validation_errors': []
+            "tests_passed": 0,
+            "tests_failed": 0,
+            "benchmark_results": {},
+            "validation_errors": [],
         }
-    
+
     def create_test_project(self) -> Path:
         """Create a test project with realistic code structure."""
         temp_dir = Path(tempfile.mkdtemp())
-        
+
         # Create complex authentication system
         auth_code = """
 import hashlib
@@ -254,7 +254,7 @@ class Session:
         '''Refresh session expiration.'''
         self.expires_at = datetime.utcnow() + timedelta(hours=hours)
 """
-        
+
         oauth_code = """
 import requests
 from typing import Dict, Any, Optional
@@ -337,51 +337,75 @@ class GitHubOAuthProvider(OAuthProvider):
             pass
         return None
 """
-        
+
         # Write files
         (temp_dir / "auth.py").write_text(auth_code)
         (temp_dir / "oauth.py").write_text(oauth_code)
-        
+
         # Create milestone
         milestone_dir = temp_dir / "output" / "dev" / "auth_milestone"
         milestone_dir.mkdir(parents=True)
-        
+
         milestone_data = {
             "components": ["AuthenticationManager", "OAuthClient", "SecurityPolicy", "Session"],
-            "functions": ["authenticate_user", "oauth_authenticate", "validate_credentials", "verify_token"],
-            "classes": ["AuthenticationManager", "OAuthClient", "SecurityPolicy", "Session", "GoogleOAuthProvider"]
+            "functions": [
+                "authenticate_user",
+                "oauth_authenticate",
+                "validate_credentials",
+                "verify_token",
+            ],
+            "classes": [
+                "AuthenticationManager",
+                "OAuthClient",
+                "SecurityPolicy",
+                "Session",
+                "GoogleOAuthProvider",
+            ],
         }
         (milestone_dir / "milestone.json").write_text(json.dumps(milestone_data))
-        
+
         return temp_dir
-    
-    def run_benchmark_scenario(self, prompt: str, expected_tier: str, max_tokens: int, 
-                              project_root: Path, milestone_dir: Path) -> Dict[str, Any]:
+
+    def run_benchmark_scenario(
+        self,
+        prompt: str,
+        expected_tier: str,
+        max_tokens: int,
+        project_root: Path,
+        milestone_dir: Path,
+    ) -> Dict[str, Any]:
         """Run a single benchmark scenario."""
         start_time = time.time()
-        
+
         # Create progressive context builder
         builder = ProgressiveContextBuilder(max_tokens=1800)
-        
+
         # Extract symbols (simulate Serena functionality)
-        symbols = ["AuthenticationManager", "authenticate_user", "oauth_authenticate", 
-                  "OAuthClient", "verify_token", "SecurityPolicy", "Session"]
-        
+        symbols = [
+            "AuthenticationManager",
+            "authenticate_user",
+            "oauth_authenticate",
+            "OAuthClient",
+            "verify_token",
+            "SecurityPolicy",
+            "Session",
+        ]
+
         prioritized_symbols = SymbolSelector.prioritize_symbols_by_relevance(prompt, symbols)
-        
+
         # Build progressive context
         symbols_added = 0
-        
+
         # T0: Stubs
         for symbol in prioritized_symbols[:8]:
             stub = f"def {symbol.lower()}():\n    '''Stub for {symbol}'''\n    ..."
             if builder.add_context(stub, ContextTier.STUB, symbol, "stub"):
                 symbols_added += 1
-        
+
         # Check escalation
         should_escalate = builder.should_escalate(prompt)
         actual_tier = "STUB"
-        
+
         if should_escalate:
             # T1: Local body
             primary_targets = SymbolSelector.identify_primary_targets(prompt, prioritized_symbols)
@@ -391,246 +415,286 @@ class GitHubOAuthProvider(OAuthProvider):
                     full_body = f"class {symbol}:\n    def method(self):\n        # Implementation\n        pass"
                     if builder.add_context(full_body, ContextTier.LOCAL_BODY, symbol, "full_body"):
                         symbols_added += 1
-            
+
             # T2: Dependencies
-            if (builder.tier >= ContextTier.LOCAL_BODY and 
-                builder.should_escalate(prompt, builder.build_final_context()) and
-                builder.escalate_tier(ContextTier.DEPENDENCIES, "dependencies_needed")):
+            if (
+                builder.tier >= ContextTier.LOCAL_BODY
+                and builder.should_escalate(prompt, builder.build_final_context())
+                and builder.escalate_tier(ContextTier.DEPENDENCIES, "dependencies_needed")
+            ):
                 actual_tier = "DEPENDENCIES"
-                
+
                 # Add some dependencies
                 deps = ["Session", "SecurityPolicy", "OAuthClient"]
                 for dep in deps[:3]:
                     dep_body = f"class {dep}:\n    def __init__(self): pass"
                     if builder.add_context(dep_body, ContextTier.DEPENDENCIES, dep, "dependency"):
                         symbols_added += 1
-        
+
         # Build final context
         final_context = builder.build_final_context(prompt, "auth_milestone")
-        
+
         end_time = time.time()
-        
+
         # Calculate metrics
         result = {
-            'prompt': prompt,
-            'expected_tier': expected_tier,
-            'actual_tier': actual_tier,
-            'max_tokens_allowed': max_tokens,
-            'actual_tokens': builder.current_tokens,
-            'symbols_added': symbols_added,
-            'processing_time_ms': int((end_time - start_time) * 1000),
-            'context_length': len(final_context),
-            'tier_progression': builder.get_metadata()['tier_progression'],
-            'escalation_reasons': builder.get_metadata()['escalation_reasons'],
-            'passed': True,
-            'errors': []
+            "prompt": prompt,
+            "expected_tier": expected_tier,
+            "actual_tier": actual_tier,
+            "max_tokens_allowed": max_tokens,
+            "actual_tokens": builder.current_tokens,
+            "symbols_added": symbols_added,
+            "processing_time_ms": int((end_time - start_time) * 1000),
+            "context_length": len(final_context),
+            "tier_progression": builder.get_metadata()["tier_progression"],
+            "escalation_reasons": builder.get_metadata()["escalation_reasons"],
+            "passed": True,
+            "errors": [],
         }
-        
+
         # Validate results
         if builder.current_tokens > max_tokens:
-            result['passed'] = False
-            result['errors'].append(f"Exceeded token limit: {builder.current_tokens} > {max_tokens}")
-        
+            result["passed"] = False
+            result["errors"].append(
+                f"Exceeded token limit: {builder.current_tokens} > {max_tokens}"
+            )
+
         if actual_tier != expected_tier:
             # This is a warning, not necessarily a failure
-            result['tier_mismatch'] = True
-        
+            result["tier_mismatch"] = True
+
         return result
-    
-    def run_simple_task_benchmarks(self, project_root: Path, milestone_dir: Path) -> List[Dict[str, Any]]:
+
+    def run_simple_task_benchmarks(
+        self, project_root: Path, milestone_dir: Path
+    ) -> List[Dict[str, Any]]:
         """Run benchmarks for simple tasks (should use ≤500 tokens)."""
         simple_scenarios = [
             ("Fix the typo in the error message", "STUB", 500),
             ("Add a docstring to the authenticate method", "STUB", 500),
             ("Change variable name from 'user' to 'username'", "STUB", 500),
             ("Update the import statement", "STUB", 400),
-            ("Fix indentation in the method", "STUB", 300)
+            ("Fix indentation in the method", "STUB", 300),
         ]
-        
+
         results = []
         for prompt, expected_tier, max_tokens in simple_scenarios:
-            result = self.run_benchmark_scenario(prompt, expected_tier, max_tokens, project_root, milestone_dir)
+            result = self.run_benchmark_scenario(
+                prompt, expected_tier, max_tokens, project_root, milestone_dir
+            )
             results.append(result)
-            
-            if result['passed']:
-                self.results['tests_passed'] += 1
+
+            if result["passed"]:
+                self.results["tests_passed"] += 1
                 print(f"✅ PASS: {prompt[:50]}... ({result['actual_tokens']} tokens)")
             else:
-                self.results['tests_failed'] += 1
-                print(f"❌ FAIL: {prompt[:50]}... ({result['actual_tokens']} tokens) - {result['errors']}")
-        
+                self.results["tests_failed"] += 1
+                print(
+                    f"❌ FAIL: {prompt[:50]}... ({result['actual_tokens']} tokens) - {result['errors']}"
+                )
+
         return results
-    
-    def run_complex_task_benchmarks(self, project_root: Path, milestone_dir: Path) -> List[Dict[str, Any]]:
+
+    def run_complex_task_benchmarks(
+        self, project_root: Path, milestone_dir: Path
+    ) -> List[Dict[str, Any]]:
         """Run benchmarks for complex tasks (should escalate appropriately)."""
         complex_scenarios = [
             ("Refactor authentication to use OAuth2", "LOCAL_BODY", 1200),
             ("Find and fix the race condition in job processing", "DEPENDENCIES", 1200),
             ("Implement comprehensive security audit for auth system", "DEPENDENCIES", 1500),
             ("Add caching layer to improve authentication performance", "LOCAL_BODY", 1000),
-            ("Debug cross-file dependency issues in OAuth flow", "DEPENDENCIES", 1300)
+            ("Debug cross-file dependency issues in OAuth flow", "DEPENDENCIES", 1300),
         ]
-        
+
         results = []
         for prompt, expected_tier, max_tokens in complex_scenarios:
-            result = self.run_benchmark_scenario(prompt, expected_tier, max_tokens, project_root, milestone_dir)
+            result = self.run_benchmark_scenario(
+                prompt, expected_tier, max_tokens, project_root, milestone_dir
+            )
             results.append(result)
-            
-            if result['passed']:
-                self.results['tests_passed'] += 1
-                print(f"✅ PASS: {prompt[:50]}... ({result['actual_tokens']} tokens, tier: {result['actual_tier']})")
+
+            if result["passed"]:
+                self.results["tests_passed"] += 1
+                print(
+                    f"✅ PASS: {prompt[:50]}... ({result['actual_tokens']} tokens, tier: {result['actual_tier']})"
+                )
             else:
-                self.results['tests_failed'] += 1
-                print(f"❌ FAIL: {prompt[:50]}... ({result['actual_tokens']} tokens) - {result['errors']}")
-        
+                self.results["tests_failed"] += 1
+                print(
+                    f"❌ FAIL: {prompt[:50]}... ({result['actual_tokens']} tokens) - {result['errors']}"
+                )
+
         return results
-    
+
     def run_token_efficiency_validation(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Validate token efficiency meets target reduction."""
-        simple_results = [r for r in results if r['max_tokens_allowed'] <= 500]
-        complex_results = [r for r in results if r['max_tokens_allowed'] > 500]
-        
+        simple_results = [r for r in results if r["max_tokens_allowed"] <= 500]
+        complex_results = [r for r in results if r["max_tokens_allowed"] > 500]
+
         # Calculate average token usage
-        avg_simple_tokens = sum(r['actual_tokens'] for r in simple_results) / len(simple_results) if simple_results else 0
-        avg_complex_tokens = sum(r['actual_tokens'] for r in complex_results) / len(complex_results) if complex_results else 0
-        
+        avg_simple_tokens = (
+            sum(r["actual_tokens"] for r in simple_results) / len(simple_results)
+            if simple_results
+            else 0
+        )
+        avg_complex_tokens = (
+            sum(r["actual_tokens"] for r in complex_results) / len(complex_results)
+            if complex_results
+            else 0
+        )
+
         # Estimate traditional chunk-based tokens (would be ~6x higher)
         estimated_chunk_simple = avg_simple_tokens * 6
         estimated_chunk_complex = avg_complex_tokens * 6
-        
+
         efficiency_report = {
-            'average_simple_tokens': avg_simple_tokens,
-            'average_complex_tokens': avg_complex_tokens,
-            'estimated_chunk_simple': estimated_chunk_simple,
-            'estimated_chunk_complex': estimated_chunk_complex,
-            'simple_token_reduction': estimated_chunk_simple / avg_simple_tokens if avg_simple_tokens > 0 else 0,
-            'complex_token_reduction': estimated_chunk_complex / avg_complex_tokens if avg_complex_tokens > 0 else 0,
-            'target_reduction': self.config['benchmarks']['target_token_reduction'],
-            'meets_target': True
+            "average_simple_tokens": avg_simple_tokens,
+            "average_complex_tokens": avg_complex_tokens,
+            "estimated_chunk_simple": estimated_chunk_simple,
+            "estimated_chunk_complex": estimated_chunk_complex,
+            "simple_token_reduction": (
+                estimated_chunk_simple / avg_simple_tokens if avg_simple_tokens > 0 else 0
+            ),
+            "complex_token_reduction": (
+                estimated_chunk_complex / avg_complex_tokens if avg_complex_tokens > 0 else 0
+            ),
+            "target_reduction": self.config["benchmarks"]["target_token_reduction"],
+            "meets_target": True,
         }
-        
+
         # Check if we meet target reduction
-        if (efficiency_report['simple_token_reduction'] < self.config['benchmarks']['target_token_reduction'] or
-            efficiency_report['complex_token_reduction'] < self.config['benchmarks']['target_token_reduction']):
-            efficiency_report['meets_target'] = False
-            self.results['validation_errors'].append("Failed to achieve target token reduction")
-        
+        if (
+            efficiency_report["simple_token_reduction"]
+            < self.config["benchmarks"]["target_token_reduction"]
+            or efficiency_report["complex_token_reduction"]
+            < self.config["benchmarks"]["target_token_reduction"]
+        ):
+            efficiency_report["meets_target"] = False
+            self.results["validation_errors"].append("Failed to achieve target token reduction")
+
         return efficiency_report
-    
+
     def run_all_benchmarks(self) -> Dict[str, Any]:
         """Run complete benchmark suite."""
         print("🚀 Starting Progressive Context Validation")
         print("=" * 60)
-        
+
         # Create test project
         print("📁 Creating test project...")
         project_root = self.create_test_project()
         milestone_dir = project_root / "output" / "dev" / "auth_milestone"
-        
+
         try:
             # Run simple task benchmarks
             print("\n🔧 Running Simple Task Benchmarks...")
             simple_results = self.run_simple_task_benchmarks(project_root, milestone_dir)
-            
-            # Run complex task benchmarks  
+
+            # Run complex task benchmarks
             print("\n⚙️ Running Complex Task Benchmarks...")
             complex_results = self.run_complex_task_benchmarks(project_root, milestone_dir)
-            
+
             # Combine results
             all_results = simple_results + complex_results
-            
+
             # Run efficiency validation
             print("\n📊 Validating Token Efficiency...")
             efficiency_report = self.run_token_efficiency_validation(all_results)
-            
+
             # Compile final results
-            self.results['benchmark_results'] = {
-                'simple_tasks': simple_results,
-                'complex_tasks': complex_results,
-                'efficiency_report': efficiency_report,
-                'total_tests': len(all_results),
-                'average_processing_time': sum(r['processing_time_ms'] for r in all_results) / len(all_results)
+            self.results["benchmark_results"] = {
+                "simple_tasks": simple_results,
+                "complex_tasks": complex_results,
+                "efficiency_report": efficiency_report,
+                "total_tests": len(all_results),
+                "average_processing_time": sum(r["processing_time_ms"] for r in all_results)
+                / len(all_results),
             }
-            
+
             # Print summary
             self.print_summary()
-            
+
             return self.results
-            
+
         finally:
             # Cleanup
             import shutil
+
             shutil.rmtree(project_root, ignore_errors=True)
-    
+
     def print_summary(self):
         """Print validation summary."""
         print("\n" + "=" * 60)
         print("📋 PROGRESSIVE CONTEXT VALIDATION SUMMARY")
         print("=" * 60)
-        
+
         # Test results
-        total_tests = self.results['tests_passed'] + self.results['tests_failed']
-        pass_rate = (self.results['tests_passed'] / total_tests * 100) if total_tests > 0 else 0
-        
+        total_tests = self.results["tests_passed"] + self.results["tests_failed"]
+        pass_rate = (self.results["tests_passed"] / total_tests * 100) if total_tests > 0 else 0
+
         print(f"Tests Passed: {self.results['tests_passed']}/{total_tests} ({pass_rate:.1f}%)")
-        
-        if self.results['tests_failed'] > 0:
+
+        if self.results["tests_failed"] > 0:
             print(f"❌ Tests Failed: {self.results['tests_failed']}")
         else:
             print("✅ All tests passed!")
-        
+
         # Efficiency results
-        efficiency = self.results['benchmark_results']['efficiency_report']
-        print(f"\n📊 Token Efficiency:")
+        efficiency = self.results["benchmark_results"]["efficiency_report"]
+        print("\n📊 Token Efficiency:")
         print(f"  Simple Tasks: {efficiency['simple_token_reduction']:.1f}x reduction")
         print(f"  Complex Tasks: {efficiency['complex_token_reduction']:.1f}x reduction")
         print(f"  Target: {efficiency['target_reduction']}x reduction")
-        
-        if efficiency['meets_target']:
+
+        if efficiency["meets_target"]:
             print("✅ Token reduction target achieved!")
         else:
             print("❌ Token reduction target not met")
-        
+
         # Performance
-        avg_time = self.results['benchmark_results']['average_processing_time']
-        print(f"\n⚡ Performance:")
+        avg_time = self.results["benchmark_results"]["average_processing_time"]
+        print("\n⚡ Performance:")
         print(f"  Average processing time: {avg_time:.1f}ms")
-        
+
         # Validation errors
-        if self.results['validation_errors']:
-            print(f"\n⚠️ Validation Issues:")
-            for error in self.results['validation_errors']:
+        if self.results["validation_errors"]:
+            print("\n⚠️ Validation Issues:")
+            for error in self.results["validation_errors"]:
                 print(f"  - {error}")
-        
+
         print("\n" + "=" * 60)
 
 
 def main():
     """Main validation script."""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Validate Progressive Context Implementation")
-    parser.add_argument('--config', '-c', help='Configuration file path', 
-                       default='config/progressive_context_config.yaml')
-    parser.add_argument('--output', '-o', help='Output file for results (JSON)')
-    parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
-    
+    parser.add_argument(
+        "--config",
+        "-c",
+        help="Configuration file path",
+        default="config/progressive_context_config.yaml",
+    )
+    parser.add_argument("--output", "-o", help="Output file for results (JSON)")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+
     args = parser.parse_args()
-    
+
     # Run validation
     config_path = args.config if Path(args.config).exists() else None
     validator = ProgressiveContextValidator(config_path)
-    
+
     results = validator.run_all_benchmarks()
-    
+
     # Save results if requested
     if args.output:
-        with open(args.output, 'w') as f:
+        with open(args.output, "w") as f:
             json.dump(results, f, indent=2)
         print(f"📄 Results saved to: {args.output}")
-    
+
     # Exit with appropriate code
-    if results['tests_failed'] > 0 or results['validation_errors']:
+    if results["tests_failed"] > 0 or results["validation_errors"]:
         exit(1)
     else:
         exit(0)

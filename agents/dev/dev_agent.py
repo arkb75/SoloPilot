@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from agents.ai_providers import get_provider, ProviderError
+from agents.ai_providers import ProviderError, get_provider
 from agents.dev.context_engine import get_context_engine
 from utils.linter_integration import LinterManager
 
@@ -24,7 +24,7 @@ class DevAgent:
     def __init__(self, config_path: str = "config/model_config.yaml"):
         """Initialize the dev agent with configuration."""
         self.config = self._load_config(config_path)
-        
+
         # Initialize AI provider with error handling
         try:
             provider_name = os.getenv("AI_PROVIDER", "bedrock")
@@ -38,7 +38,7 @@ class DevAgent:
                 print("✅ Fell back to fake provider for offline mode")
             else:
                 raise
-        
+
         # Initialize context engine
         try:
             self.context_engine = get_context_engine()
@@ -49,12 +49,14 @@ class DevAgent:
             # Fallback to legacy engine
             self.context_engine = get_context_engine("legacy")
             print("✅ Fell back to legacy context engine")
-        
+
         # Initialize linter manager
         try:
             linter_config = self.config.get("linting", {})
             self.linter_manager = LinterManager(linter_config)
-            print(f"✅ Linter Manager initialized for languages: {self.linter_manager.get_available_languages()}")
+            print(
+                f"✅ Linter Manager initialized for languages: {self.linter_manager.get_available_languages()}"
+            )
         except Exception as e:
             print(f"⚠️ Linter Manager initialization failed: {e}")
             self.linter_manager = None
@@ -78,37 +80,41 @@ class DevAgent:
 
     def _log_performance_metrics(self, metrics: Dict[str, Any]) -> None:
         """Log performance metrics for dev agent operations."""
-        os.makedirs('logs', exist_ok=True)
-        
-        log_entry = {
-            'timestamp': datetime.now().isoformat(),
-            'component': 'dev_agent',
-            'operation': 'llm_generation',
-            **metrics
-        }
-        
-        # Log to performance file
-        with open('logs/dev_agent_performance.log', 'a') as f:
-            f.write(json.dumps(log_entry) + '\n')
-        
-        # Log slow operations
-        if metrics.get('generation_time', 0) > 30:
-            print(f"⚠️ Slow LLM generation: {metrics['generation_time']:.2f}s "
-                  f"(prompt: {metrics['prompt_size']} chars)")
-            
-            # Capture stack trace for slow operations
-            if metrics.get('success', True):
-                slow_trace = {
-                    'timestamp': datetime.now().isoformat(),
-                    'component': 'dev_agent',
-                    'operation': 'slow_generation_trace',
-                    'stack_trace': ''.join(traceback.format_stack()),
-                    **metrics
-                }
-                with open('logs/slow_operations.log', 'a') as f:
-                    f.write(json.dumps(slow_trace) + '\n')
+        os.makedirs("logs", exist_ok=True)
 
-    def _call_llm(self, prompt: str, milestone_path: Optional[Path] = None, timeout: Optional[int] = None) -> str:
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "component": "dev_agent",
+            "operation": "llm_generation",
+            **metrics,
+        }
+
+        # Log to performance file
+        with open("logs/dev_agent_performance.log", "a") as f:
+            f.write(json.dumps(log_entry) + "\n")
+
+        # Log slow operations
+        if metrics.get("generation_time", 0) > 30:
+            print(
+                f"⚠️ Slow LLM generation: {metrics['generation_time']:.2f}s "
+                f"(prompt: {metrics['prompt_size']} chars)"
+            )
+
+            # Capture stack trace for slow operations
+            if metrics.get("success", True):
+                slow_trace = {
+                    "timestamp": datetime.now().isoformat(),
+                    "component": "dev_agent",
+                    "operation": "slow_generation_trace",
+                    "stack_trace": "".join(traceback.format_stack()),
+                    **metrics,
+                }
+                with open("logs/slow_operations.log", "a") as f:
+                    f.write(json.dumps(slow_trace) + "\n")
+
+    def _call_llm(
+        self, prompt: str, milestone_path: Optional[Path] = None, timeout: Optional[int] = None
+    ) -> str:
         """Call AI provider with context packing and performance monitoring."""
         if not self.provider:
             raise ProviderError("❌ AI provider not available.")
@@ -116,19 +122,21 @@ class DevAgent:
         # Build context if milestone_path is provided
         files = [milestone_path] if milestone_path else None
         context_start_time = time.time()
-        
+
         if milestone_path:
             context, metadata = self.context_engine.build_context(milestone_path, prompt)
             if context.strip():
                 prompt = context  # context already includes the original prompt
                 context_time = time.time() - context_start_time
-                print(f"📦 Context built: {metadata['token_count']} tokens, {len(context)} chars "
-                      f"via {metadata['engine']} from {milestone_path} ({context_time:.2f}s)")
+                print(
+                    f"📦 Context built: {metadata['token_count']} tokens, {len(context)} chars "
+                    f"via {metadata['engine']} from {milestone_path} ({context_time:.2f}s)"
+                )
 
         # Performance monitoring
         prompt_size = len(prompt)
         generation_start_time = time.time()
-        
+
         # Set default timeout based on prompt complexity
         if not timeout:
             if prompt_size < 10000:
@@ -141,85 +149,103 @@ class DevAgent:
         try:
             # Use provider's generate_code method with timeout
             result = self.provider.generate_code(prompt, files, timeout=timeout)
-            
+
             # Log performance metrics
             generation_time = time.time() - generation_start_time
-            self._log_performance_metrics({
-                'prompt_size': prompt_size,
-                'generation_time': generation_time,
-                'timeout_used': timeout,
-                'milestone_path': str(milestone_path) if milestone_path else None,
-                'context_time': time.time() - context_start_time,
-                'success': True
-            })
-            
+            self._log_performance_metrics(
+                {
+                    "prompt_size": prompt_size,
+                    "generation_time": generation_time,
+                    "timeout_used": timeout,
+                    "milestone_path": str(milestone_path) if milestone_path else None,
+                    "context_time": time.time() - context_start_time,
+                    "success": True,
+                }
+            )
+
             return result
 
         except ProviderError as e:
             # Log failed performance metrics
             generation_time = time.time() - generation_start_time
-            self._log_performance_metrics({
-                'prompt_size': prompt_size,
-                'generation_time': generation_time,
-                'timeout_used': timeout,
-                'milestone_path': str(milestone_path) if milestone_path else None,
-                'context_time': time.time() - context_start_time,
-                'success': False,
-                'error': str(e)
-            })
+            self._log_performance_metrics(
+                {
+                    "prompt_size": prompt_size,
+                    "generation_time": generation_time,
+                    "timeout_used": timeout,
+                    "milestone_path": str(milestone_path) if milestone_path else None,
+                    "context_time": time.time() - context_start_time,
+                    "success": False,
+                    "error": str(e),
+                }
+            )
             print(f"⚠️ Provider error: {e}")
             raise
 
-    def _generate_with_linting(self, prompt: str, language: str, milestone_path: Optional[Path] = None, max_iterations: int = 3) -> str:
+    def _generate_with_linting(
+        self,
+        prompt: str,
+        language: str,
+        milestone_path: Optional[Path] = None,
+        max_iterations: int = 3,
+    ) -> str:
         """Generate code with real-time linting feedback and self-correction."""
         if not self.linter_manager or language not in self.linter_manager.get_available_languages():
             # No linting available, fall back to standard generation
             return self._call_llm(prompt, milestone_path)
-        
+
         print(f"🔍 Generating {language} code with real-time linting feedback...")
-        
+
         for iteration in range(max_iterations):
             print(f"  Iteration {iteration + 1}/{max_iterations}")
-            
+
             # Use shorter timeout for linting iterations (fail fast)
             timeout = 15 if iteration > 0 else None  # First iteration uses default
-            
+
             # Generate code
             try:
                 code = self._call_llm(prompt, milestone_path, timeout=timeout)
             except Exception as e:
                 print(f"  ❌ Code generation failed: {e}")
                 return self._generate_stub_code()
-            
+
             # Lint the generated code
             lint_results = self.linter_manager.lint_code(code, language)
-            
+
             if not lint_results:
                 print(f"  ✅ No linters available for {language}, using generated code")
                 return code
-            
+
             # Check if there are critical errors
             if not self.linter_manager.has_critical_errors(lint_results):
                 summary = self.linter_manager.get_summary(lint_results)
-                if summary['total_warnings'] > 0:
-                    print(f"  ✅ Code generated with {summary['total_warnings']} warnings (acceptable)")
+                if summary["total_warnings"] > 0:
+                    print(
+                        f"  ✅ Code generated with {summary['total_warnings']} warnings (acceptable)"
+                    )
                 else:
-                    print(f"  ✅ Code generated with no issues")
+                    print("  ✅ Code generated with no issues")
                 return code
-            
+
             # Generate correction prompt and retry
             summary = self.linter_manager.get_summary(lint_results)
-            print(f"  ⚠️ Found {summary['total_errors']} errors, {summary['total_warnings']} warnings - attempting correction...")
-            
+            print(
+                f"  ⚠️ Found {summary['total_errors']} errors, {summary['total_warnings']} warnings - attempting correction..."
+            )
+
             if iteration < max_iterations - 1:  # Don't correct on the last iteration
-                correction_prompt = self.linter_manager.generate_correction_prompt(lint_results, code)
+                correction_prompt = self.linter_manager.generate_correction_prompt(
+                    lint_results, code
+                )
                 prompt = correction_prompt  # Update prompt for next iteration
             else:
-                print(f"  ❌ Max iterations reached, using code with {summary['total_errors']} errors")
+                print(
+                    f"  ❌ Max iterations reached, using code with {summary['total_errors']} errors"
+                )
                 return code
-        
+
         return code
-    
+
     def _generate_stub_code(self) -> str:
         """Generate basic stub code when LLM calls fail."""
         return """// Generated stub code (LLM unavailable)

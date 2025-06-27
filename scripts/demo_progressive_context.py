@@ -6,25 +6,25 @@ Demonstrates the 6x token reduction achieved by the Progressive Context system
 while maintaining quality for complex tasks.
 """
 
+import json
 import sys
 import tempfile
-import json
 from pathlib import Path
 
 # Add project root to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from agents.dev.context_engine.progressive_context import (
-    ProgressiveContextBuilder,
     ContextTier,
-    SymbolSelector
+    ProgressiveContextBuilder,
+    SymbolSelector,
 )
 
 
 def create_demo_project():
     """Create a demo authentication project."""
     temp_dir = Path(tempfile.mkdtemp())
-    
+
     # Create auth.py with realistic code
     auth_code = '''
 class AuthManager:
@@ -72,20 +72,20 @@ class Session:
     def __init__(self, username):
         self.username = username
 '''
-    
+
     (temp_dir / "auth.py").write_text(auth_code)
-    
+
     # Create milestone data
     milestone_dir = temp_dir / "milestone"
     milestone_dir.mkdir()
-    
+
     milestone_data = {
         "components": ["AuthManager", "OAuthClient", "Session"],
         "functions": ["authenticate", "oauth_authenticate", "validate_credentials"],
-        "classes": ["AuthManager", "OAuthClient", "Session"]
+        "classes": ["AuthManager", "OAuthClient", "Session"],
     }
     (milestone_dir / "milestone.json").write_text(json.dumps(milestone_data))
-    
+
     return temp_dir, milestone_dir
 
 
@@ -152,7 +152,7 @@ class Session:
 - Configuration options
 - Performance optimization code
 """
-    
+
     return traditional_context
 
 
@@ -160,105 +160,121 @@ def demo_progressive_vs_traditional():
     """Demo comparing progressive vs traditional context."""
     print("🚀 Progressive Context System Demo")
     print("=" * 60)
-    
+
     # Create demo project
     project_root, milestone_dir = create_demo_project()
-    
+
     # Test scenarios
     scenarios = [
         {
-            'name': 'Simple Task',
-            'prompt': 'Fix the typo in the error message',
-            'expected_tier': 'STUB',
-            'description': 'Should use minimal context'
+            "name": "Simple Task",
+            "prompt": "Fix the typo in the error message",
+            "expected_tier": "STUB",
+            "description": "Should use minimal context",
         },
         {
-            'name': 'OAuth Refactor',
-            'prompt': 'Refactor authentication to use OAuth2 integration',
-            'expected_tier': 'LOCAL_BODY',
-            'description': 'Complex task requiring symbol implementations'
+            "name": "OAuth Refactor",
+            "prompt": "Refactor authentication to use OAuth2 integration",
+            "expected_tier": "LOCAL_BODY",
+            "description": "Complex task requiring symbol implementations",
         },
         {
-            'name': 'Race Condition Debug',
-            'prompt': 'Find and fix the race condition in session processing',
-            'expected_tier': 'DEPENDENCIES',
-            'description': 'Cross-component issue requiring dependency context'
-        }
+            "name": "Race Condition Debug",
+            "prompt": "Find and fix the race condition in session processing",
+            "expected_tier": "DEPENDENCIES",
+            "description": "Cross-component issue requiring dependency context",
+        },
     ]
-    
-    symbols = ["AuthManager", "authenticate", "oauth_authenticate", "OAuthClient", "Session", "verify_token"]
-    
+
+    symbols = [
+        "AuthManager",
+        "authenticate",
+        "oauth_authenticate",
+        "OAuthClient",
+        "Session",
+        "verify_token",
+    ]
+
     total_progressive_tokens = 0
     total_traditional_tokens = 0
-    
+
     for scenario in scenarios:
         print(f"\n📋 Scenario: {scenario['name']}")
         print(f"Task: {scenario['prompt']}")
         print(f"Expected Complexity: {scenario['expected_tier']}")
         print("-" * 40)
-        
+
         # Progressive Context
         builder = ProgressiveContextBuilder(max_tokens=1800)
-        prioritized_symbols = SymbolSelector.prioritize_symbols_by_relevance(scenario['prompt'], symbols)
-        
+        prioritized_symbols = SymbolSelector.prioritize_symbols_by_relevance(
+            scenario["prompt"], symbols
+        )
+
         # T0: Always start with stubs
         for symbol in prioritized_symbols[:8]:
             stub = f"def {symbol}():\n    '''Stub for {symbol}'''\n    ..."
             builder.add_context(stub, ContextTier.STUB, symbol, "stub")
-        
+
         # Progressive escalation
-        if builder.should_escalate(scenario['prompt']):
-            primary_targets = SymbolSelector.identify_primary_targets(scenario['prompt'], prioritized_symbols)
-            
+        if builder.should_escalate(scenario["prompt"]):
+            primary_targets = SymbolSelector.identify_primary_targets(
+                scenario["prompt"], prioritized_symbols
+            )
+
             # T1: Add full implementations
             if builder.escalate_tier(ContextTier.LOCAL_BODY, "complex_detected"):
                 for symbol in primary_targets[:3]:
                     full_impl = f"class {symbol}:\n    def __init__(self): pass\n    def method(self): return True"
                     builder.add_context(full_impl, ContextTier.LOCAL_BODY, symbol, "full_body")
-            
+
             # T2: Add dependencies if needed
-            if (builder.tier.value >= ContextTier.LOCAL_BODY.value and 
-                builder.should_escalate(scenario['prompt'], builder.build_final_context())):
+            if builder.tier.value >= ContextTier.LOCAL_BODY.value and builder.should_escalate(
+                scenario["prompt"], builder.build_final_context()
+            ):
                 if builder.escalate_tier(ContextTier.DEPENDENCIES, "dependencies_needed"):
-                    deps = ["Session", "OAuthClient"] 
+                    deps = ["Session", "OAuthClient"]
                     for dep in deps:
                         dep_impl = f"class {dep}:\n    def helper_method(self): pass"
                         builder.add_context(dep_impl, ContextTier.DEPENDENCIES, dep, "dependency")
-        
+
         # Build progressive context
-        progressive_context = builder.build_final_context(scenario['prompt'], "auth_milestone")
+        progressive_context = builder.build_final_context(scenario["prompt"], "auth_milestone")
         progressive_tokens = builder.current_tokens
-        
+
         # Traditional context (simulate)
-        traditional_context = simulate_traditional_context(symbols, scenario['prompt'])
+        traditional_context = simulate_traditional_context(symbols, scenario["prompt"])
         traditional_tokens = len(traditional_context) // 4  # Rough token estimation
-        
+
         # Calculate savings
         token_reduction = traditional_tokens / progressive_tokens if progressive_tokens > 0 else 0
         token_savings = traditional_tokens - progressive_tokens
-        
-        print(f"🎯 Progressive Context:")
+
+        print("🎯 Progressive Context:")
         print(f"  - Final Tier: {builder.tier.name}")
         print(f"  - Tokens Used: {progressive_tokens}")
         print(f"  - Symbols Processed: {builder.get_metadata()['symbols_processed']}")
-        print(f"  - Primary Targets: {SymbolSelector.identify_primary_targets(scenario['prompt'], prioritized_symbols)}")
-        
-        print(f"📚 Traditional Context:")
+        print(
+            f"  - Primary Targets: {SymbolSelector.identify_primary_targets(scenario['prompt'], prioritized_symbols)}"
+        )
+
+        print("📚 Traditional Context:")
         print(f"  - Tokens Used: {traditional_tokens}")
-        print(f"  - Approach: Full file chunks")
-        
-        print(f"💰 Efficiency Gains:")
+        print("  - Approach: Full file chunks")
+
+        print("💰 Efficiency Gains:")
         print(f"  - Token Reduction: {token_reduction:.1f}x")
         print(f"  - Tokens Saved: {token_savings}")
         print(f"  - Efficiency: {((token_savings / traditional_tokens) * 100):.1f}% reduction")
-        
+
         total_progressive_tokens += progressive_tokens
         total_traditional_tokens += traditional_tokens
-    
+
     # Overall summary
-    overall_reduction = total_traditional_tokens / total_progressive_tokens if total_progressive_tokens > 0 else 0
+    overall_reduction = (
+        total_traditional_tokens / total_progressive_tokens if total_progressive_tokens > 0 else 0
+    )
     overall_savings = total_traditional_tokens - total_progressive_tokens
-    
+
     print("\n" + "=" * 60)
     print("📊 OVERALL EFFICIENCY SUMMARY")
     print("=" * 60)
@@ -266,24 +282,27 @@ def demo_progressive_vs_traditional():
     print(f"Total Traditional Tokens: {total_traditional_tokens}")
     print(f"Overall Token Reduction: {overall_reduction:.1f}x")
     print(f"Total Tokens Saved: {overall_savings}")
-    print(f"Overall Efficiency: {((overall_savings / total_traditional_tokens) * 100):.1f}% reduction")
-    
+    print(
+        f"Overall Efficiency: {((overall_savings / total_traditional_tokens) * 100):.1f}% reduction"
+    )
+
     if overall_reduction >= 6.0:
         print("🎉 SUCCESS: Achieved target 6x token reduction!")
     elif overall_reduction >= 4.0:
         print("✅ GOOD: Achieved significant token reduction")
     else:
         print("⚠️ NEEDS IMPROVEMENT: Token reduction below target")
-    
+
     print("\n🔍 Key Benefits:")
     print("  ✅ Smart escalation based on task complexity")
     print("  ✅ Quality preservation for complex tasks")
     print("  ✅ Hard token limits prevent timeouts")
     print("  ✅ Symbol-aware context instead of blind chunks")
     print("  ✅ Cost reduction for simple tasks")
-    
+
     # Cleanup
     import shutil
+
     shutil.rmtree(project_root, ignore_errors=True)
 
 

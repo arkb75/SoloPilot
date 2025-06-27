@@ -1,8 +1,17 @@
 # ☑️ SoloPilot – A-to-Z Freelance Automation System
 
 [![CI Status](https://github.com/your-username/SoloPilot/workflows/CI/badge.svg)](https://github.com/your-username/SoloPilot/actions)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=solopilot_ai_automation&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=solopilot_ai_automation)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=solopilot_ai_automation&metric=coverage)](https://sonarcloud.io/summary/new_code?id=solopilot_ai_automation)
+[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=solopilot_ai_automation&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=solopilot_ai_automation)
 
 **SoloPilot** is a modular automation system that transforms raw client requirements into production-ready code. This system orchestrates multiple AI agents to handle the complete freelance development lifecycle.
+
+### 🛡️ Quality Assurance
+- **AI Code Review**: Automated review on every PR
+- **SonarCloud Analysis**: Continuous code quality monitoring
+- **100% Offline Testing**: All tests pass without network access
+- **Multi-Platform CI**: Tested on Ubuntu and macOS
 
 ## 🚀 Quick Start
 

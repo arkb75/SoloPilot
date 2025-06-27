@@ -7,7 +7,6 @@ Tests GitHub API integration with mock responses and offline compatibility.
 
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -32,20 +31,20 @@ def sample_review_result():
                 "file": "main.py",
                 "line": 10,
                 "severity": "medium",
-                "message": "Consider adding type hints for better code clarity"
+                "message": "Consider adding type hints for better code clarity",
             },
             {
-                "file": "utils.py", 
+                "file": "utils.py",
                 "line": 25,
                 "severity": "low",
-                "message": "This function could be simplified"
+                "message": "This function could be simplified",
             },
             {
                 "file": "general",
                 "line": 0,
                 "severity": "info",
-                "message": "Overall code structure is well organized"
-            }
+                "message": "Overall code structure is well organized",
+            },
         ],
         "static_analysis": {
             "ruff": {
@@ -53,14 +52,14 @@ def sample_review_result():
                 "violations": [],
                 "error_count": 0,
                 "warning_count": 2,
-                "return_code": 0
+                "return_code": 0,
             },
             "mypy": {
                 "success": True,
                 "output": "",
                 "errors": "",
                 "return_code": 0,
-                "has_errors": False
+                "has_errors": False,
             },
             "pytest": {
                 "success": True,
@@ -68,20 +67,16 @@ def sample_review_result():
                 "errors": "",
                 "return_code": 0,
                 "test_files": 1,
-                "passed": True
+                "passed": True,
             },
-            "file_stats": {
-                "python_files": 3,
-                "test_files": 1,
-                "total_lines": 150
-            }
+            "file_stats": {"python_files": 3, "test_files": 1, "total_lines": 150},
         },
         "ai_insights": [
             "Code follows Python best practices",
             "Test coverage could be improved",
-            "Documentation is comprehensive"
+            "Documentation is comprehensive",
         ],
-        "timestamp": 1234567890
+        "timestamp": 1234567890,
     }
 
 
@@ -96,20 +91,20 @@ def failing_review_result():
                 "file": "bad_code.py",
                 "line": 15,
                 "severity": "high",
-                "message": "Security vulnerability: SQL injection risk"
+                "message": "Security vulnerability: SQL injection risk",
             },
             {
                 "file": "bad_code.py",
                 "line": 23,
-                "severity": "high", 
-                "message": "Memory leak: resources not properly released"
+                "severity": "high",
+                "message": "Memory leak: resources not properly released",
             },
             {
                 "file": "style.py",
                 "line": 5,
                 "severity": "medium",
-                "message": "PEP 8 violation: function naming"
-            }
+                "message": "PEP 8 violation: function naming",
+            },
         ],
         "static_analysis": {
             "ruff": {
@@ -117,14 +112,14 @@ def failing_review_result():
                 "violations": [{"code": "E999", "message": "SyntaxError"}],
                 "error_count": 3,
                 "warning_count": 5,
-                "return_code": 1
+                "return_code": 1,
             },
             "mypy": {
                 "success": True,
                 "output": "error: Function is missing type annotation",
                 "errors": "",
                 "return_code": 1,
-                "has_errors": True
+                "has_errors": True,
             },
             "pytest": {
                 "success": True,
@@ -132,13 +127,13 @@ def failing_review_result():
                 "errors": "FAILED test_feature.py::test_security",
                 "return_code": 1,
                 "test_files": 2,
-                "passed": False
-            }
+                "passed": False,
+            },
         },
         "ai_insights": [
             "Critical security issues require immediate attention",
-            "Code quality is below acceptable standards"
-        ]
+            "Code quality is below acceptable standards",
+        ],
     }
 
 
@@ -165,9 +160,9 @@ class TestGitHubReviewer:
         # Mock gh --version success
         mock_run.side_effect = [
             MagicMock(returncode=0),  # gh --version
-            MagicMock(returncode=0)   # gh auth status
+            MagicMock(returncode=0),  # gh auth status
         ]
-        
+
         reviewer = GitHubReviewer()
         assert reviewer.gh_available is True
 
@@ -175,7 +170,7 @@ class TestGitHubReviewer:
     def test_check_gh_available_not_installed(self, mock_run):
         """Test GitHub CLI not installed."""
         mock_run.side_effect = FileNotFoundError("gh command not found")
-        
+
         reviewer = GitHubReviewer()
         assert reviewer.gh_available is False
 
@@ -184,9 +179,9 @@ class TestGitHubReviewer:
         """Test GitHub CLI installed but not authenticated."""
         mock_run.side_effect = [
             MagicMock(returncode=0),  # gh --version success
-            MagicMock(returncode=1)   # gh auth status fails
+            MagicMock(returncode=1),  # gh auth status fails
         ]
-        
+
         reviewer = GitHubReviewer()
         assert reviewer.gh_available is False
 
@@ -195,7 +190,7 @@ class TestGitHubReviewer:
         with patch.dict(os.environ, {"NO_NETWORK": "1"}):
             reviewer = GitHubReviewer()
             result = reviewer.post_review_to_pr(sample_review_result)
-            
+
             assert result["success"] is False
             assert result["reason"] == "offline_mode"
             assert "offline mode" in result["message"]
@@ -203,14 +198,11 @@ class TestGitHubReviewer:
     @patch("subprocess.run")
     def test_get_current_pr_number_success(self, mock_run):
         """Test successful PR number detection."""
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout='{"number": 42}'
-        )
-        
+        mock_run.return_value = MagicMock(returncode=0, stdout='{"number": 42}')
+
         reviewer = GitHubReviewer()
         reviewer.gh_available = True
-        
+
         pr_number = reviewer._get_current_pr_number()
         assert pr_number == 42
 
@@ -218,10 +210,10 @@ class TestGitHubReviewer:
     def test_get_current_pr_number_no_pr(self, mock_run):
         """Test PR number detection when no PR exists."""
         mock_run.return_value = MagicMock(returncode=1)
-        
+
         reviewer = GitHubReviewer()
         reviewer.gh_available = True
-        
+
         pr_number = reviewer._get_current_pr_number()
         assert pr_number is None
 
@@ -233,15 +225,15 @@ class TestGitHubReviewer:
             MagicMock(returncode=0, stdout='{"number": 42}'),  # get PR number
             MagicMock(returncode=0),  # post inline comment 1
             MagicMock(returncode=0),  # post inline comment 2
-            MagicMock(returncode=0)   # post summary comment
+            MagicMock(returncode=0),  # post summary comment
         ]
-        
+
         reviewer = GitHubReviewer()
         reviewer.no_network = False
         reviewer.gh_available = True
-        
+
         result = reviewer.post_review_to_pr(sample_review_result)
-        
+
         assert result["success"] is True
         assert result["pr_number"] == 42
         assert "inline_comments" in result
@@ -251,13 +243,13 @@ class TestGitHubReviewer:
     def test_post_review_no_pr_found(self, mock_run, sample_review_result):
         """Test review posting when no PR is found."""
         mock_run.return_value = MagicMock(returncode=1)  # no PR found
-        
+
         reviewer = GitHubReviewer()
         reviewer.no_network = False
         reviewer.gh_available = True
-        
+
         result = reviewer.post_review_to_pr(sample_review_result)
-        
+
         assert result["success"] is False
         assert result["reason"] == "no_pr"
 
@@ -265,13 +257,13 @@ class TestGitHubReviewer:
     def test_post_inline_comments(self, mock_run, sample_review_result):
         """Test posting inline comments."""
         mock_run.return_value = MagicMock(returncode=0)
-        
+
         reviewer = GitHubReviewer()
         reviewer.no_network = False
         reviewer.gh_available = True
-        
+
         result = reviewer._post_inline_comments(sample_review_result, 42)
-        
+
         # Should post 2 inline comments (excluding general comment)
         assert result["posted"] == 2
         assert result["failed"] == 0
@@ -283,24 +275,24 @@ class TestGitHubReviewer:
         # First comment succeeds, second fails
         mock_run.side_effect = [
             MagicMock(returncode=0),  # success
-            MagicMock(returncode=1)   # failure
+            MagicMock(returncode=1),  # failure
         ]
-        
+
         reviewer = GitHubReviewer()
         reviewer.no_network = False
         reviewer.gh_available = True
-        
+
         result = reviewer._post_inline_comments(sample_review_result, 42)
-        
+
         assert result["posted"] == 1
         assert result["failed"] == 1
 
     def test_build_summary_comment_pass(self, sample_review_result):
         """Test building summary comment for passing review."""
         reviewer = GitHubReviewer()
-        
+
         summary = reviewer._build_summary_comment(sample_review_result)
-        
+
         assert "✅ AI Code Review Results" in summary
         assert "PASS" in summary
         assert "Static Analysis Results" in summary
@@ -315,9 +307,9 @@ class TestGitHubReviewer:
     def test_build_summary_comment_fail(self, failing_review_result):
         """Test building summary comment for failing review."""
         reviewer = GitHubReviewer()
-        
+
         summary = reviewer._build_summary_comment(failing_review_result)
-        
+
         assert "❌ AI Code Review Results" in summary
         assert "FAIL" in summary
         assert "🔴 **HIGH**: 2 issues" in summary
@@ -332,18 +324,15 @@ class TestGitHubReviewer:
             "body": "This PR adds a new feature",
             "state": "OPEN",
             "author": {"login": "developer"},
-            "url": "https://github.com/owner/repo/pull/42"
+            "url": "https://github.com/owner/repo/pull/42",
         }
-        
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps(pr_data)
-        )
-        
+
+        mock_run.return_value = MagicMock(returncode=0, stdout=json.dumps(pr_data))
+
         reviewer = GitHubReviewer()
         reviewer.no_network = False
         reviewer.gh_available = True
-        
+
         result = reviewer.get_pr_info()
         assert result == pr_data
 
@@ -352,7 +341,7 @@ class TestGitHubReviewer:
         """Test getting PR info in offline mode."""
         reviewer = GitHubReviewer()
         reviewer.no_network = True
-        
+
         result = reviewer.get_pr_info()
         assert result is None
 
@@ -361,18 +350,15 @@ class TestGitHubReviewer:
         """Test listing open PRs."""
         prs_data = [
             {"number": 42, "title": "Feature A", "author": {"login": "dev1"}},
-            {"number": 43, "title": "Bug fix B", "author": {"login": "dev2"}}
+            {"number": 43, "title": "Bug fix B", "author": {"login": "dev2"}},
         ]
-        
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps(prs_data)
-        )
-        
+
+        mock_run.return_value = MagicMock(returncode=0, stdout=json.dumps(prs_data))
+
         reviewer = GitHubReviewer()
         reviewer.no_network = False
         reviewer.gh_available = True
-        
+
         result = reviewer.list_open_prs()
         assert len(result) == 2
         assert result[0]["number"] == 42
@@ -382,7 +368,7 @@ class TestGitHubReviewer:
         with patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}):
             reviewer = GitHubReviewer()
             status = reviewer.get_status()
-            
+
             assert "github_token_available" in status
             assert "no_network_mode" in status
             assert "gh_cli_available" in status
@@ -391,18 +377,19 @@ class TestGitHubReviewer:
 
     def test_post_review_with_explicit_pr_number(self, sample_review_result):
         """Test posting review with explicitly provided PR number."""
-        with patch.object(GitHubReviewer, '_post_inline_comments') as mock_inline, \
-             patch.object(GitHubReviewer, '_post_summary_comment') as mock_summary:
-            
+        with patch.object(GitHubReviewer, "_post_inline_comments") as mock_inline, patch.object(
+            GitHubReviewer, "_post_summary_comment"
+        ) as mock_summary:
+
             mock_inline.return_value = {"posted": 2, "failed": 0}
             mock_summary.return_value = {"success": True}
-            
+
             reviewer = GitHubReviewer()
             reviewer.no_network = False
             reviewer.gh_available = True
-            
+
             result = reviewer.post_review_to_pr(sample_review_result, pr_number=123)
-            
+
             assert result["success"] is True
             assert result["pr_number"] == 123
             mock_inline.assert_called_once_with(sample_review_result, 123)
@@ -412,24 +399,21 @@ class TestGitHubReviewer:
     def test_post_summary_comment_success(self, mock_run, sample_review_result):
         """Test successful summary comment posting."""
         mock_run.return_value = MagicMock(returncode=0)
-        
+
         reviewer = GitHubReviewer()
         result = reviewer._post_summary_comment(sample_review_result, 42)
-        
+
         assert result["success"] is True
         assert "comment_length" in result
 
     @patch("subprocess.run")
     def test_post_summary_comment_failure(self, mock_run, sample_review_result):
         """Test failed summary comment posting."""
-        mock_run.return_value = MagicMock(
-            returncode=1,
-            stderr="API rate limit exceeded"
-        )
-        
+        mock_run.return_value = MagicMock(returncode=1, stderr="API rate limit exceeded")
+
         reviewer = GitHubReviewer()
         result = reviewer._post_summary_comment(sample_review_result, 42)
-        
+
         assert result["success"] is False
         assert "error" in result
 
@@ -440,12 +424,12 @@ class TestGitHubReviewer:
         reviewer.no_network = False
         reviewer.gh_available = True
         assert reviewer._can_post_review() is True
-        
+
         # Offline mode
         reviewer.no_network = True
         reviewer.gh_available = True
         assert reviewer._can_post_review() is False
-        
+
         # Online but gh not available
         reviewer.no_network = False
         reviewer.gh_available = False
@@ -459,11 +443,11 @@ class TestGitHubReviewerIntegration:
         """Test that GitHub integration gracefully handles offline mode."""
         with patch.dict(os.environ, {"NO_NETWORK": "1"}):
             reviewer = GitHubReviewer()
-            
+
             # All operations should return graceful failures
             assert reviewer.get_pr_info() is None
             assert reviewer.list_open_prs() == []
-            
+
             result = reviewer.post_review_to_pr(sample_review_result)
             assert result["success"] is False
             assert result["reason"] == "offline_mode"
@@ -472,19 +456,19 @@ class TestGitHubReviewerIntegration:
         """Test comprehensive status reporting."""
         reviewer = GitHubReviewer()
         status = reviewer.get_status()
-        
+
         # Should contain all expected keys
         expected_keys = [
             "github_token_available",
-            "no_network_mode", 
+            "no_network_mode",
             "gh_cli_available",
             "can_post_reviews",
-            "auth_status"
+            "auth_status",
         ]
-        
+
         for key in expected_keys:
             assert key in status
-            
+
         # Values should be appropriate types
         assert isinstance(status["github_token_available"], bool)
         assert isinstance(status["no_network_mode"], bool)
@@ -500,22 +484,22 @@ class TestGitHubReviewerIntegration:
             MagicMock(returncode=0, stdout='{"number": 42}'),  # get current PR
             MagicMock(returncode=0),  # post comment 1
             MagicMock(returncode=0),  # post comment 2
-            MagicMock(returncode=0)   # post summary
+            MagicMock(returncode=0),  # post summary
         ]
-        
+
         reviewer = GitHubReviewer()
         reviewer.no_network = False
         reviewer.gh_available = True
-        
+
         result = reviewer.post_review_to_pr(sample_review_result)
-        
+
         # Verify complete workflow
         assert result["success"] is True
         assert result["pr_number"] == 42
         assert "inline_comments" in result
         assert "summary_comment" in result
         assert "timestamp" in result
-        
+
         # Verify proper number of subprocess calls
         assert mock_run.call_count == 4
 

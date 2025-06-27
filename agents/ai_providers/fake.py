@@ -6,7 +6,6 @@ Implements the BaseProvider interface with deterministic fake responses.
 Used for offline testing and CI environments without requiring real LLM access.
 """
 
-import json
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -20,7 +19,7 @@ class FakeProvider(BaseProvider):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         Initialize fake provider.
-        
+
         Args:
             config: Optional configuration (ignored for fake provider)
         """
@@ -29,23 +28,25 @@ class FakeProvider(BaseProvider):
         self.last_cost_info = None
 
     @log_call
-    def generate_code(self, prompt: str, files: Optional[List[Path]] = None, timeout: Optional[int] = None) -> str:
+    def generate_code(
+        self, prompt: str, files: Optional[List[Path]] = None, timeout: Optional[int] = None
+    ) -> str:
         """
         Generate fake code based on prompt patterns.
-        
+
         Args:
             prompt: The instruction prompt for code generation
             files: Optional list of file paths (used for context awareness)
             timeout: Optional timeout in seconds (ignored for fake provider)
-            
+
         Returns:
             Generated fake code as a string
         """
         self.call_count += 1
-        
+
         # Extract language/technology hints from prompt and files
         language = self._infer_language(prompt, files)
-        
+
         # Generate fake response based on language
         if language == "javascript":
             return self._generate_javascript_response(prompt)
@@ -61,7 +62,7 @@ class FakeProvider(BaseProvider):
     def is_available(self) -> bool:
         """
         Fake provider is always available.
-        
+
         Returns:
             Always True
         """
@@ -70,7 +71,7 @@ class FakeProvider(BaseProvider):
     def get_provider_info(self) -> Dict[str, Any]:
         """
         Get information about the fake provider.
-        
+
         Returns:
             Dictionary with provider metadata
         """
@@ -80,80 +81,85 @@ class FakeProvider(BaseProvider):
             "available": True,
             "model": "fake-model-v1",
             "call_count": self.call_count,
-            "description": "Deterministic fake responses for offline testing"
+            "description": "Deterministic fake responses for offline testing",
         }
 
     def get_cost_info(self) -> Optional[Dict[str, Any]]:
         """
         Get fake cost information.
-        
+
         Returns:
             Dictionary with fake cost data
         """
         return {
             "timestamp": time.time(),
             "model": "fake-model-v1",
-            "tokens_in": len(self._last_prompt.split()) if hasattr(self, '_last_prompt') else 50,
+            "tokens_in": len(self._last_prompt.split()) if hasattr(self, "_last_prompt") else 50,
             "tokens_out": 100,
             "latency_ms": 50,  # Fake 50ms latency
-            "cost_usd": 0.0  # Free fake calls
+            "cost_usd": 0.0,  # Free fake calls
         }
 
     def _infer_language(self, prompt: str, files: Optional[List[Path]] = None) -> str:
         """
         Infer programming language from prompt and file context.
-        
+
         Args:
             prompt: The prompt text
             files: Optional file paths for context
-            
+
         Returns:
             Inferred language name
         """
         prompt_lower = prompt.lower()
-        
+
         # Check file extensions if provided
         if files:
             for file_path in files:
                 ext = file_path.suffix.lower()
-                if ext in ['.js', '.jsx']:
+                if ext in [".js", ".jsx"]:
                     return "javascript"
-                elif ext in ['.ts', '.tsx']:
+                elif ext in [".ts", ".tsx"]:
                     return "typescript"
-                elif ext in ['.py']:
+                elif ext in [".py"]:
                     return "python"
-                elif ext in ['.java']:
+                elif ext in [".java"]:
                     return "java"
-                elif ext in ['.go']:
+                elif ext in [".go"]:
                     return "go"
-                elif ext in ['.rs']:
+                elif ext in [".rs"]:
                     return "rust"
-        
+
         # Check prompt content for language indicators
-        if any(keyword in prompt_lower for keyword in ['react', 'node.js', 'express', 'javascript', 'npm']):
+        if any(
+            keyword in prompt_lower
+            for keyword in ["react", "node.js", "express", "javascript", "npm"]
+        ):
             return "javascript"
-        elif any(keyword in prompt_lower for keyword in ['typescript', 'angular', 'next.js']):
+        elif any(keyword in prompt_lower for keyword in ["typescript", "angular", "next.js"]):
             return "typescript"
-        elif any(keyword in prompt_lower for keyword in ['python', 'django', 'flask', 'fastapi', 'pip']):
+        elif any(
+            keyword in prompt_lower for keyword in ["python", "django", "flask", "fastapi", "pip"]
+        ):
             return "python"
-        elif any(keyword in prompt_lower for keyword in ['java', 'spring', 'maven', 'gradle']):
+        elif any(keyword in prompt_lower for keyword in ["java", "spring", "maven", "gradle"]):
             return "java"
-        elif any(keyword in prompt_lower for keyword in ['golang', 'go lang']):
+        elif any(keyword in prompt_lower for keyword in ["golang", "go lang"]):
             return "go"
-        elif any(keyword in prompt_lower for keyword in ['rust', 'cargo']):
+        elif any(keyword in prompt_lower for keyword in ["rust", "cargo"]):
             return "rust"
-        
+
         # Default to JavaScript for web projects
         return "javascript"
 
     def _generate_javascript_response(self, prompt: str) -> str:
         """Generate fake JavaScript code response."""
         self._last_prompt = prompt
-        
+
         # Extract task name from prompt
         task_name = self._extract_task_name(prompt)
-        
-        return f'''```javascript
+
+        return f"""```javascript
 // === SKELETON CODE ===
 // Fake implementation for: {task_name}
 class {task_name.replace(" ", "")}Implementation {{
@@ -204,14 +210,14 @@ describe('{task_name}Implementation', () => {{
         expect(implementation.validate()).toBe(true);
     }});
 }});
-```'''
+```"""
 
     def _generate_typescript_response(self, prompt: str) -> str:
         """Generate fake TypeScript code response."""
         self._last_prompt = prompt
         task_name = self._extract_task_name(prompt)
-        
-        return f'''```typescript
+
+        return f"""```typescript
 // === SKELETON CODE ===
 // Fake implementation for: {task_name}
 interface I{task_name.replace(" ", "")} {{
@@ -271,14 +277,14 @@ describe('{task_name}Implementation', () => {{
         expect(implementation.validate()).toBe(true);
     }});
 }});
-```'''
+```"""
 
     def _generate_python_response(self, prompt: str) -> str:
         """Generate fake Python code response."""
         self._last_prompt = prompt
         task_name = self._extract_task_name(prompt)
         class_name = task_name.replace(" ", "")
-        
+
         return f'''```python
 # === SKELETON CODE ===
 # Fake implementation for: {task_name}
@@ -357,8 +363,8 @@ class Test{class_name}Implementation:
         self._last_prompt = prompt
         task_name = self._extract_task_name(prompt)
         class_name = task_name.replace(" ", "")
-        
-        return f'''```java
+
+        return f"""```java
 // === SKELETON CODE ===
 // Fake implementation for: {task_name}
 package com.solopilot.implementation;
@@ -423,14 +429,14 @@ class {class_name}ImplementationTest {{
         assertTrue(implementation.validate());
     }}
 }}
-```'''
+```"""
 
     def _generate_generic_response(self, prompt: str, language: str) -> str:
         """Generate generic fake code response."""
         self._last_prompt = prompt
         task_name = self._extract_task_name(prompt)
-        
-        return f'''```{language}
+
+        return f"""```{language}
 // === SKELETON CODE ===
 // Fake {language} implementation for: {task_name}
 // TODO: Implement {task_name.lower()} functionality
@@ -448,42 +454,42 @@ function test{task_name.replace(" ", "")}() {{
     assert(result.success === true);
     console.log("Test passed: {task_name}");
 }}
-```'''
+```"""
 
     def _extract_task_name(self, prompt: str) -> str:
         """
         Extract a meaningful task name from the prompt.
-        
+
         Args:
             prompt: The input prompt
-            
+
         Returns:
             Extracted task name
         """
         # Simple heuristics to extract task name from prompt
         prompt_lower = prompt.lower()
-        
+
         # Look for common patterns
         if "implement" in prompt_lower:
             # Extract what comes after "implement"
             parts = prompt.split()
             for i, part in enumerate(parts):
                 if part.lower() == "implement" and i + 1 < len(parts):
-                    extracted = " ".join(parts[i+1:i+4]).strip().title()  # Take more words
+                    extracted = " ".join(parts[i + 1 : i + 4]).strip().title()  # Take more words
                     return extracted if extracted else "Implementation Task"
-        
+
         if "create" in prompt_lower:
             # Extract what comes after "create"
             parts = prompt.split()
             for i, part in enumerate(parts):
                 if part.lower() == "create" and i + 1 < len(parts):
-                    extracted = " ".join(parts[i+1:i+4]).strip().title()  # Take more words
+                    extracted = " ".join(parts[i + 1 : i + 4]).strip().title()  # Take more words
                     return extracted if extracted else "Creation Task"
-        
+
         # Look for milestone names in JSON format
         if "milestone" in prompt_lower:
             return "Milestone Task"
-            
+
         # Default fallback
         words = prompt.split()[:3]  # Take first 3 words
-        return " ".join(word.strip('.,!?:;') for word in words).title() or "Generic Task"
+        return " ".join(word.strip(".,!?:;") for word in words).title() or "Generic Task"

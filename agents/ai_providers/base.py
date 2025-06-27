@@ -13,25 +13,26 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 
 def log_call(func):
     """
     Decorator to log AI provider calls with timing and token usage.
-    
+
     Logs to logs/llm_calls.log in JSON format:
     {"ts": timestamp, "provider": name, "latency_ms": X, "tokens_in": Y, "tokens_out": Z, ...}
     """
+
     @wraps(func)
     def wrapper(self, *args, **kwargs):
         start_time = time.time()
-        
+
         try:
             # Call the wrapped method
             result = func(self, *args, **kwargs)
             end_time = time.time()
-            
+
             # Extract metadata if method returns tuple (code, meta)
             if isinstance(result, tuple) and len(result) == 2:
                 code, meta = result
@@ -39,18 +40,18 @@ def log_call(func):
             else:
                 code = result
                 metadata = {}
-            
+
             # Get provider info
-            provider_info = self.get_provider_info() if hasattr(self, 'get_provider_info') else {}
-            provider_name = provider_info.get('name', 'unknown')
-            
+            provider_info = self.get_provider_info() if hasattr(self, "get_provider_info") else {}
+            provider_name = provider_info.get("name", "unknown")
+
             # Calculate latency
             latency_ms = int((end_time - start_time) * 1000)
-            
+
             # Extract token counts with defaults
-            tokens_in = metadata.get('tokens_in', len(args[0].split()) if args else 50)
-            tokens_out = metadata.get('tokens_out', len(str(code).split()) if code else 100)
-            
+            tokens_in = metadata.get("tokens_in", len(args[0].split()) if args else 50)
+            tokens_out = metadata.get("tokens_out", len(str(code).split()) if code else 100)
+
             # Create log entry
             log_entry = {
                 "ts": datetime.now().isoformat(),
@@ -59,30 +60,30 @@ def log_call(func):
                 "tokens_in": tokens_in,
                 "tokens_out": tokens_out,
             }
-            
+
             # Add additional metadata
-            if 'model' in metadata:
-                log_entry['model'] = metadata['model']
-            if 'cost_usd' in metadata:
-                log_entry['cost_usd'] = metadata['cost_usd']
-            
+            if "model" in metadata:
+                log_entry["model"] = metadata["model"]
+            if "cost_usd" in metadata:
+                log_entry["cost_usd"] = metadata["cost_usd"]
+
             # Ensure logs directory exists
-            os.makedirs('logs', exist_ok=True)
-            
+            os.makedirs("logs", exist_ok=True)
+
             # Write to log file
-            with open('logs/llm_calls.log', 'a') as f:
-                f.write(json.dumps(log_entry) + '\n')
-            
+            with open("logs/llm_calls.log", "a") as f:
+                f.write(json.dumps(log_entry) + "\n")
+
             return result
-            
+
         except Exception as e:
             end_time = time.time()
             latency_ms = int((end_time - start_time) * 1000)
-            
+
             # Log failed calls too
-            provider_info = self.get_provider_info() if hasattr(self, 'get_provider_info') else {}
-            provider_name = provider_info.get('name', 'unknown')
-            
+            provider_info = self.get_provider_info() if hasattr(self, "get_provider_info") else {}
+            provider_name = provider_info.get("name", "unknown")
+
             log_entry = {
                 "ts": datetime.now().isoformat(),
                 "provider": provider_name,
@@ -90,15 +91,15 @@ def log_call(func):
                 "tokens_in": None,
                 "tokens_out": None,
                 "error": str(e),
-                "status": "failed"
+                "status": "failed",
             }
-            
-            os.makedirs('logs', exist_ok=True)
-            with open('logs/llm_calls.log', 'a') as f:
-                f.write(json.dumps(log_entry) + '\n')
-            
+
+            os.makedirs("logs", exist_ok=True)
+            with open("logs/llm_calls.log", "a") as f:
+                f.write(json.dumps(log_entry) + "\n")
+
             raise
-    
+
     return wrapper
 
 
@@ -107,18 +108,20 @@ class BaseProvider(ABC):
 
     @abstractmethod
     @log_call
-    def generate_code(self, prompt: str, files: Optional[List[Path]] = None, timeout: Optional[int] = None) -> str:
+    def generate_code(
+        self, prompt: str, files: Optional[List[Path]] = None, timeout: Optional[int] = None
+    ) -> str:
         """
         Generate code based on prompt and optional file context.
-        
+
         Args:
             prompt: The instruction prompt for code generation
             files: Optional list of file paths to include as context
             timeout: Optional timeout in seconds (overrides provider default)
-            
+
         Returns:
             Generated code as a string
-            
+
         Raises:
             ProviderError: If code generation fails
             ProviderTimeoutError: If request times out
@@ -129,7 +132,7 @@ class BaseProvider(ABC):
     def is_available(self) -> bool:
         """
         Check if the provider is available and properly configured.
-        
+
         Returns:
             True if provider can be used, False otherwise
         """
@@ -139,7 +142,7 @@ class BaseProvider(ABC):
     def get_provider_info(self) -> Dict[str, Any]:
         """
         Get information about the provider.
-        
+
         Returns:
             Dictionary with provider metadata (name, model, version, etc.)
         """
@@ -148,7 +151,7 @@ class BaseProvider(ABC):
     def get_cost_info(self) -> Optional[Dict[str, Any]]:
         """
         Get cost information for the last request (if supported).
-        
+
         Returns:
             Dictionary with cost data or None if not supported
         """
@@ -157,8 +160,13 @@ class BaseProvider(ABC):
 
 class ProviderError(Exception):
     """Base exception for AI provider errors."""
-    
-    def __init__(self, message: str, provider_name: str = "unknown", original_error: Optional[Exception] = None):
+
+    def __init__(
+        self,
+        message: str,
+        provider_name: str = "unknown",
+        original_error: Optional[Exception] = None,
+    ):
         self.provider_name = provider_name
         self.original_error = original_error
         super().__init__(message)
@@ -166,16 +174,25 @@ class ProviderError(Exception):
 
 class ProviderUnavailableError(ProviderError):
     """Raised when a provider is not available or misconfigured."""
+
     pass
 
 
 class ProviderTimeoutError(ProviderError):
     """Raised when a provider request times out."""
-    def __init__(self, message: str, provider_name: str = "unknown", timeout_seconds: int = 0, original_error: Optional[Exception] = None):
+
+    def __init__(
+        self,
+        message: str,
+        provider_name: str = "unknown",
+        timeout_seconds: int = 0,
+        original_error: Optional[Exception] = None,
+    ):
         self.timeout_seconds = timeout_seconds
         super().__init__(message, provider_name, original_error)
 
 
 class ProviderQuotaError(ProviderError):
     """Raised when a provider quota is exceeded."""
+
     pass

@@ -136,7 +136,7 @@ class TestDevAgent:
         with patch("agents.ai_providers.get_provider") as mock_get_provider:
             mock_get_provider.return_value = mock_provider
             agent = DevAgent(config_path=temp_config_file)
-            
+
         assert agent.config is not None
         assert "llm" in agent.config
         assert agent.provider is not None
@@ -146,7 +146,7 @@ class TestDevAgent:
         with patch("agents.ai_providers.get_provider") as mock_get_provider:
             mock_get_provider.return_value = mock_provider
             agent = DevAgent(config_path=temp_config_file)
-            
+
         config = agent._load_config(temp_config_file)
         assert "llm" in config
         assert "bedrock" in config["llm"]
@@ -189,7 +189,7 @@ class TestDevAgent:
         with patch("agents.ai_providers.get_provider") as mock_get_provider:
             mock_get_provider.return_value = mock_provider
             agent = DevAgent(config_path=temp_config_file)
-            
+
         stub = agent._generate_stub_code()
 
         assert "StubImplementation" in stub
@@ -333,18 +333,19 @@ describe('ProjectSetup', () => {
 
             # Ensure NO_NETWORK is not set to prevent fallback to fake provider
             with patch.dict(
-                os.environ, 
+                os.environ,
                 {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"},
-                clear=False
+                clear=False,
             ):
                 if "NO_NETWORK" in os.environ:
                     del os.environ["NO_NETWORK"]
-                
+
                 agent = DevAgent(config_path=temp_config_file)
 
                 # Should raise exception, not return stub code
                 # BedrockError is wrapped in ProviderError by the provider layer
                 from agents.ai_providers.base import ProviderError
+
                 with pytest.raises(ProviderError, match="Bedrock access denied"):
                     agent._call_llm("Test prompt")
 
@@ -355,7 +356,9 @@ describe('ProjectSetup', () => {
                 from agents.ai_providers.base import ProviderUnavailableError
 
                 # The DevAgent will catch credential errors and wrap them in ProviderUnavailableError
-                with pytest.raises(ProviderUnavailableError, match="Bedrock provider is not available"):
+                with pytest.raises(
+                    ProviderUnavailableError, match="Bedrock provider is not available"
+                ):
                     DevAgent(config_path=temp_config_file)
 
     def test_credentials_with_env_vars(self, temp_config_file):
@@ -398,7 +401,7 @@ describe('ProjectSetup', () => {
                 assert agent is not None
                 # Provider should exist and be bedrock type
                 assert agent.provider is not None
-                assert hasattr(agent.provider, 'client')  # Bedrock provider has client attribute
+                assert hasattr(agent.provider, "client")  # Bedrock provider has client attribute
 
     def test_sdk_compatibility_fallback(self, temp_config_file):
         """Test SDK compatibility through standardized client."""
@@ -668,9 +671,12 @@ llm:
             temp_config.write_text(config_content)
 
             # Mock the bedrock provider's generate_code method directly
-            # Also patch environment to avoid NO_NETWORK interference  
-            with patch.dict(os.environ, {"NO_NETWORK": "", "AI_PROVIDER": "bedrock"}, clear=False), \
-                 patch("agents.ai_providers.bedrock.BedrockProvider.generate_code") as mock_generate_code:
+            # Also patch environment to avoid NO_NETWORK interference
+            with patch.dict(
+                os.environ, {"NO_NETWORK": "", "AI_PROVIDER": "bedrock"}, clear=False
+            ), patch(
+                "agents.ai_providers.bedrock.BedrockProvider.generate_code"
+            ) as mock_generate_code:
                 # Mock the generate_code method to return test response
                 mock_generate_code.return_value = "console.log('test response');"
 
@@ -707,8 +713,11 @@ llm:
 """
             temp_config.write_text(config_content)
 
-            with patch.dict(os.environ, {"NO_NETWORK": "", "AI_PROVIDER": "bedrock"}, clear=False), \
-                 patch("agents.ai_providers.bedrock.BedrockProvider.generate_code") as mock_generate_code:
+            with patch.dict(
+                os.environ, {"NO_NETWORK": "", "AI_PROVIDER": "bedrock"}, clear=False
+            ), patch(
+                "agents.ai_providers.bedrock.BedrockProvider.generate_code"
+            ) as mock_generate_code:
                 # Mock the generate_code method to return test response
                 mock_generate_code.return_value = "test response"
 

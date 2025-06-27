@@ -59,6 +59,7 @@ test-results.xml
 # Logs
 *.log
 logs/
+serena_telemetry.jsonl
 
 # Vector store and context engine cache
 vector_store/

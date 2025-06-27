@@ -6,14 +6,15 @@ This script installs and configures Serena for symbol-aware context management.
 Serena provides Language Server Protocol (LSP) integration for precise code analysis.
 """
 
-import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import List, Optional
 
 
-def run_command(cmd: List[str], cwd: Optional[Path] = None, check: bool = True) -> subprocess.CompletedProcess:
+def run_command(
+    cmd: List[str], cwd: Optional[Path] = None, check: bool = True
+) -> subprocess.CompletedProcess:
     """Run a command with proper error handling."""
     print(f"🔧 Running: {' '.join(cmd)}")
     try:
@@ -54,27 +55,27 @@ def install_uvx() -> None:
 def install_serena() -> None:
     """Install Serena via uvx."""
     print("🚀 Installing Serena from GitHub...")
-    
+
     # Install Serena from git repository
     cmd = ["uvx", "--from", "git+https://github.com/oraios/serena", "install"]
     result = run_command(cmd, check=False)
-    
+
     if result.returncode != 0:
         print("❌ Failed to install Serena via uvx")
         print("🔧 Trying alternative installation methods...")
-        
+
         # Try direct git clone and pip install
         try:
             temp_dir = Path("/tmp/serena_install")
             if temp_dir.exists():
                 run_command(["rm", "-rf", str(temp_dir)])
-            
+
             run_command(["git", "clone", "https://github.com/oraios/serena.git", str(temp_dir)])
             run_command([sys.executable, "-m", "pip", "install", str(temp_dir)], cwd=temp_dir)
-            
+
             # Cleanup
             run_command(["rm", "-rf", str(temp_dir)])
-            
+
         except subprocess.CalledProcessError:
             print("❌ All installation methods failed")
             print("🔧 Please install Serena manually:")
@@ -87,15 +88,15 @@ def setup_serena_directory() -> Path:
     """Create .serena directory structure."""
     project_root = Path.cwd()
     serena_dir = project_root / ".serena"
-    
+
     print(f"📁 Creating Serena directory at {serena_dir}")
     serena_dir.mkdir(exist_ok=True)
-    
+
     # Create subdirectories for different language servers
     (serena_dir / "python").mkdir(exist_ok=True)
     (serena_dir / "javascript").mkdir(exist_ok=True)
     (serena_dir / "typescript").mkdir(exist_ok=True)
-    
+
     return serena_dir
 
 
@@ -123,7 +124,7 @@ enabled = true
 server = "typescript-language-server"
 auto_install = true
 """
-    
+
     config_file = serena_dir / "config.toml"
     print(f"⚙️  Creating config at {config_file}")
     config_file.write_text(config_content)
@@ -132,17 +133,20 @@ auto_install = true
 def verify_installation() -> bool:
     """Verify Serena installation is working."""
     print("🔍 Verifying Serena installation...")
-    
+
     try:
         # Try to import serena
-        result = run_command([sys.executable, "-c", "import serena; print('Serena imported successfully')"], check=False)
+        result = run_command(
+            [sys.executable, "-c", "import serena; print('Serena imported successfully')"],
+            check=False,
+        )
         if result.returncode == 0:
             print("✅ Serena installation verified")
             return True
         else:
             print("❌ Serena import failed")
             return False
-            
+
     except Exception as e:
         print(f"❌ Verification failed: {e}")
         return False
@@ -151,14 +155,14 @@ def verify_installation() -> bool:
 def update_gitignore() -> None:
     """Update .gitignore to exclude Serena files."""
     gitignore_path = Path(".gitignore")
-    
+
     serena_entries = [
         "# Serena LSP Integration",
         ".serena/",
         "*.serena-cache",
         ".serena-workspace/",
     ]
-    
+
     if gitignore_path.exists():
         existing_content = gitignore_path.read_text()
         if ".serena/" not in existing_content:
@@ -178,30 +182,30 @@ def main():
     """Main setup function."""
     print("🎯 SoloPilot Serena LSP Integration Setup")
     print("=" * 50)
-    
+
     # Check if we're in the correct directory
     if not Path("agents").exists() or not Path("config").exists():
         print("❌ Please run this script from the SoloPilot root directory")
         sys.exit(1)
-    
+
     # Step 1: Check/install uvx
     if not check_uvx_installed():
         install_uvx()
     else:
         print("✅ uvx is already installed")
-    
+
     # Step 2: Install Serena
     install_serena()
-    
+
     # Step 3: Setup directory structure
     serena_dir = setup_serena_directory()
-    
+
     # Step 4: Create configuration
     create_serena_config(serena_dir)
-    
+
     # Step 5: Update .gitignore
     update_gitignore()
-    
+
     # Step 6: Verify installation
     if verify_installation():
         print("\n🎉 Serena setup completed successfully!")
