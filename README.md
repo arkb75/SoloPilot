@@ -252,14 +252,6 @@ When `SERENA_TELEMETRY_ENABLED=1`:
 - API for integrations
 - Global deployment regions
 
-## 🤝 Contributing
-
-This is an active project in rapid development. Key areas for contribution:
-- Deployment provider integrations
-- Additional LLM providers
-- UI/UX improvements
-- Documentation
-
 ## 📝 License
 
 Proprietary - SoloPilot AI Automation
