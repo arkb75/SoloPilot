@@ -263,7 +263,3 @@ This is an active project in rapid development. Key areas for contribution:
 ## 📝 License
 
 Proprietary - SoloPilot AI Automation
-
----
-
-**Built with ❤️ to empower freelance developers worldwide**
