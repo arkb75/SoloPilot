@@ -80,6 +80,7 @@ coverage/
 # Deployment artifacts
 deployment-reports/
 smoke-test-results/
+email_intake_pkg.zip
 
 # Test artifacts
 .pytest_cache/

@@ -5,8 +5,14 @@ import logging
 import os
 from typing import Any, Dict, List
 
-from agents.ai_providers import get_provider
-from agents.ai_providers.base import log_call
+try:
+    from agents.ai_providers import get_provider
+    from agents.ai_providers.base import log_call
+    USE_AI_PROVIDER = True
+except ImportError:
+    # Running in Lambda environment
+    import boto3
+    USE_AI_PROVIDER = False
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +24,19 @@ class RequirementExtractor:
     """Extracts project requirements from email conversations using LLM."""
 
     def __init__(self):
-        """Initialize with AI provider."""
-        self.provider = get_provider(AI_PROVIDER)
+        """Initialize with AI provider or Bedrock client."""
+        if USE_AI_PROVIDER:
+            self.provider = get_provider(AI_PROVIDER)
+        else:
+            # Lambda environment - use Bedrock directly
+            self.bedrock_client = boto3.client(
+                "bedrock-runtime",
+                region_name=os.environ.get("AWS_REGION", "us-east-2")
+            )
+            self.model_id = os.environ.get(
+                "BEDROCK_MODEL_ID",
+                "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+            )
 
     def extract(
         self, email_history: List[Dict[str, Any]], existing_requirements: Dict[str, Any]
@@ -59,11 +76,35 @@ Extract and return a JSON object with these fields:
 Return ONLY valid JSON, no additional text."""
 
         try:
-            # Use provider to extract requirements
-            response = self.provider.generate_code(prompt, [])
+            if USE_AI_PROVIDER:
+                # Use provider to extract requirements
+                response = self.provider.generate_code(prompt, [])
+                # Parse JSON response
+                requirements = json.loads(response)
+            else:
+                # Call Bedrock directly to extract requirements
+                request_body = {
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 4000,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    "temperature": 0.3
+                }
+                
+                response = self.bedrock_client.invoke_model(
+                    modelId=self.model_id,
+                    body=json.dumps(request_body)
+                )
+                
+                response_body = json.loads(response["body"].read())
+                llm_response = response_body["content"][0]["text"]
 
-            # Parse JSON response
-            requirements = json.loads(response)
+                # Parse JSON response
+                requirements = json.loads(llm_response)
 
             # Merge with existing requirements
             merged = self._merge_requirements(existing_requirements, requirements)
