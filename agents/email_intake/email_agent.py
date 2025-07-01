@@ -7,6 +7,7 @@ extracts requirements, and pushes to SQS when ready.
 import json
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 import boto3
@@ -82,18 +83,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Update conversation with new requirements
         conversation = state_manager.update_requirements(conversation_id, updated_requirements)
 
+        # Always send to SQS after DynamoDB update
+        _send_to_queue(conversation_id, updated_requirements, conversation)
+
         # Check if requirements are complete
         if extractor.is_complete(updated_requirements):
-            # Send to SQS
-            _send_to_queue(conversation_id, updated_requirements)
-
             # Update status
             state_manager.update_status(conversation_id, "completed")
 
             # Send confirmation email
             _send_confirmation_email(parsed_email["from"], updated_requirements)
 
-            logger.info(f"Requirements complete for {conversation_id}, sent to queue")
+            logger.info(f"Requirements complete for {conversation_id}")
         else:
             # Generate follow-up questions
             questions = extractor.generate_questions(updated_requirements)
@@ -113,15 +114,41 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
 
 
-def _send_to_queue(conversation_id: str, requirements: Dict[str, Any]) -> None:
-    """Send completed requirements to SQS queue."""
+def _send_to_queue(conversation_id: str, requirements: Dict[str, Any], conversation: Dict[str, Any]) -> None:
+    """Send requirements to SQS queue after DynamoDB update.
+    
+    Args:
+        conversation_id: Unique conversation identifier
+        requirements: Current requirements state
+        conversation: Full conversation data from DynamoDB
+        
+    Raises:
+        Exception: If SQS send_message fails
+    """
     message = {
         "conversation_id": conversation_id,
         "requirements": requirements,
+        "status": conversation.get("status", "active"),
+        "email_count": len(conversation.get("email_history", [])),
         "source": "email_intake",
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
-    sqs_client.send_message(QueueUrl=QUEUE_URL, MessageBody=json.dumps(message))
+    try:
+        response = sqs_client.send_message(
+            QueueUrl=QUEUE_URL, 
+            MessageBody=json.dumps(message)
+        )
+        
+        # Check for successful send
+        if response["ResponseMetadata"]["HTTPStatusCode"] != 200:
+            raise Exception(f"SQS send_message returned status {response['ResponseMetadata']['HTTPStatusCode']}")
+        
+        logger.info(f"Sent message to SQS: queue_url={QUEUE_URL}, conversation_id={conversation_id}, message_id={response['MessageId']}")
+        
+    except Exception as e:
+        logger.error(f"Failed to send message to SQS: {str(e)}")
+        raise
 
 
 def _send_followup_email(to_email: str, subject: str, questions: str) -> None:

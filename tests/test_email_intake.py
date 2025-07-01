@@ -245,6 +245,20 @@ I need a website for my bakery.
             "conversation_id": "test-123",
             "email_history": [{"from": "test@example.com"}],
         }
+        mock_state.update_requirements.return_value = {
+            "conversation_id": "test-123",
+            "email_history": [{"from": "test@example.com"}],
+            "requirements": {
+                "title": "Bakery Website",
+                "project_type": "website",
+                "business_description": "Local bakery",
+                "features": [
+                    {"name": "Menu", "desc": "Display products"},
+                    {"name": "Contact", "desc": "Contact form"},
+                    {"name": "Gallery", "desc": "Photo gallery"},
+                ],
+            }
+        }
         mock_state_class.return_value = mock_state
 
         # Mock requirement extractor - complete requirements
@@ -261,6 +275,12 @@ I need a website for my bakery.
         }
         mock_extractor.is_complete.return_value = True
         mock_extractor_class.return_value = mock_extractor
+
+        # Mock SQS response
+        mock_sqs.send_message.return_value = {
+            "MessageId": "test-message-id",
+            "ResponseMetadata": {"HTTPStatusCode": 200}
+        }
 
         # Lambda event
         event = {
@@ -311,6 +331,11 @@ I need help with a project.
         mock_state = MagicMock()
         mock_state.get_or_create.return_value = {"conversation_id": "test-456", "email_history": []}
         mock_state.add_email.return_value = {"conversation_id": "test-456", "email_history": [{"from": "test@example.com"}]}
+        mock_state.update_requirements.return_value = {
+            "conversation_id": "test-456",
+            "email_history": [{"from": "test@example.com"}],
+            "requirements": {"title": "Some Project"}
+        }
         mock_state_class.return_value = mock_state
 
         # Mock requirement extractor - incomplete requirements
@@ -319,6 +344,12 @@ I need help with a project.
         mock_extractor.is_complete.return_value = False
         mock_extractor.generate_questions.return_value = "1. What type of project?"
         mock_extractor_class.return_value = mock_extractor
+
+        # Mock SQS response
+        mock_sqs.send_message.return_value = {
+            "MessageId": "test-message-id-456",
+            "ResponseMetadata": {"HTTPStatusCode": 200}
+        }
 
         event = {
             "Records": [
@@ -335,8 +366,8 @@ I need help with a project.
 
         assert result["statusCode"] == 200
 
-        # Should NOT send to SQS
-        mock_sqs.send_message.assert_not_called()
+        # Should send to SQS (changed behavior - always send after DynamoDB update)
+        mock_sqs.send_message.assert_called_once()
 
         # Should send follow-up email
         mock_ses.send_email.assert_called_once()
