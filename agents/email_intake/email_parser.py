@@ -6,7 +6,9 @@ import logging
 import re
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any, Dict
+from typing import Any, Dict, List
+
+from utils import EmailThreadingUtils
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,7 @@ class EmailParser:
         try:
             # Parse email message
             msg = email.message_from_string(raw_email)
+            self.current_msg = msg  # Store for thread ID extraction
 
             # Extract basic fields
             from_addr = self._extract_email_address(msg.get("From", ""))
@@ -34,8 +37,12 @@ class EmailParser:
             in_reply_to = msg.get("In-Reply-To", "")
             references = msg.get("References", "")
 
-            # Extract thread ID
-            thread_id = self._extract_thread_id(message_id, in_reply_to, references, subject)
+            # Extract recipients
+            to_addrs = self._extract_recipients(msg.get("To", ""))
+            cc_addrs = self._extract_recipients(msg.get("Cc", ""))
+
+            # Extract thread information
+            thread_info = self._extract_thread_id(message_id, in_reply_to, references, subject, from_addr)
 
             # Extract timestamp
             date_str = msg.get("Date", "")
@@ -48,14 +55,23 @@ class EmailParser:
             clean_subject = self._clean_subject(subject)
 
             parsed = {
-                "thread_id": thread_id,
+                # Legacy field for compatibility
+                "thread_id": thread_info["conversation_id"],
+                # Enhanced fields
+                "conversation_id": thread_info["conversation_id"],
+                "original_message_id": thread_info["original_message_id"],
                 "message_id": message_id,
+                "in_reply_to": in_reply_to,
+                "references": references,
                 "from": from_addr,
+                "to": to_addrs,
+                "cc": cc_addrs,
                 "subject": clean_subject,
                 "original_subject": subject,
                 "body": body,
                 "timestamp": timestamp,
                 "is_reply": bool(in_reply_to or references),
+                "attachments": self._extract_attachments(msg),
             }
 
             logger.info(f"Parsed email from {from_addr} with thread {thread_id}")
@@ -80,29 +96,64 @@ class EmailParser:
         return from_header.lower()
 
     def _extract_thread_id(
-        self, message_id: str, in_reply_to: str, references: str, subject: str
-    ) -> str:
-        """Extract or generate thread ID for conversation tracking."""
-        # If replying to existing thread
-        if in_reply_to:
-            # Use the original message ID as thread ID
-            return self._hash_id(in_reply_to)
+        self, message_id: str, in_reply_to: str, references: str, subject: str, from_addr: str
+    ) -> Dict[str, Any]:
+        """Extract thread information using RFC 5322 compliant logic.
+        
+        Returns:
+            Dict with conversation_id, original_message_id, and references list
+        """
+        # Parse references into list
+        ref_list = EmailThreadingUtils.parse_references(references)
+        
+        # Determine conversation ID
+        conv_id, original_id = EmailThreadingUtils.determine_conversation_id(
+            message_id,
+            in_reply_to,
+            ref_list,
+            subject,
+            from_addr,
+            self._parse_date(self.current_msg.get("Date", "")) if hasattr(self, "current_msg") else None
+        )
+        
+        return {
+            "conversation_id": conv_id,
+            "original_message_id": original_id,
+            "references": ref_list
+        }
 
-        # If references exist, use first reference
-        if references:
-            first_ref = references.split()[0].strip("<>")
-            return self._hash_id(first_ref)
+    def _extract_recipients(self, header_value: str) -> List[str]:
+        """Extract email addresses from To/Cc headers."""
+        if not header_value:
+            return []
+        
+        addresses = []
+        # Simple extraction - can be enhanced with email.utils.getaddresses
+        for part in header_value.split(","):
+            addr = self._extract_email_address(part.strip())
+            if addr:
+                addresses.append(addr)
+        
+        return addresses
 
-        # For new threads, create ID from message ID
-        if message_id:
-            return self._hash_id(message_id)
-
-        # Fallback: hash the subject
-        return self._hash_id(subject)
-
-    def _hash_id(self, text: str) -> str:
-        """Create consistent hash ID from text."""
-        return hashlib.md5(text.encode()).hexdigest()[:16]
+    def _extract_attachments(self, msg: email.message.Message) -> List[Dict[str, Any]]:
+        """Extract attachment information from email."""
+        attachments = []
+        
+        if msg.is_multipart():
+            for part in msg.walk():
+                content_disposition = part.get("Content-Disposition", "")
+                
+                if "attachment" in content_disposition:
+                    filename = part.get_filename()
+                    if filename:
+                        attachments.append({
+                            "filename": filename,
+                            "content_type": part.get_content_type(),
+                            "size": len(part.get_payload(decode=True)) if part.get_payload(decode=True) else 0
+                        })
+        
+        return attachments
 
     def _parse_date(self, date_str: str) -> str:
         """Parse email date to ISO format."""
