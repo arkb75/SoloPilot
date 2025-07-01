@@ -6,11 +6,17 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import click
 import requests
 from dotenv import load_dotenv
+
+# Import project manager
+try:
+    from vercel_project_manager import VercelProjectManager
+except ImportError:
+    VercelProjectManager = None
 
 # Vercel API base URL
 VERCEL_API_BASE = "https://api.vercel.com"
@@ -135,7 +141,9 @@ class VercelDeployer:
 
         return env_vars
 
-    def _get_build_config(self, project_root: Optional[Path]) -> Optional[Dict[str, Any]]:
+    def _get_build_config(
+        self, project_root: Optional[Path]
+    ) -> Optional[Dict[str, Any]]:
         """Get build configuration based on project type."""
         if not project_root:
             return None
@@ -179,7 +187,9 @@ class VercelDeployer:
 
         return domains
 
-    def _wait_for_deployment(self, deployment_id: str, timeout: int = 600) -> Dict[str, Any]:
+    def _wait_for_deployment(
+        self, deployment_id: str, timeout: int = 600
+    ) -> Dict[str, Any]:
         """Wait for deployment to complete."""
         click.echo("⏳ Waiting for deployment to complete...")
 
@@ -191,7 +201,9 @@ class VercelDeployer:
             response = requests.get(url, headers=self.headers, params=params)
 
             if response.status_code != 200:
-                click.echo(f"❌ Failed to check deployment status: {response.status_code}")
+                click.echo(
+                    f"❌ Failed to check deployment status: {response.status_code}"
+                )
                 sys.exit(1)
 
             deployment = response.json()
@@ -282,7 +294,9 @@ class VercelDeployer:
 
         # Check API health endpoint if exists
         try:
-            health_response = requests.get(f"https://{deployment_url}/api/health", timeout=10)
+            health_response = requests.get(
+                f"https://{deployment_url}/api/health", timeout=10
+            )
             if health_response.status_code == 200:
                 click.echo("   ✅ API health check passed")
         except:
@@ -295,7 +309,9 @@ class VercelDeployer:
 @click.command()
 @click.option("--token", required=True, help="Vercel API token")
 @click.option("--org-id", help="Vercel organization ID")
-@click.option("--project-id", required=True, help="Vercel project ID")
+@click.option(
+    "--project-id", help="Vercel project ID (required unless --create-project is used)"
+)
 @click.option(
     "--environment",
     type=click.Choice(["production", "preview"]),
@@ -311,17 +327,54 @@ class VercelDeployer:
     help="Project root directory",
 )
 @click.option("--skip-validation", is_flag=True, help="Skip post-deployment validation")
+@click.option(
+    "--create-project", is_flag=True, help="Create project if it doesn't exist"
+)
+@click.option("--client-name", help="Client name for project creation")
+@click.option("--project-type", default="site", help="Project type (site, app, api)")
 def deploy(
     token: str,
     org_id: Optional[str],
-    project_id: str,
+    project_id: Optional[str],
     environment: str,
     branch: str,
     commit: str,
     project_root: Path,
     skip_validation: bool,
+    create_project: bool,
+    client_name: Optional[str],
+    project_type: str,
 ) -> None:
     """Deploy project to Vercel with environment and domain management."""
+    # Handle project creation if needed
+    if create_project and not project_id:
+        if not client_name:
+            click.echo("❌ --client-name is required when using --create-project")
+            sys.exit(1)
+
+        if not VercelProjectManager:
+            click.echo("❌ VercelProjectManager not available")
+            sys.exit(1)
+
+        click.echo(f"📦 Creating project for client: {client_name}")
+        project_manager = VercelProjectManager(token)
+
+        # Detect framework from project root
+        framework = _detect_framework(project_root)
+
+        try:
+            project_id, project_name = project_manager.get_or_create_project(
+                client_name, project_type, framework=framework
+            )
+            click.echo(f"✅ Using project: {project_name} ({project_id})")
+        except Exception as e:
+            click.echo(f"❌ Failed to create project: {str(e)}")
+            sys.exit(1)
+
+    elif not project_id:
+        click.echo("❌ --project-id is required unless --create-project is used")
+        sys.exit(1)
+
     click.echo(f"🚀 Starting Vercel deployment for {project_id}")
     click.echo(f"   Environment: {environment}")
     click.echo(f"   Branch: {branch}")
@@ -357,6 +410,7 @@ def deploy(
 
     # Output deployment URL for GitHub Actions
     print(f"::set-output name=deployment_url::https://{deployment_url}")
+    print(f"::set-output name=project_id::{project_id}")
 
     # Summary
     click.echo("\n📊 Deployment Summary:")
@@ -364,6 +418,37 @@ def deploy(
     click.echo(f"   URL: https://{deployment_url}")
     click.echo(f"   Environment: {environment}")
     click.echo(f"   State: {deployment.get('readyState', 'UNKNOWN')}")
+    click.echo(f"   Project ID: {project_id}")
+
+
+def _detect_framework(project_root: Path) -> Optional[str]:
+    """Detect framework from project files.
+
+    Args:
+        project_root: Project root directory
+
+    Returns:
+        Framework name or None
+    """
+    # Check for Next.js
+    package_json_path = project_root / "package.json"
+    if package_json_path.exists():
+        with open(package_json_path) as f:
+            package_data = json.load(f)
+            deps = package_data.get("dependencies", {})
+
+            if "next" in deps:
+                return "nextjs"
+            elif "react" in deps:
+                return "react"
+            elif "vue" in deps:
+                return "vue"
+
+    # Check for Python
+    if (project_root / "requirements.txt").exists():
+        return "python"
+
+    return None
 
 
 if __name__ == "__main__":

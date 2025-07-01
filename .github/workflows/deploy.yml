@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - production
+      - 'client/**'  # Client-specific branches
   workflow_dispatch:
     inputs:
       environment:
@@ -14,14 +15,55 @@ on:
         options:
           - production
           - preview
+      client_name:
+        description: 'Client name (for client deployments)'
+        required: false
+        type: string
+      project_type:
+        description: 'Project type (site, app, api)'
+        required: false
+        default: 'site'
+        type: choice
+        options:
+          - site
+          - app
+          - api
 
 env:
   NODE_VERSION: '18.x'
   PYTHON_VERSION: '3.11'
 
 jobs:
+  # Determine if this is a client deployment
+  determine-deployment-type:
+    name: Determine Deployment Type
+    runs-on: ubuntu-latest
+    outputs:
+      is_client: ${{ steps.check.outputs.is_client }}
+      client_name: ${{ steps.check.outputs.client_name }}
+      project_type: ${{ steps.check.outputs.project_type }}
+    steps:
+      - name: Check deployment type
+        id: check
+        run: |
+          # Check if branch is client-specific
+          if [[ "${{ github.ref }}" == refs/heads/client/* ]]; then
+            echo "is_client=true" >> $GITHUB_OUTPUT
+            # Extract client name from branch
+            CLIENT_NAME=$(echo "${{ github.ref }}" | sed 's|refs/heads/client/||' | sed 's|-| |g')
+            echo "client_name=$CLIENT_NAME" >> $GITHUB_OUTPUT
+            echo "project_type=site" >> $GITHUB_OUTPUT
+          elif [[ -n "${{ github.event.inputs.client_name }}" ]]; then
+            echo "is_client=true" >> $GITHUB_OUTPUT
+            echo "client_name=${{ github.event.inputs.client_name }}" >> $GITHUB_OUTPUT
+            echo "project_type=${{ github.event.inputs.project_type || 'site' }}" >> $GITHUB_OUTPUT
+          else
+            echo "is_client=false" >> $GITHUB_OUTPUT
+          fi
+
   build-and-deploy:
     name: Build and Deploy to Vercel
+    needs: determine-deployment-type
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'production' }}
     
@@ -73,14 +115,34 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           DEPLOYMENT_ENV: ${{ github.event.inputs.environment || 'production' }}
+          IS_CLIENT: ${{ needs.determine-deployment-type.outputs.is_client }}
+          CLIENT_NAME: ${{ needs.determine-deployment-type.outputs.client_name }}
+          PROJECT_TYPE: ${{ needs.determine-deployment-type.outputs.project_type }}
         run: |
-          python scripts/deploy_to_vercel.py \
-            --token "$VERCEL_TOKEN" \
-            --org-id "$VERCEL_ORG_ID" \
-            --project-id "$VERCEL_PROJECT_ID" \
-            --environment "$DEPLOYMENT_ENV" \
-            --branch "${{ github.ref_name }}" \
-            --commit "${{ github.sha }}"
+          # Build deployment command
+          DEPLOY_CMD="python scripts/deploy_to_vercel.py"
+          DEPLOY_CMD+=" --token \"$VERCEL_TOKEN\""
+          
+          # Handle client vs SoloPilot deployments
+          if [[ "$IS_CLIENT" == "true" ]]; then
+            echo "🏢 Deploying client project: $CLIENT_NAME"
+            DEPLOY_CMD+=" --create-project"
+            DEPLOY_CMD+=" --client-name \"$CLIENT_NAME\""
+            DEPLOY_CMD+=" --project-type \"$PROJECT_TYPE\""
+          else
+            echo "🚀 Deploying SoloPilot main project"
+            DEPLOY_CMD+=" --project-id \"$VERCEL_PROJECT_ID\""
+            if [[ -n "$VERCEL_ORG_ID" ]]; then
+              DEPLOY_CMD+=" --org-id \"$VERCEL_ORG_ID\""
+            fi
+          fi
+          
+          DEPLOY_CMD+=" --environment \"$DEPLOYMENT_ENV\""
+          DEPLOY_CMD+=" --branch \"${{ github.ref_name }}\""
+          DEPLOY_CMD+=" --commit \"${{ github.sha }}\""
+          
+          echo "Running: $DEPLOY_CMD"
+          eval $DEPLOY_CMD
 
       - name: Run smoke tests
         id: smoke_tests
@@ -117,18 +179,35 @@ jobs:
         with:
           script: |
             const deployment_url = '${{ steps.deploy.outputs.deployment_url }}';
+            const project_id = '${{ steps.deploy.outputs.project_id }}';
             const status = '${{ job.status }}';
+            const is_client = '${{ needs.determine-deployment-type.outputs.is_client }}';
+            const client_name = '${{ needs.determine-deployment-type.outputs.client_name }}';
             
             // Create deployment status
+            const description = is_client === 'true' 
+              ? `Client deployment ${status}: ${client_name}`
+              : `Deployment ${status}`;
+            
             await github.rest.repos.createDeploymentStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
               deployment_id: context.payload.deployment?.id || 0,
               state: status === 'success' ? 'success' : 'failure',
               target_url: deployment_url,
-              description: `Deployment ${status}`,
+              description: description,
               environment: '${{ github.event.inputs.environment || 'production' }}'
             });
+            
+            // Add comment with deployment details for client projects
+            if (is_client === 'true' && status === 'success' && context.issue?.number) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `✅ Client deployment successful!\n\n**Client:** ${client_name}\n**Project ID:** ${project_id}\n**URL:** ${deployment_url}\n\n[View deployment](${deployment_url})`
+              });
+            }
 
       - name: Notify on failure
         if: failure()
