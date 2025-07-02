@@ -165,11 +165,11 @@ class EmailIntakeSetup:
                     Attributes={
                         "MessageRetentionPeriod": "1209600",  # 14 days
                         "VisibilityTimeout": "300",  # 5 minutes
-                        "Tags": json.dumps({
-                            "Project": "SoloPilot",
-                            "Component": "EmailIntake",
-                            "Environment": "Demo"
-                        })
+                    },
+                    tags={
+                        "Project": "SoloPilot",
+                        "Component": "EmailIntake",
+                        "Environment": "Demo"
                     }
                 )
                 queue_url = response["QueueUrl"]
@@ -233,8 +233,7 @@ class EmailIntakeSetup:
                         "SENDER_EMAIL": self.sender_email,
                         "REQUIREMENT_QUEUE_URL": queue_url,
                         "DYNAMO_TABLE": self.table_name,
-                        "ENABLE_OUTBOUND_TRACKING": "true",
-                        "AWS_DEFAULT_REGION": AWS_REGION
+                        "ENABLE_OUTBOUND_TRACKING": "true"
                     }
                 }
             }

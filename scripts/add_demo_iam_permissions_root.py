@@ -92,6 +92,15 @@ def get_demo_policy() -> Dict[str, Any]:
                 ]
             },
             {
+                "Sid": "LambdaListOperations",
+                "Effect": "Allow",
+                "Action": [
+                    "lambda:ListFunctions",
+                    "lambda:CreateFunction"
+                ],
+                "Resource": "*"
+            },
+            {
                 "Sid": "SESOperations",
                 "Effect": "Allow",
                 "Action": [
@@ -120,6 +129,20 @@ def get_demo_policy() -> Dict[str, Any]:
                 "Resource": [
                     "arn:aws:s3:::solopilot-emails/*",
                     "arn:aws:s3:::solopilot-emails"
+                ]
+            },
+            {
+                "Sid": "IAMRoleOperations",
+                "Effect": "Allow",
+                "Action": [
+                    "iam:PassRole",
+                    "iam:CreateRole",
+                    "iam:AttachRolePolicy",
+                    "iam:GetRole"
+                ],
+                "Resource": [
+                    f"arn:aws:iam::{account_id}:role/solopilot-*",
+                    f"arn:aws:iam::{account_id}:role/email-intake-*"
                 ]
             }
         ]
