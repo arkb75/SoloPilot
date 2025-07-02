@@ -293,11 +293,10 @@ Conversation ID: {conversation_id}
                 "Body": {"Text": {"Data": body}},
             },
             ReplyToAddresses=[SENDER_EMAIL],
-            MessageTags=[
+            Tags=[
                 {"Name": "conversation_id", "Value": conversation_id},
                 {"Name": "email_type", "Value": "followup"},
             ],
-            ConfigurationSetName=os.environ.get("SES_CONFIGURATION_SET", ""),
         )
 
         return response.get("MessageId")
@@ -345,11 +344,10 @@ Conversation ID: {conversation_id}
                 "Body": {"Text": {"Data": body}},
             },
             ReplyToAddresses=[SENDER_EMAIL],
-            MessageTags=[
+            Tags=[
                 {"Name": "conversation_id", "Value": conversation_id},
                 {"Name": "email_type", "Value": "confirmation"},
             ],
-            ConfigurationSetName=os.environ.get("SES_CONFIGURATION_SET", ""),
         )
 
         return response.get("MessageId")
