@@ -43,7 +43,7 @@ class EmailFlowTester:
         self.table = self.dynamodb.Table("conversations")
         
         # Configuration
-        self.sender_email = "noreply@solopilot.abdulkhurram.com"
+        self.sender_email = "intake@solopilot.abdulkhurram.com"
         self.test_recipient = None  # Will be set based on verified emails
         
     def get_verified_email(self) -> Optional[str]:

@@ -49,7 +49,7 @@ class EmailIntakeSetup:
         # Configuration
         self.table_name = "conversations"
         self.lambda_name = "email-intake-lambda"
-        self.sender_email = "noreply@solopilot.abdulkhurram.com"
+        self.sender_email = "intake@solopilot.abdulkhurram.com"
         
     def setup_dynamodb_table(self) -> bool:
         """Create conversations table if it doesn't exist."""
