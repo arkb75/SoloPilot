@@ -1,6 +1,7 @@
 """Migration script to update existing DynamoDB conversations table."""
 
 import logging
+import os
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict
@@ -17,11 +18,16 @@ logger = logging.getLogger(__name__)
 class DynamoDBMigration:
     """Migrate existing conversations to support multi-turn threading."""
 
-    def __init__(self, table_name: str = "conversations", region: str = "us-east-1"):
+    def __init__(self, table_name: str = "conversations", region: str = None):
         """Initialize migration with DynamoDB table."""
+        # Use AWS_DEFAULT_REGION if set, otherwise fallback to provided region or us-east-2
+        if region is None:
+            region = os.environ.get("AWS_DEFAULT_REGION", "us-east-2")
+        
         self.dynamodb = boto3.resource("dynamodb", region_name=region)
         self.table = self.dynamodb.Table(table_name)
         self.table_name = table_name
+        self.region = region
         self.stats = {"total": 0, "migrated": 0, "skipped": 0, "failed": 0}
 
     def migrate_all_conversations(self, dry_run: bool = True) -> Dict[str, int]:
@@ -34,7 +40,7 @@ class DynamoDBMigration:
             Migration statistics
         """
         logger.info(
-            f"Starting migration for table: {self.table_name} (dry_run={dry_run})"
+            f"Starting migration for table: {self.table_name} in region: {self.region} (dry_run={dry_run})"
         )
 
         # Scan all items
@@ -243,7 +249,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="Migrate DynamoDB conversations table")
     parser.add_argument("--table", default="conversations", help="DynamoDB table name")
-    parser.add_argument("--region", default="us-east-1", help="AWS region")
+    parser.add_argument("--region", help="AWS region (defaults to AWS_DEFAULT_REGION or us-east-2)")
     parser.add_argument(
         "--dry-run", action="store_true", help="Simulate migration without changes"
     )
