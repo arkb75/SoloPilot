@@ -203,6 +203,21 @@ class IAMPermissionManager:
             if e.response["Error"]["Code"] == "NoSuchEntity":
                 logger.error(f"❌ User '{USER_NAME}' not found")
                 return False
+            elif e.response["Error"]["Code"] == "AccessDenied":
+                logger.error(f"❌ Access denied - insufficient IAM permissions")
+                logger.info("\n" + "="*60)
+                logger.info("🔑 This script requires IAM admin permissions")
+                logger.info("="*60)
+                logger.info("Options:")
+                logger.info("1. Run with root/admin credentials:")
+                logger.info("   export AWS_PROFILE=root  # or your admin profile")
+                logger.info("   python scripts/add_demo_iam_permissions_root.py")
+                logger.info("")
+                logger.info("2. Or have an admin run the root script for you")
+                logger.info("")
+                logger.info("3. Or manually create the resources without IAM changes")
+                logger.info("="*60)
+                return False
             raise
     
     def check_policy_exists(self) -> bool:
