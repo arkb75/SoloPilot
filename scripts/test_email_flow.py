@@ -87,7 +87,7 @@ class EmailFlowTester:
                         "Text": {"Data": body}
                     }
                 },
-                MessageTags=[
+                Tags=[
                     {"Name": "test_id", "Value": message_id},
                     {"Name": "test_type", "Value": "email_intake_flow"}
                 ]

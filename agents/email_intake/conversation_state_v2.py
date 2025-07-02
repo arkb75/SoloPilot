@@ -93,7 +93,7 @@ class ConversationStateManagerV2:
             "requirements": {},
             "requirements_version": Decimal(0),
             # Metadata
-            "metadata": {"priority": "medium", "tags": set(), "client_info": {}},
+            "metadata": {"priority": "medium", "tags": [], "client_info": {}},
         }
 
         try:
@@ -176,8 +176,11 @@ class ConversationStateManagerV2:
                             last_seq = :new_seq,
                             participants = :participants,
                             thread_references = :refs,
-                            ttl = :ttl
+                            #ttl = :ttl
                     """,
+                    ExpressionAttributeNames={
+                        "#ttl": "ttl"
+                    },
                     ExpressionAttributeValues={
                         ":email": [email_entry],
                         ":updated": now,

@@ -74,7 +74,7 @@ class EmailParser:
                 "attachments": self._extract_attachments(msg),
             }
 
-            logger.info(f"Parsed email from {from_addr} with thread {thread_id}")
+            logger.info(f"Parsed email from {from_addr} with thread {thread_info}")
             return parsed
 
         except Exception as e:
