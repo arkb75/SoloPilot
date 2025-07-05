@@ -269,6 +269,10 @@ def _send_followup_email_v2(
     to_email: str, subject: str, questions: str, conversation_id: str, in_reply_to: str
 ) -> Optional[str]:
     """Send follow-up email with proper threading headers."""
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    import email.utils
+    
     body = f"""Thank you for your interest in our development services!
 
 To better understand your project needs, could you please provide some additional information:
@@ -285,14 +289,24 @@ Conversation ID: {conversation_id}
 """
 
     try:
-        response = ses_client.send_email(
+        # Create MIME message with proper headers
+        msg = MIMEMultipart()
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = to_email
+        msg["Subject"] = f"Re: {subject}"
+        msg["Message-ID"] = email.utils.make_msgid(domain="solopilot.abdulkhurram.com")
+        msg["In-Reply-To"] = f"<{in_reply_to}>"
+        msg["References"] = f"<{in_reply_to}>"
+        msg["Reply-To"] = SENDER_EMAIL
+        
+        # Add body
+        msg.attach(MIMEText(body, "plain"))
+        
+        # Send raw email
+        response = ses_client.send_raw_email(
             Source=SENDER_EMAIL,
-            Destination={"ToAddresses": [to_email]},
-            Message={
-                "Subject": {"Data": f"Re: {subject}"},
-                "Body": {"Text": {"Data": body}},
-            },
-            ReplyToAddresses=[SENDER_EMAIL],
+            Destinations=[to_email],
+            RawMessage={"Data": msg.as_string()},
             Tags=[
                 {"Name": "conversation_id", "Value": conversation_id},
                 {"Name": "email_type", "Value": "followup"},
@@ -310,6 +324,10 @@ def _send_confirmation_email_v2(
     to_email: str, requirements: Dict[str, Any], conversation_id: str
 ) -> Optional[str]:
     """Send confirmation email with scope summary and threading headers."""
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    import email.utils
+    
     features = "\n".join(
         [f"- {f['name']}: {f['desc']}" for f in requirements.get("features", [])]
     )
@@ -336,14 +354,23 @@ Conversation ID: {conversation_id}
 """
 
     try:
-        response = ses_client.send_email(
+        # Create MIME message with proper headers
+        msg = MIMEMultipart()
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = to_email
+        msg["Subject"] = "Project Scope Confirmed - SoloPilot"
+        msg["Message-ID"] = email.utils.make_msgid(domain="solopilot.abdulkhurram.com")
+        # Note: No In-Reply-To for confirmation as it starts a new thread
+        msg["Reply-To"] = SENDER_EMAIL
+        
+        # Add body
+        msg.attach(MIMEText(body, "plain"))
+        
+        # Send raw email
+        response = ses_client.send_raw_email(
             Source=SENDER_EMAIL,
-            Destination={"ToAddresses": [to_email]},
-            Message={
-                "Subject": {"Data": "Project Scope Confirmed - SoloPilot"},
-                "Body": {"Text": {"Data": body}},
-            },
-            ReplyToAddresses=[SENDER_EMAIL],
+            Destinations=[to_email],
+            RawMessage={"Data": msg.as_string()},
             Tags=[
                 {"Name": "conversation_id", "Value": conversation_id},
                 {"Name": "email_type", "Value": "confirmation"},
