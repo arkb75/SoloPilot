@@ -1,0 +1,19 @@
+{
+  "name": "doc-invoice-lambda-poc",
+  "version": "0.1.0",
+  "description": "React-PDF Lambda PoC for Markdown to PDF conversion",
+  "main": "index.js",
+  "scripts": {
+    "build": "npm run clean && npm ci --production",
+    "clean": "rm -rf node_modules",
+    "zip": "zip -r function.zip .",
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "@react-pdf/renderer": "^3.1.14",
+    "markdown-it": "^13.0.2"
+  },
+  "engines": {
+    "node": "18.x"
+  }
+}
