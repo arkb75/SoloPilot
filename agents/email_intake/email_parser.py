@@ -1,6 +1,7 @@
 """Email parser for extracting thread information."""
 
 import email
+import email.message
 import hashlib
 import logging
 import re
