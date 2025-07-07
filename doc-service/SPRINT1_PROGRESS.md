@@ -44,13 +44,32 @@
 - `s3_helpers.js` - Helper functions (with AWS SDK v3 TODO)
 - `plan.sh` - Script showing what will be created
 
-## 📋 Next Steps
+### P3 - Lambda Skeleton with S3 Integration ✅
+**Status**: COMPLETE
+**Location**: `doc-service/lambda/`
 
-### P3 - Lambda Skeleton with S3 Integration
-- Build on P1 PoC
-- Integrate S3 helper functions
-- Add CloudWatch logging
-- Implement error handling
+**Achievements**:
+- Moved S3 helper from terraform/ to lambda/src/
+- Created full Lambda handler accepting `{markdown, clientId, docType, filename}`
+- Implemented complete flow: Generate PDF → Upload S3 → Return signed URL
+- **Input Validation**:
+  - Required field checks
+  - Filename sanitization (path traversal prevention)
+  - 100KB markdown size limit
+- **CloudWatch Logging**:
+  - Structured JSON logs with clientId context
+  - Request tracking with requestId
+- **Unit Tests**:
+  - Comprehensive test coverage with mocked AWS SDK
+  - Both handler and S3 helper tests
+
+**Key Files**:
+- `src/index.js` - Main Lambda handler
+- `src/s3-helpers.js` - S3 operations
+- `src/logger.js` - CloudWatch logger
+- `test/*.test.js` - Unit tests with mocks
+
+## 📋 Next Steps
 
 ### P4 - Stripe Invoice Integration
 - Add Stripe SDK
@@ -64,11 +83,12 @@
 - Composite cost alarms
 
 ## 🎯 Sprint 1 Status
-- **Progress**: 2/5 priorities complete (40%) + Pre-P3 fixes ✅
-- **Package Size**: Well within limits (7MB/15MB)
-- **Infrastructure**: Ready for review
+- **Progress**: 3/5 priorities complete (60%) ✅
+- **Package Size**: ~8MB with full Lambda (well within 15MB limit)
+- **Infrastructure**: Ready for terraform apply
 - **Error Handling**: Fully implemented and tested
-- **Next Action**: Proceed with P3 Lambda S3 Integration
+- **S3 Integration**: Complete with signed URLs
+- **Next Action**: P4 Stripe Invoice Integration
 
 ## 💰 Cost Estimates
 - Lambda: < $1/month (128MB, sub-second execution)
