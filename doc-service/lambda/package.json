@@ -1,0 +1,34 @@
+{
+  "name": "solopilot-doc-generator",
+  "version": "1.0.0",
+  "description": "Document generation Lambda for SoloPilot",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "build": "npm run clean && npm ci --production",
+    "clean": "rm -rf node_modules coverage",
+    "zip": "zip -r function.zip . -x \"*.git*\" -x \"test*\" -x \"*.pdf\" -x \"coverage/*\" -x \"*.zip\""
+  },
+  "dependencies": {
+    "@react-pdf/renderer": "^3.1.14",
+    "aws-sdk": "^2.1499.0",
+    "markdown-it": "^13.0.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "aws-sdk-mock": "^5.8.0"
+  },
+  "engines": {
+    "node": "18.x"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/**/*.test.js"
+    ]
+  }
+}

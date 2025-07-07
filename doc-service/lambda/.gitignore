@@ -1,0 +1,8 @@
+node_modules/
+coverage/
+*.pdf
+*.zip
+.DS_Store
+npm-debug.log*
+.env
+.env.local
