@@ -69,13 +69,29 @@
 - `src/logger.js` - CloudWatch logger
 - `test/*.test.js` - Unit tests with mocks
 
-## 📋 Next Steps
+### P4 - Stripe Invoice Integration ✅
+**Status**: COMPLETE
+**Location**: `doc-service/lambda/src/stripe-helpers.js`
 
-### P4 - Stripe Invoice Integration
-- Add Stripe SDK
-- Create draft invoices
-- Attach PDFs
-- Generate payment links
+**Achievements**:
+- Added Stripe SDK to Lambda package
+- Retrieve Stripe keys from AWS Secrets Manager
+- Customer management (create new or find existing by clientId)
+- Automatic line item parsing from markdown
+- Draft invoice creation with:
+  - Document URL in metadata
+  - Net 30 payment terms
+  - Hosted invoice URL for payment
+- Graceful error handling (Stripe failures don't break PDF generation)
+- Comprehensive unit tests
+
+**Key Features**:
+- Parse prices like `- Service: $1,000` from markdown
+- Store clientId in Stripe customer metadata for lookups
+- Return invoice ID, hosted URL, and payment status
+- Document URL attached as custom field
+
+## 📋 Next Steps
 
 ### P5 - CloudWatch Cost Alarms
 - AppSync subscription monitoring
@@ -83,12 +99,13 @@
 - Composite cost alarms
 
 ## 🎯 Sprint 1 Status
-- **Progress**: 3/5 priorities complete (60%) ✅
-- **Package Size**: ~8MB with full Lambda (well within 15MB limit)
+- **Progress**: 4/5 priorities complete (80%) ✅
+- **Package Size**: ~9MB with Stripe SDK (well within 15MB limit)
 - **Infrastructure**: Ready for terraform apply
 - **Error Handling**: Fully implemented and tested
 - **S3 Integration**: Complete with signed URLs
-- **Next Action**: P4 Stripe Invoice Integration
+- **Stripe Integration**: Draft invoices with customer management
+- **Next Action**: P5 CloudWatch Cost Alarms
 
 ## 💰 Cost Estimates
 - Lambda: < $1/month (128MB, sub-second execution)
