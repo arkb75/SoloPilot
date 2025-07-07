@@ -27,10 +27,62 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     lineHeight: 1.5,
   },
+  errorTitle: {
+    fontSize: 20,
+    marginBottom: 20,
+    fontWeight: 'bold',
+    color: '#d32f2f',
+  },
+  errorMessage: {
+    fontSize: 14,
+    marginBottom: 10,
+    lineHeight: 1.5,
+    color: '#666666',
+  },
 });
+
+// Create error PDF document
+const createErrorPDF = () => {
+  return React.createElement(
+    Document,
+    {},
+    React.createElement(
+      Page,
+      { size: "A4", style: styles.page },
+      React.createElement(
+        View,
+        {},
+        React.createElement(
+          Text,
+          { style: styles.errorTitle },
+          'Document Parse Error'
+        ),
+        React.createElement(
+          Text,
+          { style: styles.errorMessage },
+          'We encountered an error while processing your document.'
+        ),
+        React.createElement(
+          Text,
+          { style: styles.errorMessage },
+          'Please contact support for assistance.'
+        ),
+        React.createElement(
+          Text,
+          { style: { ...styles.errorMessage, marginTop: 20, fontSize: 12, color: '#999999' } },
+          `Error ID: ${Date.now()}`
+        )
+      )
+    )
+  );
+};
 
 // Simple markdown parser that returns text content
 const parseMarkdown = (markdown) => {
+  if (!markdown || typeof markdown !== 'string') {
+    throw new Error('Invalid markdown input: must be a non-empty string');
+  }
+  
   const lines = markdown.split('\n');
   const elements = [];
   
@@ -69,38 +121,50 @@ exports.handler = async (event) => {
     const body = event.body ? JSON.parse(event.body) : event;
     const markdown = body.markdown || '# Default Document\n\nNo content provided.';
     
-    console.log('Processing markdown:', markdown.substring(0, 100) + '...');
+    console.log('Processing markdown:', typeof markdown === 'string' ? markdown.substring(0, 100) + '...' : 'Invalid input type');
     
-    // Parse markdown
-    const elements = parseMarkdown(markdown);
+    let doc;
+    let isError = false;
     
-    // Create PDF document using React.createElement
-    const textElements = elements.map(element => {
-      switch (element.type) {
-        case 'title':
-          return React.createElement(Text, { key: element.key, style: styles.title }, element.content);
-        case 'heading':
-          return React.createElement(Text, { key: element.key, style: styles.heading }, element.content);
-        case 'paragraph':
-          return React.createElement(Text, { key: element.key, style: styles.paragraph }, element.content);
-        default:
-          return null;
-      }
-    }).filter(el => el !== null);
-    
-    const doc = React.createElement(
-      Document,
-      {},
-      React.createElement(
-        Page,
-        { size: "A4", style: styles.page },
+    try {
+      // Parse markdown
+      const elements = parseMarkdown(markdown);
+      
+      // Create PDF document using React.createElement
+      const textElements = elements.map(element => {
+        switch (element.type) {
+          case 'title':
+            return React.createElement(Text, { key: element.key, style: styles.title }, element.content);
+          case 'heading':
+            return React.createElement(Text, { key: element.key, style: styles.heading }, element.content);
+          case 'paragraph':
+            return React.createElement(Text, { key: element.key, style: styles.paragraph }, element.content);
+          default:
+            return null;
+        }
+      }).filter(el => el !== null);
+      
+      doc = React.createElement(
+        Document,
+        {},
         React.createElement(
-          View,
-          {},
-          ...textElements
+          Page,
+          { size: "A4", style: styles.page },
+          React.createElement(
+            View,
+            {},
+            ...textElements
+          )
         )
-      )
-    );
+      );
+    } catch (parseError) {
+      // Log the actual error for debugging
+      console.error('Markdown parsing error:', parseError.message, parseError.stack);
+      
+      // Generate fallback error PDF
+      doc = createErrorPDF();
+      isError = true;
+    }
     
     // Generate PDF buffer
     const pdfBuffer = await renderToBuffer(doc);
@@ -122,6 +186,7 @@ exports.handler = async (event) => {
         success: true,
         pdfSize: pdfBuffer.length,
         pdfBase64: pdfBuffer.toString('base64'),
+        isError: isError,
         metrics: {
           processingTimeMs: processingTime,
           memoryUsedMB: parseFloat(memoryUsed.toFixed(2)),

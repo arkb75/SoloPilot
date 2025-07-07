@@ -1,3 +1,5 @@
+// TODO: Migrate to AWS SDK v3 for better performance and smaller bundle size
+// @aws-sdk/client-s3 provides modular imports that will reduce Lambda package size
 const AWS = require('aws-sdk');
 
 /**
