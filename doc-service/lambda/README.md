@@ -1,17 +1,20 @@
 # SoloPilot Document Generation Lambda
 
-Full-featured Lambda function that converts Markdown to PDF and stores in S3 with signed URL generation.
+Full-featured Lambda function that converts Markdown to PDF, stores in S3, and optionally creates Stripe invoices.
 
 ## Features
 
 ✅ **Markdown to PDF conversion** using React-PDF  
 ✅ **S3 integration** with automatic upload and versioning  
 ✅ **Signed URL generation** (24-hour expiry)  
+✅ **Stripe invoice creation** with PDF attachments  
+✅ **Customer management** (create or reuse existing)  
+✅ **Line item parsing** from markdown content  
 ✅ **Input validation** with 100KB markdown limit  
 ✅ **Filename sanitization** to prevent path traversal  
 ✅ **CloudWatch logging** with clientId context  
 ✅ **Error handling** with fallback PDF generation  
-✅ **Unit tests** with mocked AWS SDK
+✅ **Unit tests** with mocked AWS SDK and Stripe
 
 ## API
 
@@ -22,7 +25,14 @@ Full-featured Lambda function that converts Markdown to PDF and stores in S3 wit
   "clientId": "client123",
   "docType": "invoice",
   "filename": "invoice-001.pdf",
-  "markdown": "# Invoice\n\nContent here..."
+  "markdown": "# Invoice\n\nContent here...",
+  
+  // Optional Stripe fields
+  "createInvoice": true,
+  "customerEmail": "customer@example.com",
+  "customerName": "ACME Corporation",
+  "invoiceDescription": "Services for January 2025",
+  "daysUntilDue": 30
 }
 ```
 
@@ -35,8 +45,21 @@ Full-featured Lambda function that converts Markdown to PDF and stores in S3 wit
   "s3Key": "client123/2025/01/invoice/1234567890-invoice-001.pdf",
   "pdfSize": 2500,
   "isError": false,
+  "invoice": {
+    "invoiceId": "in_1234567890",
+    "invoiceNumber": "INV-0001",
+    "status": "draft",
+    "total": 900000,
+    "currency": "usd",
+    "dueDate": "2025-02-06T12:00:00.000Z",
+    "hostedInvoiceUrl": "https://invoice.stripe.com/i/acct_123/test_123",
+    "invoicePdf": "https://pay.stripe.com/invoice/acct_123/test_123/pdf",
+    "customerId": "cus_123456",
+    "customerEmail": "customer@example.com",
+    "fileAttached": true
+  },
   "metrics": {
-    "processingTimeMs": 250,
+    "processingTimeMs": 850,
     "requestId": "abc-123"
   }
 }
@@ -130,8 +153,11 @@ ls -lh function.zip
 3. Configure environment variables:
    - `DOCUMENT_BUCKET`: S3 bucket name
    - `AWS_REGION`: AWS region
-4. Attach IAM policy with S3 permissions (see terraform output)
-5. Set memory to 128MB and timeout to 30 seconds
+   - `STRIPE_SECRET_NAME`: Secrets Manager secret name (default: `solopilot/stripe/test`)
+4. Attach IAM policy with:
+   - S3 permissions (see terraform output)
+   - Secrets Manager read permission for Stripe keys
+5. Set memory to 256MB and timeout to 30 seconds (increased for Stripe API calls)
 
 ## S3 Document Structure
 
@@ -150,12 +176,35 @@ Example: `client123/2025/01/invoice/1704123456789-invoice-001.pdf`
 - **filename**: Required string (sanitized automatically)
 - **markdown**: Required string, max 100KB
 
+## Stripe Invoice Features
+
+When `createInvoice: true` is set:
+
+1. **Customer Management**:
+   - Creates new Stripe customer or finds existing by clientId
+   - Stores clientId in customer metadata for future lookups
+
+2. **Line Item Parsing**:
+   - Automatically extracts prices from markdown (e.g., `- Service: $1,000`)
+   - Supports comma-separated amounts and decimals
+   - Falls back to "Professional Services" if no items found
+
+3. **PDF Attachment**:
+   - Uploads generated PDF to Stripe Files API
+   - Attaches as custom field on invoice
+   - Accessible via hosted invoice page
+
+4. **Draft Status**:
+   - Invoices created as drafts (not sent automatically)
+   - Can be reviewed and sent manually via Stripe Dashboard
+   - Net 30 payment terms by default
+
 ## Performance
 
-- Package size: ~8MB (with React-PDF)
-- Memory usage: ~50-70MB typical
-- Processing time: 200-500ms typical
-- Cold start: <1 second
+- Package size: ~9MB (with React-PDF + Stripe)
+- Memory usage: ~80-120MB with Stripe calls
+- Processing time: 500-1500ms (includes Stripe API)
+- Cold start: <2 seconds
 
 ## Security
 

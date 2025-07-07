@@ -1,13 +1,15 @@
 const ReactPDF = require('@react-pdf/renderer');
 const React = require('react');
 const S3DocumentHelper = require('./s3-helpers');
+const { getStripeHelper } = require('./stripe-helpers');
 const { createLogger } = require('./logger');
 
 const { Document, Page, Text, View, StyleSheet, renderToBuffer } = ReactPDF;
 
-// Initialize S3 helper with bucket from environment
+// Initialize helpers
 const BUCKET_NAME = process.env.DOCUMENT_BUCKET || 'solopilot-dev-documents';
 const s3Helper = new S3DocumentHelper(BUCKET_NAME, process.env.AWS_REGION || 'us-east-1');
+const stripeHelper = getStripeHelper();
 
 // Create logger
 const logger = createLogger();
@@ -71,6 +73,17 @@ const validateInput = (body) => {
   // Check markdown size (100KB limit)
   if (body.markdown && Buffer.byteLength(body.markdown, 'utf8') > 100 * 1024) {
     errors.push('markdown exceeds 100KB limit');
+  }
+  
+  // Validate Stripe fields if createInvoice is true
+  if (body.createInvoice) {
+    if (!body.customerEmail || typeof body.customerEmail !== 'string') {
+      errors.push('customerEmail is required when createInvoice is true');
+    }
+    
+    if (body.customerEmail && !body.customerEmail.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+      errors.push('customerEmail must be a valid email address');
+    }
   }
   
   return errors;
@@ -281,12 +294,80 @@ exports.handler = async (event, context) => {
     // Generate signed URL
     const signedUrl = await s3Helper.getSignedDownloadUrl(s3Key, 86400); // 24 hours
     
+    // Create Stripe invoice if requested
+    let invoiceData = null;
+    if (body.createInvoice && !isError) {
+      try {
+        logger.info('Creating Stripe invoice', {
+          clientId: body.clientId,
+          customerEmail: body.customerEmail
+        });
+        
+        // Create or get customer
+        const customer = await stripeHelper.createOrGetCustomer({
+          clientId: body.clientId,
+          email: body.customerEmail,
+          name: body.customerName || body.clientId
+        });
+        
+        // Parse line items from markdown
+        const lineItems = stripeHelper.parseLineItems(body.markdown);
+        
+        // Create invoice with document URL reference
+        const { invoice, pdfAttached } = await stripeHelper.createInvoice({
+          customer,
+          lineItems,
+          description: body.invoiceDescription || `Document: ${body.filename}`,
+          metadata: {
+            clientId: body.clientId,
+            docType: body.docType,
+            s3Key,
+            documentUrl: signedUrl
+          },
+          daysUntilDue: body.daysUntilDue || 30
+        });
+        
+        invoiceData = {
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.number,
+          status: invoice.status,
+          total: invoice.total,
+          currency: invoice.currency,
+          dueDate: invoice.due_date ? new Date(invoice.due_date * 1000).toISOString() : null,
+          hostedInvoiceUrl: invoice.hosted_invoice_url,
+          invoicePdf: invoice.invoice_pdf,
+          customerId: customer.id,
+          customerEmail: customer.email,
+          documentUrlAttached: pdfAttached
+        };
+        
+        logger.info('Stripe invoice created successfully', {
+          invoiceId: invoice.id,
+          total: invoice.total
+        });
+      } catch (stripeError) {
+        logger.error('Failed to create Stripe invoice', {
+          error: stripeError.message,
+          type: stripeError.type,
+          code: stripeError.code
+        });
+        
+        // Don't fail the entire request if Stripe fails
+        invoiceData = {
+          error: 'Failed to create invoice',
+          errorMessage: stripeError.message,
+          errorCode: stripeError.code
+        };
+      }
+    }
+    
     const processingTime = Date.now() - startTime;
     
     logger.info('Document generation completed', {
       processingTimeMs: processingTime,
       pdfSize: pdfBuffer.length,
-      isError
+      isError,
+      invoiceCreated: !!invoiceData && !invoiceData.error
     });
     
     return {
@@ -298,6 +379,7 @@ exports.handler = async (event, context) => {
         s3Key,
         pdfSize: pdfBuffer.length,
         isError,
+        invoice: invoiceData,
         metrics: {
           processingTimeMs: processingTime,
           requestId
