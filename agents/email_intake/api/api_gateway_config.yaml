@@ -1,0 +1,423 @@
+swagger: "2.0"
+info:
+  title: Email Agent Management API
+  version: "1.0"
+  description: API for managing email agent conversations and approval workflow
+
+# API Gateway configuration
+x-amazon-apigateway-request-validators:
+  all:
+    validateRequestBody: true
+    validateRequestParameters: true
+
+x-amazon-apigateway-request-validator: all
+
+# API Key requirement
+securityDefinitions:
+  api_key:
+    type: apiKey
+    name: x-api-key
+    in: header
+
+security:
+  - api_key: []
+
+paths:
+  /conversations:
+    get:
+      summary: List conversations
+      parameters:
+        - name: limit
+          in: query
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+        - name: nextToken
+          in: query
+          type: string
+      responses:
+        200:
+          description: List of conversations
+          schema:
+            type: object
+            properties:
+              conversations:
+                type: array
+                items:
+                  $ref: '#/definitions/ConversationSummary'
+              count:
+                type: integer
+              nextToken:
+                type: string
+      x-amazon-apigateway-integration:
+        uri: 
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
+        passthroughBehavior: when_no_match
+        httpMethod: POST
+        type: aws_proxy
+
+  /conversations/{id}:
+    get:
+      summary: Get conversation details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: string
+      responses:
+        200:
+          description: Conversation details
+          schema:
+            $ref: '#/definitions/Conversation'
+        404:
+          description: Conversation not found
+      x-amazon-apigateway-integration:
+        uri: 
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
+        passthroughBehavior: when_no_match
+        httpMethod: POST
+        type: aws_proxy
+
+  /conversations/{id}/mode:
+    patch:
+      summary: Update conversation mode
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: string
+        - name: body
+          in: body
+          required: true
+          schema:
+            type: object
+            properties:
+              mode:
+                type: string
+                enum: ["manual", "auto"]
+            required:
+              - mode
+      responses:
+        200:
+          description: Mode updated
+        400:
+          description: Invalid mode
+        404:
+          description: Conversation not found
+      x-amazon-apigateway-integration:
+        uri: 
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
+        passthroughBehavior: when_no_match
+        httpMethod: POST
+        type: aws_proxy
+
+  /conversations/{id}/pending-replies:
+    get:
+      summary: Get pending replies for a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: string
+      responses:
+        200:
+          description: Pending replies
+          schema:
+            type: object
+            properties:
+              conversation_id:
+                type: string
+              pending_replies:
+                type: array
+                items:
+                  $ref: '#/definitions/PendingReply'
+              count:
+                type: integer
+        404:
+          description: Conversation not found
+      x-amazon-apigateway-integration:
+        uri: 
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
+        passthroughBehavior: when_no_match
+        httpMethod: POST
+        type: aws_proxy
+
+  /replies/{id}/approve:
+    post:
+      summary: Approve a pending reply
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: string
+        - name: body
+          in: body
+          required: true
+          schema:
+            type: object
+            properties:
+              conversation_id:
+                type: string
+              reviewed_by:
+                type: string
+            required:
+              - conversation_id
+      responses:
+        200:
+          description: Reply approved
+        400:
+          description: Invalid request
+        404:
+          description: Reply not found
+      x-amazon-apigateway-integration:
+        uri: 
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
+        passthroughBehavior: when_no_match
+        httpMethod: POST
+        type: aws_proxy
+
+  /replies/{id}/reject:
+    post:
+      summary: Reject a pending reply
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: string
+        - name: body
+          in: body
+          required: true
+          schema:
+            type: object
+            properties:
+              conversation_id:
+                type: string
+              reason:
+                type: string
+              reviewed_by:
+                type: string
+            required:
+              - conversation_id
+              - reason
+      responses:
+        200:
+          description: Reply rejected
+        400:
+          description: Invalid request
+        404:
+          description: Reply not found
+      x-amazon-apigateway-integration:
+        uri: 
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
+        passthroughBehavior: when_no_match
+        httpMethod: POST
+        type: aws_proxy
+
+  /replies/{id}:
+    patch:
+      summary: Amend a pending reply
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: string
+        - name: body
+          in: body
+          required: true
+          schema:
+            type: object
+            properties:
+              conversation_id:
+                type: string
+              content:
+                type: string
+              amended_by:
+                type: string
+            required:
+              - conversation_id
+              - content
+      responses:
+        200:
+          description: Reply amended
+        400:
+          description: Invalid request
+        404:
+          description: Reply not found
+      x-amazon-apigateway-integration:
+        uri: 
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
+        passthroughBehavior: when_no_match
+        httpMethod: POST
+        type: aws_proxy
+
+  /replies/{id}/prompt:
+    get:
+      summary: Get LLM prompt for a reply
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: string
+      responses:
+        200:
+          description: LLM prompt
+          schema:
+            type: object
+            properties:
+              reply_id:
+                type: string
+              prompt:
+                type: string
+        404:
+          description: Reply not found
+      x-amazon-apigateway-integration:
+        uri: 
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
+        passthroughBehavior: when_no_match
+        httpMethod: POST
+        type: aws_proxy
+
+  /attachments/{id}:
+    get:
+      summary: Get attachment URL
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: string
+      responses:
+        200:
+          description: Attachment URL
+          schema:
+            type: object
+            properties:
+              attachment_id:
+                type: string
+              url:
+                type: string
+              expires_in:
+                type: integer
+        404:
+          description: Attachment not found
+      x-amazon-apigateway-integration:
+        uri: 
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
+        passthroughBehavior: when_no_match
+        httpMethod: POST
+        type: aws_proxy
+
+definitions:
+  ConversationSummary:
+    type: object
+    properties:
+      conversation_id:
+        type: string
+      subject:
+        type: string
+      client_email:
+        type: string
+      phase:
+        type: string
+      reply_mode:
+        type: string
+        enum: ["manual", "auto"]
+      created_at:
+        type: string
+      updated_at:
+        type: string
+      pending_replies:
+        type: integer
+
+  Conversation:
+    type: object
+    properties:
+      conversation_id:
+        type: string
+      subject:
+        type: string
+      participants:
+        type: array
+        items:
+          type: string
+      phase:
+        type: string
+      reply_mode:
+        type: string
+      email_history:
+        type: array
+        items:
+          $ref: '#/definitions/Email'
+      pending_replies:
+        type: array
+        items:
+          $ref: '#/definitions/PendingReply'
+      attachments:
+        type: array
+        items:
+          $ref: '#/definitions/Attachment'
+
+  Email:
+    type: object
+    properties:
+      email_id:
+        type: string
+      message_id:
+        type: string
+      from:
+        type: string
+      to:
+        type: array
+        items:
+          type: string
+      subject:
+        type: string
+      body:
+        type: string
+      timestamp:
+        type: string
+      direction:
+        type: string
+        enum: ["inbound", "outbound"]
+
+  PendingReply:
+    type: object
+    properties:
+      reply_id:
+        type: string
+      generated_at:
+        type: string
+      llm_prompt:
+        type: string
+      llm_response:
+        type: string
+      status:
+        type: string
+      amended_content:
+        type: string
+      reviewed_by:
+        type: string
+      reviewed_at:
+        type: string
+      sent_at:
+        type: string
+      message_id:
+        type: string
+      phase:
+        type: string
+
+  Attachment:
+    type: object
+    properties:
+      attachment_id:
+        type: string
+      type:
+        type: string
+      filename:
+        type: string
+      size:
+        type: integer
+      created_at:
+        type: string
+      direction:
+        type: string

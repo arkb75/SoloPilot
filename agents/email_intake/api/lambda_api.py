@@ -1,0 +1,589 @@
+"""
+Lambda function for Email Agent Management API
+
+This provides REST API endpoints for managing conversations,
+approving/rejecting replies, and viewing conversation history.
+"""
+
+import json
+import logging
+import os
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Any, Dict, List, Optional
+from uuid import uuid4
+
+import boto3
+from boto3.dynamodb.types import TypeDeserializer
+from botocore.exceptions import ClientError
+
+# Initialize services
+dynamodb = boto3.resource("dynamodb")
+s3 = boto3.client("s3")
+
+# Configuration
+TABLE_NAME = os.environ.get("CONVERSATIONS_TABLE", "conversations")
+S3_BUCKET = os.environ.get("ATTACHMENTS_BUCKET", "solopilot-attachments")
+CORS_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Type deserializer for DynamoDB
+deserializer = TypeDeserializer()
+
+
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """Main Lambda handler for API requests."""
+    try:
+        # Log request
+        logger.info(f"Request: {json.dumps(event)}")
+        
+        # Parse request
+        http_method = event.get("httpMethod", "")
+        path = event.get("path", "")
+        path_params = event.get("pathParameters", {})
+        query_params = event.get("queryStringParameters", {})
+        body = json.loads(event.get("body", "{}")) if event.get("body") else {}
+        
+        # Route request
+        if path == "/conversations" and http_method == "GET":
+            response = list_conversations(query_params)
+        elif path.startswith("/conversations/") and path.endswith("/mode") and http_method == "PATCH":
+            conversation_id = path_params.get("id")
+            response = update_conversation_mode(conversation_id, body)
+        elif path.startswith("/conversations/") and path.endswith("/pending-replies") and http_method == "GET":
+            conversation_id = path_params.get("id")
+            response = get_pending_replies(conversation_id)
+        elif path.startswith("/conversations/") and http_method == "GET":
+            conversation_id = path_params.get("id")
+            response = get_conversation_detail(conversation_id)
+        elif path.startswith("/replies/") and path.endswith("/approve") and http_method == "POST":
+            reply_id = path_params.get("id")
+            response = approve_reply(reply_id, body)
+        elif path.startswith("/replies/") and path.endswith("/reject") and http_method == "POST":
+            reply_id = path_params.get("id")
+            response = reject_reply(reply_id, body)
+        elif path.startswith("/replies/") and path.endswith("/prompt") and http_method == "GET":
+            reply_id = path_params.get("id")
+            response = get_reply_prompt(reply_id)
+        elif path.startswith("/replies/") and http_method == "PATCH":
+            reply_id = path_params.get("id")
+            response = amend_reply(reply_id, body)
+        elif path.startswith("/attachments/") and http_method == "GET":
+            attachment_id = path_params.get("id")
+            response = get_attachment_url(attachment_id)
+        else:
+            response = {
+                "statusCode": 404,
+                "body": json.dumps({"error": "Not found"})
+            }
+        
+        # Add CORS headers
+        if "statusCode" in response:
+            response["headers"] = {
+                "Access-Control-Allow-Origin": CORS_ORIGIN,
+                "Access-Control-Allow-Headers": "Content-Type,X-Api-Key",
+                "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS"
+            }
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error handling request: {str(e)}", exc_info=True)
+        return {
+            "statusCode": 500,
+            "headers": {
+                "Access-Control-Allow-Origin": CORS_ORIGIN,
+                "Access-Control-Allow-Headers": "Content-Type,X-Api-Key",
+                "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS"
+            },
+            "body": json.dumps({"error": "Internal server error"})
+        }
+
+
+def list_conversations(query_params: Dict[str, str]) -> Dict[str, Any]:
+    """List all conversations with pagination."""
+    try:
+        table = dynamodb.Table(TABLE_NAME)
+        
+        # Pagination parameters
+        limit = int(query_params.get("limit", "20"))
+        last_evaluated_key = query_params.get("nextToken")
+        
+        # Build scan parameters
+        scan_params = {
+            "Limit": limit,
+            "ProjectionExpression": "conversation_id, subject, participants, phase, reply_mode, created_at, updated_at"
+        }
+        
+        if last_evaluated_key:
+            scan_params["ExclusiveStartKey"] = json.loads(last_evaluated_key)
+        
+        # Scan table
+        response = table.scan(**scan_params)
+        
+        # Process items
+        conversations = []
+        for item in response.get("Items", []):
+            # Check for pending replies
+            pending_count = 0
+            if "pending_replies" in item:
+                pending_count = sum(1 for r in item["pending_replies"] if r.get("status") == "pending")
+            
+            conversations.append({
+                "conversation_id": item["conversation_id"],
+                "subject": item.get("subject", "No subject"),
+                "client_email": _extract_client_email(item.get("participants", [])),
+                "phase": item.get("phase", "unknown"),
+                "reply_mode": item.get("reply_mode", "manual"),
+                "created_at": item.get("created_at"),
+                "updated_at": item.get("updated_at"),
+                "pending_replies": pending_count
+            })
+        
+        # Sort by updated_at descending
+        conversations.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
+        
+        # Build response
+        result = {
+            "conversations": conversations,
+            "count": len(conversations)
+        }
+        
+        if "LastEvaluatedKey" in response:
+            result["nextToken"] = json.dumps(response["LastEvaluatedKey"], default=str)
+        
+        return {
+            "statusCode": 200,
+            "body": json.dumps(result, default=str)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error listing conversations: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "Failed to list conversations"})
+        }
+
+
+def get_conversation_detail(conversation_id: str) -> Dict[str, Any]:
+    """Get full conversation details including email history."""
+    try:
+        table = dynamodb.Table(TABLE_NAME)
+        
+        # Get conversation
+        response = table.get_item(Key={"conversation_id": conversation_id})
+        
+        if "Item" not in response:
+            return {
+                "statusCode": 404,
+                "body": json.dumps({"error": "Conversation not found"})
+            }
+        
+        conversation = response["Item"]
+        
+        # Convert Decimal to int/float for JSON serialization
+        conversation = _convert_decimals(conversation)
+        
+        # Add computed fields
+        conversation["client_email"] = _extract_client_email(conversation.get("participants", []))
+        conversation["email_count"] = len(conversation.get("email_history", []))
+        
+        return {
+            "statusCode": 200,
+            "body": json.dumps(conversation, default=str)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting conversation {conversation_id}: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "Failed to get conversation"})
+        }
+
+
+def update_conversation_mode(conversation_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Update conversation reply mode (auto/manual)."""
+    try:
+        table = dynamodb.Table(TABLE_NAME)
+        
+        # Validate mode
+        mode = body.get("mode")
+        if mode not in ["auto", "manual"]:
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": "Invalid mode. Must be 'auto' or 'manual'"})
+            }
+        
+        # Update conversation
+        response = table.update_item(
+            Key={"conversation_id": conversation_id},
+            UpdateExpression="SET reply_mode = :mode, updated_at = :updated",
+            ExpressionAttributeValues={
+                ":mode": mode,
+                ":updated": datetime.now(timezone.utc).isoformat()
+            },
+            ReturnValues="ALL_NEW"
+        )
+        
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "conversation_id": conversation_id,
+                "reply_mode": mode,
+                "updated_at": response["Attributes"]["updated_at"]
+            })
+        }
+        
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ResourceNotFoundException":
+            return {
+                "statusCode": 404,
+                "body": json.dumps({"error": "Conversation not found"})
+            }
+        raise
+    except Exception as e:
+        logger.error(f"Error updating conversation mode: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "Failed to update conversation mode"})
+        }
+
+
+def get_pending_replies(conversation_id: str) -> Dict[str, Any]:
+    """Get pending replies for a conversation."""
+    try:
+        table = dynamodb.Table(TABLE_NAME)
+        
+        # Get conversation
+        response = table.get_item(
+            Key={"conversation_id": conversation_id},
+            ProjectionExpression="pending_replies"
+        )
+        
+        if "Item" not in response:
+            return {
+                "statusCode": 404,
+                "body": json.dumps({"error": "Conversation not found"})
+            }
+        
+        # Filter pending replies
+        pending_replies = []
+        for reply in response["Item"].get("pending_replies", []):
+            if reply.get("status") == "pending":
+                pending_replies.append(_convert_decimals(reply))
+        
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "conversation_id": conversation_id,
+                "pending_replies": pending_replies,
+                "count": len(pending_replies)
+            }, default=str)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting pending replies: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "Failed to get pending replies"})
+        }
+
+
+def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Approve a pending reply and send it."""
+    try:
+        conversation_id = body.get("conversation_id")
+        if not conversation_id:
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": "conversation_id is required"})
+            }
+        
+        table = dynamodb.Table(TABLE_NAME)
+        
+        # Get conversation
+        response = table.get_item(Key={"conversation_id": conversation_id})
+        
+        if "Item" not in response:
+            return {
+                "statusCode": 404,
+                "body": json.dumps({"error": "Conversation not found"})
+            }
+        
+        conversation = response["Item"]
+        pending_replies = conversation.get("pending_replies", [])
+        
+        # Find the reply
+        reply_index = None
+        reply_data = None
+        for i, reply in enumerate(pending_replies):
+            if reply.get("reply_id") == reply_id:
+                reply_index = i
+                reply_data = reply
+                break
+        
+        if reply_index is None:
+            return {
+                "statusCode": 404,
+                "body": json.dumps({"error": "Reply not found"})
+            }
+        
+        if reply_data.get("status") != "pending":
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": f"Reply is already {reply_data.get('status')}"})
+            }
+        
+        # Update reply status
+        now = datetime.now(timezone.utc).isoformat()
+        pending_replies[reply_index]["status"] = "approved"
+        pending_replies[reply_index]["reviewed_at"] = now
+        pending_replies[reply_index]["reviewed_by"] = body.get("reviewed_by", "admin")
+        
+        # TODO: Actually send the email here
+        # For now, we'll just mark it as sent
+        pending_replies[reply_index]["sent_at"] = now
+        
+        # Update conversation
+        table.update_item(
+            Key={"conversation_id": conversation_id},
+            UpdateExpression="SET pending_replies = :replies, updated_at = :updated",
+            ExpressionAttributeValues={
+                ":replies": pending_replies,
+                ":updated": now
+            }
+        )
+        
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "reply_id": reply_id,
+                "status": "approved",
+                "sent_at": now
+            })
+        }
+        
+    except Exception as e:
+        logger.error(f"Error approving reply: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "Failed to approve reply"})
+        }
+
+
+def reject_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Reject a pending reply."""
+    try:
+        conversation_id = body.get("conversation_id")
+        if not conversation_id:
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": "conversation_id is required"})
+            }
+        
+        table = dynamodb.Table(TABLE_NAME)
+        
+        # Get conversation
+        response = table.get_item(Key={"conversation_id": conversation_id})
+        
+        if "Item" not in response:
+            return {
+                "statusCode": 404,
+                "body": json.dumps({"error": "Conversation not found"})
+            }
+        
+        conversation = response["Item"]
+        pending_replies = conversation.get("pending_replies", [])
+        
+        # Find and update the reply
+        reply_found = False
+        for i, reply in enumerate(pending_replies):
+            if reply.get("reply_id") == reply_id:
+                if reply.get("status") != "pending":
+                    return {
+                        "statusCode": 400,
+                        "body": json.dumps({"error": f"Reply is already {reply.get('status')}"})
+                    }
+                
+                now = datetime.now(timezone.utc).isoformat()
+                pending_replies[i]["status"] = "rejected"
+                pending_replies[i]["reviewed_at"] = now
+                pending_replies[i]["reviewed_by"] = body.get("reviewed_by", "admin")
+                pending_replies[i]["rejection_reason"] = body.get("reason", "")
+                reply_found = True
+                break
+        
+        if not reply_found:
+            return {
+                "statusCode": 404,
+                "body": json.dumps({"error": "Reply not found"})
+            }
+        
+        # Update conversation
+        table.update_item(
+            Key={"conversation_id": conversation_id},
+            UpdateExpression="SET pending_replies = :replies, updated_at = :updated",
+            ExpressionAttributeValues={
+                ":replies": pending_replies,
+                ":updated": datetime.now(timezone.utc).isoformat()
+            }
+        )
+        
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "reply_id": reply_id,
+                "status": "rejected"
+            })
+        }
+        
+    except Exception as e:
+        logger.error(f"Error rejecting reply: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "Failed to reject reply"})
+        }
+
+
+def amend_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Amend a pending reply's content."""
+    try:
+        conversation_id = body.get("conversation_id")
+        amended_content = body.get("content")
+        
+        if not conversation_id or not amended_content:
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": "conversation_id and content are required"})
+            }
+        
+        table = dynamodb.Table(TABLE_NAME)
+        
+        # Get conversation
+        response = table.get_item(Key={"conversation_id": conversation_id})
+        
+        if "Item" not in response:
+            return {
+                "statusCode": 404,
+                "body": json.dumps({"error": "Conversation not found"})
+            }
+        
+        conversation = response["Item"]
+        pending_replies = conversation.get("pending_replies", [])
+        
+        # Find and update the reply
+        reply_found = False
+        for i, reply in enumerate(pending_replies):
+            if reply.get("reply_id") == reply_id:
+                if reply.get("status") != "pending":
+                    return {
+                        "statusCode": 400,
+                        "body": json.dumps({"error": f"Reply is already {reply.get('status')}"})
+                    }
+                
+                pending_replies[i]["amended_content"] = amended_content
+                pending_replies[i]["amended_at"] = datetime.now(timezone.utc).isoformat()
+                pending_replies[i]["amended_by"] = body.get("amended_by", "admin")
+                reply_found = True
+                break
+        
+        if not reply_found:
+            return {
+                "statusCode": 404,
+                "body": json.dumps({"error": "Reply not found"})
+            }
+        
+        # Update conversation
+        table.update_item(
+            Key={"conversation_id": conversation_id},
+            UpdateExpression="SET pending_replies = :replies, updated_at = :updated",
+            ExpressionAttributeValues={
+                ":replies": pending_replies,
+                ":updated": datetime.now(timezone.utc).isoformat()
+            }
+        )
+        
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "reply_id": reply_id,
+                "status": "amended"
+            })
+        }
+        
+    except Exception as e:
+        logger.error(f"Error amending reply: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "Failed to amend reply"})
+        }
+
+
+def get_reply_prompt(reply_id: str) -> Dict[str, Any]:
+    """Get the LLM prompt used for a specific reply."""
+    try:
+        # This would require searching through all conversations
+        # For now, return a placeholder
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "reply_id": reply_id,
+                "prompt": "Prompt retrieval not yet implemented",
+                "note": "This will require scanning conversations for the specific reply"
+            })
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting reply prompt: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "Failed to get reply prompt"})
+        }
+
+
+def get_attachment_url(attachment_id: str) -> Dict[str, Any]:
+    """Generate presigned URL for attachment download."""
+    try:
+        # This would require finding the attachment in conversations
+        # and generating a presigned S3 URL
+        # For now, return a placeholder
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "attachment_id": attachment_id,
+                "url": "https://example.com/placeholder.pdf",
+                "expires_in": 3600,
+                "note": "Attachment retrieval not yet implemented"
+            })
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting attachment URL: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "Failed to get attachment URL"})
+        }
+
+
+def _extract_client_email(participants: List[str]) -> str:
+    """Extract client email from participants list."""
+    for email in participants:
+        if "solopilot" not in email.lower() and "abdul" not in email.lower():
+            return email
+    return "Unknown"
+
+
+def _convert_decimals(obj: Any) -> Any:
+    """Convert DynamoDB Decimals to int/float for JSON serialization."""
+    if isinstance(obj, Decimal):
+        if obj % 1 == 0:
+            return int(obj)
+        else:
+            return float(obj)
+    elif isinstance(obj, dict):
+        return {k: _convert_decimals(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_convert_decimals(item) for item in obj]
+    return obj

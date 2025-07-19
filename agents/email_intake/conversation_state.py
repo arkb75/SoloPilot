@@ -1,9 +1,10 @@
-"""Enhanced DynamoDB wrapper with optimistic locking for thread-safe operations."""
+"""Enhanced DynamoDB wrapper with manual approval workflow support."""
 
 import logging
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 import boto3
 from botocore.exceptions import ClientError
@@ -13,8 +14,8 @@ from utils import EmailThreadingUtils
 logger = logging.getLogger(__name__)
 
 
-class ConversationStateManagerV2:
-    """Thread-safe conversation state management with optimistic locking."""
+class ConversationStateManager:
+    """Thread-safe conversation state management with manual approval workflow."""
 
     def __init__(self, table_name: str = "conversations"):
         """Initialize with DynamoDB table.
@@ -93,7 +94,9 @@ class ConversationStateManagerV2:
             "updated_at": now,
             "last_updated_at": now,
             "last_seq": Decimal(0),
-            "status": "active",
+            "status": "active",  # Legacy field
+            "phase": "understanding",  # New phase system
+            "phase_history": [],
             "ttl": ttl,
             # Threading info
             "original_message_id": original_message_id,
@@ -105,6 +108,27 @@ class ConversationStateManagerV2:
             "email_history": [],
             "requirements": {},
             "requirements_version": Decimal(0),
+            # Phase-specific data
+            "understanding_context": {
+                "clarified_points": [],
+                "open_questions": [],
+                "confidence_level": Decimal(0)
+            },
+            "proposal": {
+                "draft": "",
+                "feedback": [],
+                "version": Decimal(0)
+            },
+            "final_documentation": "",
+            "approval_status": {
+                "approved": False,
+                "approved_at": None,
+                "approved_by": None
+            },
+            # NEW: Manual approval workflow fields
+            "reply_mode": "manual",  # "manual" | "auto" - default to manual
+            "pending_replies": [],  # List of pending replies awaiting approval
+            "attachments": [],  # List of attachments sent/received
             # Metadata
             "metadata": {"priority": "medium", "tags": [], "client_info": {}},
         }
@@ -128,6 +152,255 @@ class ConversationStateManagerV2:
                 return self._deserialize_item(response["Item"])
             raise
 
+    def add_pending_reply(
+        self,
+        conversation_id: str,
+        llm_prompt: str,
+        llm_response: str,
+        phase: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Add a pending reply to the conversation for approval.
+
+        Args:
+            conversation_id: Conversation identifier
+            llm_prompt: The full prompt sent to the LLM
+            llm_response: The LLM's generated response
+            phase: Current conversation phase
+            metadata: Additional metadata about the reply
+
+        Returns:
+            The reply_id of the pending reply
+        """
+        try:
+            reply_id = str(uuid4())
+            now = datetime.now(timezone.utc).isoformat()
+            
+            pending_reply = {
+                "reply_id": reply_id,
+                "generated_at": now,
+                "llm_prompt": llm_prompt,
+                "llm_response": llm_response,
+                "status": "pending",  # "pending" | "approved" | "rejected" | "amended"
+                "amended_content": None,
+                "reviewed_by": None,
+                "reviewed_at": None,
+                "sent_at": None,
+                "message_id": None,
+                "phase": phase,
+                "metadata": metadata or {}
+            }
+            
+            # Update conversation with new pending reply
+            self.table.update_item(
+                Key={"conversation_id": conversation_id},
+                UpdateExpression="""
+                    SET pending_replies = list_append(if_not_exists(pending_replies, :empty), :reply),
+                        updated_at = :updated,
+                        last_seq = last_seq + :one
+                """,
+                ExpressionAttributeValues={
+                    ":empty": [],
+                    ":reply": [pending_reply],
+                    ":updated": now,
+                    ":one": Decimal(1)
+                },
+                ReturnValues="NONE"
+            )
+            
+            logger.info(f"Added pending reply {reply_id} to conversation {conversation_id}")
+            return reply_id
+            
+        except Exception as e:
+            logger.error(f"Error adding pending reply: {str(e)}")
+            raise
+
+    def approve_reply(
+        self,
+        conversation_id: str,
+        reply_id: str,
+        reviewed_by: str,
+        amended_content: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Approve a pending reply for sending.
+
+        Args:
+            conversation_id: Conversation identifier
+            reply_id: Reply identifier
+            reviewed_by: Who approved the reply
+            amended_content: Optional amended content (if edited)
+
+        Returns:
+            The approved reply data
+        """
+        try:
+            # Get current conversation
+            response = self.table.get_item(
+                Key={"conversation_id": conversation_id},
+                ConsistentRead=True
+            )
+            
+            if "Item" not in response:
+                raise ValueError(f"Conversation {conversation_id} not found")
+            
+            conversation = response["Item"]
+            pending_replies = conversation.get("pending_replies", [])
+            
+            # Find and update the reply
+            updated_reply = None
+            for i, reply in enumerate(pending_replies):
+                if reply.get("reply_id") == reply_id:
+                    if reply.get("status") != "pending":
+                        raise ValueError(f"Reply {reply_id} is not pending")
+                    
+                    now = datetime.now(timezone.utc).isoformat()
+                    pending_replies[i]["status"] = "approved"
+                    pending_replies[i]["reviewed_by"] = reviewed_by
+                    pending_replies[i]["reviewed_at"] = now
+                    
+                    if amended_content:
+                        pending_replies[i]["amended_content"] = amended_content
+                        pending_replies[i]["amended_at"] = now
+                    
+                    updated_reply = pending_replies[i]
+                    break
+            
+            if not updated_reply:
+                raise ValueError(f"Reply {reply_id} not found")
+            
+            # Update conversation
+            self.table.update_item(
+                Key={"conversation_id": conversation_id},
+                UpdateExpression="SET pending_replies = :replies, updated_at = :updated",
+                ExpressionAttributeValues={
+                    ":replies": pending_replies,
+                    ":updated": datetime.now(timezone.utc).isoformat()
+                }
+            )
+            
+            return updated_reply
+            
+        except Exception as e:
+            logger.error(f"Error approving reply: {str(e)}")
+            raise
+
+    def add_attachment(
+        self,
+        conversation_id: str,
+        attachment_type: str,
+        s3_key: str,
+        filename: str,
+        size: int,
+        direction: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Add an attachment record to the conversation.
+
+        Args:
+            conversation_id: Conversation identifier
+            attachment_type: Type of attachment (e.g., "proposal_pdf")
+            s3_key: S3 key where file is stored
+            filename: Original filename
+            size: File size in bytes
+            direction: "inbound" or "outbound"
+            metadata: Additional metadata
+
+        Returns:
+            The attachment_id
+        """
+        try:
+            attachment_id = str(uuid4())
+            now = datetime.now(timezone.utc).isoformat()
+            
+            attachment = {
+                "attachment_id": attachment_id,
+                "type": attachment_type,
+                "s3_key": s3_key,
+                "filename": filename,
+                "size": size,
+                "created_at": now,
+                "direction": direction,
+                "metadata": metadata or {}
+            }
+            
+            # Update conversation
+            self.table.update_item(
+                Key={"conversation_id": conversation_id},
+                UpdateExpression="""
+                    SET attachments = list_append(if_not_exists(attachments, :empty), :attachment),
+                        updated_at = :updated,
+                        last_seq = last_seq + :one
+                """,
+                ExpressionAttributeValues={
+                    ":empty": [],
+                    ":attachment": [attachment],
+                    ":updated": now,
+                    ":one": Decimal(1)
+                }
+            )
+            
+            logger.info(f"Added attachment {attachment_id} to conversation {conversation_id}")
+            return attachment_id
+            
+        except Exception as e:
+            logger.error(f"Error adding attachment: {str(e)}")
+            raise
+
+    def update_reply_mode(self, conversation_id: str, mode: str) -> None:
+        """Update conversation reply mode.
+
+        Args:
+            conversation_id: Conversation identifier
+            mode: "manual" or "auto"
+        """
+        if mode not in ["manual", "auto"]:
+            raise ValueError(f"Invalid reply mode: {mode}")
+        
+        try:
+            self.table.update_item(
+                Key={"conversation_id": conversation_id},
+                UpdateExpression="SET reply_mode = :mode, updated_at = :updated",
+                ExpressionAttributeValues={
+                    ":mode": mode,
+                    ":updated": datetime.now(timezone.utc).isoformat()
+                }
+            )
+            logger.info(f"Updated reply mode for {conversation_id} to {mode}")
+            
+        except Exception as e:
+            logger.error(f"Error updating reply mode: {str(e)}")
+            raise
+
+    def get_pending_replies(self, conversation_id: str) -> List[Dict[str, Any]]:
+        """Get all pending replies for a conversation.
+
+        Args:
+            conversation_id: Conversation identifier
+
+        Returns:
+            List of pending replies
+        """
+        try:
+            response = self.table.get_item(
+                Key={"conversation_id": conversation_id},
+                ProjectionExpression="pending_replies"
+            )
+            
+            if "Item" not in response:
+                return []
+            
+            pending_replies = []
+            for reply in response["Item"].get("pending_replies", []):
+                if reply.get("status") == "pending":
+                    pending_replies.append(self._deserialize_item(reply))
+            
+            return pending_replies
+            
+        except Exception as e:
+            logger.error(f"Error getting pending replies: {str(e)}")
+            raise
+
+    # Include all methods from V2 that are still needed
     def append_email_with_retry(
         self, conversation_id: str, email_data: Dict[str, Any], max_retries: int = 1
     ) -> Dict[str, Any]:
@@ -350,6 +623,7 @@ class ConversationStateManagerV2:
 
     def update_status(self, conversation_id: str, status: str) -> None:
         """Update conversation status."""
+        # Legacy statuses kept for backward compatibility
         valid_statuses = ["active", "pending_info", "completed", "archived"]
         if status not in valid_statuses:
             raise ValueError(f"Invalid status: {status}")
@@ -374,6 +648,64 @@ class ConversationStateManagerV2:
             logger.info(f"Updated status for {conversation_id} to {status}")
         except Exception as e:
             logger.error(f"Error updating status for {conversation_id}: {str(e)}")
+            raise
+    
+    def update_phase(self, conversation_id: str, phase: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+        """Update conversation phase with transition tracking."""
+        valid_phases = [
+            "understanding",      # Clarifying requirements
+            "proposal_draft",     # Presenting proposal
+            "proposal_feedback",  # Awaiting feedback
+            "documentation",      # Creating detailed plan
+            "awaiting_approval",  # Waiting for approval
+            "approved",          # Client approved
+            "archived"           # Archived
+        ]
+        
+        if phase not in valid_phases:
+            raise ValueError(f"Invalid phase: {phase}")
+        
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            
+            # Get current phase for history
+            response = self.table.get_item(
+                Key={"conversation_id": conversation_id},
+                ProjectionExpression="phase,phase_history"
+            )
+            
+            current_phase = response.get("Item", {}).get("phase", "understanding")
+            phase_history = response.get("Item", {}).get("phase_history", [])
+            
+            # Add transition to history
+            phase_history.append({
+                "from": current_phase,
+                "to": phase,
+                "timestamp": now,
+                "metadata": metadata or {}
+            })
+            
+            # Update phase
+            self.table.update_item(
+                Key={"conversation_id": conversation_id},
+                UpdateExpression="""
+                    SET phase = :phase,
+                        phase_history = :history,
+                        updated_at = :updated,
+                        last_updated_at = :updated,
+                        last_seq = last_seq + :one
+                """,
+                ExpressionAttributeValues={
+                    ":phase": phase,
+                    ":history": phase_history,
+                    ":updated": now,
+                    ":one": Decimal(1)
+                }
+            )
+            logger.info(f"Updated phase for {conversation_id}: {current_phase} -> {phase}")
+            
+        except Exception as e:
+            logger.error(f"Error updating phase for {conversation_id}: {str(e)}")
             raise
 
     def add_outbound_reply(
@@ -428,41 +760,40 @@ class ConversationStateManagerV2:
             Conversation if found, None otherwise
         """
         try:
-            # Handle both formats: raw SES ID and full email format
-            # SES IDs look like: 010f0197dd099476-4a695c7d-3c72-4774-a453-7c9c47a1fdc0-000000
-            # Full format: <010f0197dd099476-4a695c7d-3c72-4774-a453-7c9c47a1fdc0-000000@us-east-2.amazonses.com>
-            search_ids = [message_id]
+            # Clean the message ID - remove angle brackets
+            clean_id = message_id.strip("<>")
+            logger.info(f"Searching for conversation with message ID: {clean_id}")
             
-            # If it's a full email format, also search for just the ID part
-            if "@" in message_id:
-                id_part = message_id.split("@")[0]
-                search_ids.append(id_part)
+            # We need to scan conversations to find one with this message ID
+            # This is not optimal but DynamoDB doesn't support querying on list attributes
+            response = self.table.scan(
+                FilterExpression="contains(sent_message_ids, :msg_id)",
+                ExpressionAttributeValues={
+                    ":msg_id": clean_id
+                }
+            )
             
-            # If it's just an ID, also search for the full format with common SES domains
-            elif "-" in message_id and len(message_id) > 30:
-                search_ids.extend([
-                    f"{message_id}@us-east-2.amazonses.com",
-                    f"{message_id}@email.amazonses.com",
-                    f"{message_id}@amazonses.com"
-                ])
+            if response.get('Items'):
+                # Found a conversation
+                conversation = self._deserialize_item(response['Items'][0])
+                logger.info(f"Found conversation {conversation['conversation_id']} by message ID {clean_id}")
+                return conversation
             
-            logger.info(f"Searching for conversation with sent message IDs: {search_ids}")
+            # If not found in sent_message_ids, check email history
+            # This is a backup method
+            logger.info(f"Message ID not found in sent_message_ids, checking email history")
+            response = self.table.scan()
             
-            # Scan for conversations containing any of these sent message IDs
-            for search_id in search_ids:
-                response = self.table.scan(
-                    FilterExpression="contains(sent_message_ids, :msg_id)",
-                    ExpressionAttributeValues={
-                        ":msg_id": search_id
-                    }
-                )
-                
-                items = response.get("Items", [])
-                if items:
-                    # Found a conversation with this message ID
-                    logger.info(f"Found conversation by sent message ID: {search_id}")
-                    return self._deserialize_item(items[0])
+            for item in response.get('Items', []):
+                for email in item.get('email_history', []):
+                    if email.get('direction') == 'outbound' and email.get('message_id'):
+                        stored_id = email['message_id'].strip("<>")
+                        if stored_id == clean_id:
+                            conversation = self._deserialize_item(item)
+                            logger.info(f"Found conversation {conversation['conversation_id']} in email history")
+                            return conversation
             
+            logger.warning(f"No conversation found for message ID: {clean_id}")
             return None
             
         except Exception as e:

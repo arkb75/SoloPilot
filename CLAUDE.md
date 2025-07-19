@@ -436,3 +436,7 @@ git status --porcelain | grep "^??" | grep -E "(analysis/|output/|__pycache__|\.
 3. Commit cleanup: `git commit -m "Clean repository: remove output/cache files"`
 
 This protocol ensures the repository remains clean and professional, containing only source code and documentation.
+
+## File Versioning Rules
+
+**IMPORTANT**: Do NOT create v2, v3, etc. versions of files. Always edit existing files in place. This keeps the repository clean and prevents confusion with multiple versions of the same file.

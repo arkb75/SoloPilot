@@ -17,9 +17,11 @@ import boto3
 from botocore.exceptions import ClientError
 
 # Import modules using absolute imports for Lambda
-from conversation_state import ConversationStateManagerV2
-from email_parser import EmailParser
+from conversation_state import ConversationStateManager
+from conversational_responder import ConversationalResponder
+from email_parser import parse_email_from_ses
 from requirement_extractor import RequirementExtractor
+from pdf_generator import ProposalPDFGenerator
 from utils import EmailThreadingUtils
 
 logger = logging.getLogger()

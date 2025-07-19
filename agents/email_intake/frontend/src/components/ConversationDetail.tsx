@@ -1,0 +1,231 @@
+import React, { useEffect, useState } from 'react';
+import { format } from 'date-fns';
+import { Conversation, PendingReply, Email } from '../types';
+import api from '../api/client';
+import ReplyEditor from './ReplyEditor';
+
+interface ConversationDetailProps {
+  conversationId: string;
+  onBack: () => void;
+}
+
+const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId, onBack }) => {
+  const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [pendingReplies, setPendingReplies] = useState<PendingReply[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showPrompt, setShowPrompt] = useState<string | null>(null);
+  const [editingReply, setEditingReply] = useState<PendingReply | null>(null);
+
+  useEffect(() => {
+    loadConversationDetails();
+  }, [conversationId]);
+
+  const loadConversationDetails = async () => {
+    try {
+      setLoading(true);
+      const [convData, repliesData] = await Promise.all([
+        api.getConversation(conversationId),
+        api.getPendingReplies(conversationId),
+      ]);
+      setConversation(convData);
+      setPendingReplies(repliesData.pending_replies);
+    } catch (err) {
+      setError('Failed to load conversation details');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApprove = async (reply: PendingReply) => {
+    try {
+      await api.approveReply(reply.reply_id, conversationId);
+      setPendingReplies(prev => prev.filter(r => r.reply_id !== reply.reply_id));
+      // Reload to get updated conversation
+      loadConversationDetails();
+    } catch (err) {
+      console.error('Failed to approve reply:', err);
+    }
+  };
+
+  const handleReject = async (reply: PendingReply, reason: string) => {
+    try {
+      await api.rejectReply(reply.reply_id, conversationId, reason);
+      setPendingReplies(prev => prev.filter(r => r.reply_id !== reply.reply_id));
+    } catch (err) {
+      console.error('Failed to reject reply:', err);
+    }
+  };
+
+  const handleAmend = async (reply: PendingReply, newContent: string) => {
+    try {
+      await api.amendReply(reply.reply_id, conversationId, newContent);
+      await handleApprove(reply);
+      setEditingReply(null);
+    } catch (err) {
+      console.error('Failed to amend reply:', err);
+    }
+  };
+
+  const showLLMPrompt = async (replyId: string) => {
+    try {
+      const data = await api.getReplyPrompt(replyId);
+      setShowPrompt(data.prompt);
+    } catch (err) {
+      console.error('Failed to get prompt:', err);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-gray-500">Loading conversation...</div>
+      </div>
+    );
+  }
+
+  if (error || !conversation) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-red-500">{error || 'Conversation not found'}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      {/* Header */}
+      <div className="mb-6">
+        <button
+          onClick={onBack}
+          className="mb-4 inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+        >
+          ← Back to list
+        </button>
+        <h2 className="text-2xl font-bold text-gray-900">{conversation.subject || 'No subject'}</h2>
+        <div className="mt-2 flex items-center space-x-4 text-sm text-gray-500">
+          <span>Client: {conversation.client_email}</span>
+          <span>•</span>
+          <span>Phase: {conversation.phase.replace('_', ' ')}</span>
+          <span>•</span>
+          <span>Mode: {conversation.reply_mode}</span>
+        </div>
+      </div>
+
+      {/* Pending Replies */}
+      {pendingReplies.length > 0 && (
+        <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <h3 className="text-lg font-medium text-yellow-900 mb-4">Pending Replies</h3>
+          {pendingReplies.map((reply) => (
+            <div key={reply.reply_id} className="mb-4 bg-white rounded-lg p-4 shadow">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm text-gray-500">
+                  Generated at {format(new Date(reply.generated_at), 'MMM d, h:mm a')}
+                </span>
+                <button
+                  onClick={() => showLLMPrompt(reply.reply_id)}
+                  className="text-sm text-indigo-600 hover:text-indigo-500"
+                >
+                  View Prompt
+                </button>
+              </div>
+              
+              {editingReply?.reply_id === reply.reply_id ? (
+                <ReplyEditor
+                  initialContent={reply.llm_response}
+                  onSave={(content) => handleAmend(reply, content)}
+                  onCancel={() => setEditingReply(null)}
+                />
+              ) : (
+                <>
+                  <div className="mb-4 p-3 bg-gray-50 rounded whitespace-pre-wrap">
+                    {reply.llm_response}
+                  </div>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => handleApprove(reply)}
+                      className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                    >
+                      Approve & Send
+                    </button>
+                    <button
+                      onClick={() => setEditingReply(reply)}
+                      className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        const reason = prompt('Rejection reason:');
+                        if (reason) handleReject(reply, reason);
+                      }}
+                      className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Email History */}
+      <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+        <div className="px-4 py-5 sm:px-6">
+          <h3 className="text-lg leading-6 font-medium text-gray-900">Email History</h3>
+        </div>
+        <div className="border-t border-gray-200">
+          <ul className="divide-y divide-gray-200">
+            {conversation.email_history?.map((email) => (
+              <li key={email.email_id} className="px-4 py-4">
+                <div className="flex space-x-3">
+                  <div className="flex-1 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-medium">
+                        {email.direction === 'inbound' ? email.from : 'You'}
+                      </h3>
+                      <p className="text-sm text-gray-500">
+                        {format(new Date(email.timestamp), 'MMM d, h:mm a')}
+                      </p>
+                    </div>
+                    <p className="text-sm text-gray-500">To: {email.to.join(', ')}</p>
+                    <div className="text-sm text-gray-900 whitespace-pre-wrap mt-2">
+                      {email.body}
+                    </div>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {/* LLM Prompt Modal */}
+      {showPrompt && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[80vh] overflow-hidden">
+            <div className="px-4 py-3 border-b">
+              <h3 className="text-lg font-medium">LLM Prompt</h3>
+            </div>
+            <div className="p-4 overflow-y-auto max-h-[calc(80vh-8rem)]">
+              <pre className="whitespace-pre-wrap text-sm">{showPrompt}</pre>
+            </div>
+            <div className="px-4 py-3 border-t text-right">
+              <button
+                onClick={() => setShowPrompt(null)}
+                className="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ConversationDetail;

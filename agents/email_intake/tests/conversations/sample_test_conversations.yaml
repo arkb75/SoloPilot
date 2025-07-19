@@ -1,0 +1,206 @@
+# Sample Test Conversations for Email Intake Agent
+# These demonstrate the YAML structure and key test scenarios
+
+conversations:
+  - id: impatient_nontechnical_simple
+    metadata:
+      client_type: non-technical
+      project_scope: simple_website
+      urgency: asap
+      budget: capped_5k
+      description: "Client wants immediate pricing for law firm website"
+    
+    flow:
+      - from: client
+        subject: "Need website ASAP"
+        body: |
+          Hi,
+          
+          I need a website for my law firm. Nothing fancy, just professional looking with:
+          - About us page
+          - Services we offer
+          - Contact form
+          - Maybe a blog
+          
+          How much and how long?
+          
+          Thanks,
+          Sarah Johnson
+          Johnson & Associates Law
+        
+        assertions:
+          agent_phase: discovery
+          should_detect: [urgency, simple_scope, business_context]
+      
+      - from: agent
+        assertions:
+          should_acknowledge: urgency
+          should_provide: initial_estimate
+          max_questions: 2
+          tone: professional_but_expedient
+      
+      - from: client
+        body: "Just give me a price. I need to know if we can afford this."
+        
+        assertions:
+          agent_phase_transition: discovery -> planning
+          should_detect: [impatience, budget_concern]
+      
+      - from: agent
+        assertions:
+          must_include: [price_range, timeline, next_steps]
+          should_not_include: [more_questions, technical_jargon]
+          response_type: proposal_summary
+
+  - id: technical_complex_collaborative
+    metadata:
+      client_type: technical_cto
+      project_scope: saas_mvp
+      urgency: flexible
+      budget: open_discussion
+      description: "CTO exploring options for fintech SaaS MVP"
+    
+    flow:
+      - from: client
+        subject: "Fintech SaaS MVP Development"
+        body: |
+          Hey team,
+          
+          We're a seed-stage fintech startup looking to build our MVP. Stack preferences:
+          - React/Next.js frontend
+          - Node/Python backend (flexible)
+          - PostgreSQL + Redis
+          - AWS deployment
+          
+          Core features:
+          - User auth with 2FA
+          - Banking API integrations (Plaid)
+          - Transaction categorization with ML
+          - Real-time notifications
+          
+          We have designs ready in Figma. Looking for a team that can move fast but 
+          also build something we can scale. Previous CTO, so I'll be involved in 
+          architecture decisions.
+          
+          What's your typical process for projects like this?
+          
+          Best,
+          Marcus Chen
+          TechFlow (techflow.io)
+        
+        assertions:
+          agent_phase: discovery
+          should_detect: [technical_competence, complexity, collaboration_desire]
+      
+      - from: agent
+        assertions:
+          should_demonstrate: technical_knowledge
+          should_ask_about: [team_size, timeline_preferences, budget_range]
+          tone: peer_to_peer_technical
+
+  - id: vague_requirements_discovery
+    metadata:
+      client_type: non-technical
+      project_scope: undefined
+      urgency: moderate
+      budget: unclear
+      description: "Client with very vague initial requirements"
+    
+    flow:
+      - from: client
+        subject: "Website help"
+        body: |
+          Hi, I got your contact from a friend. I need help with a website for my 
+          business. Let me know what you need from me.
+          
+          Thanks,
+          David
+        
+        assertions:
+          agent_phase: discovery
+          should_detect: [vague_requirements, referral]
+      
+      - from: agent
+        assertions:
+          should_ask: [business_type, current_situation, goals]
+          max_questions: 3
+          tone: helpful_guide
+      
+      - from: client
+        body: |
+          I run a small construction company. We mainly do residential renovations.
+          Right now we just use Facebook but I think we need a real website.
+        
+        assertions:
+          agent_should_probe: [specific_needs, competition, budget_expectations]
+
+  - id: scope_creep_mid_conversation
+    metadata:
+      client_type: small_business_owner
+      project_scope: ecommerce
+      urgency: normal
+      budget: stated_10k
+      edge_case: scope_creep
+      description: "Client adds requirements mid-conversation"
+    
+    flow:
+      - from: client
+        subject: "Online store for handmade jewelry"
+        body: |
+          Hello,
+          
+          I make and sell handmade jewelry and want to move online. Currently selling 
+          at local markets and Instagram. Need a proper online store where customers 
+          can browse, buy, and pay online.
+          
+          Budget is around $10k. Timeline flexible but would love to launch before 
+          holiday season (3 months).
+          
+          Can you help?
+          
+          Emma Rodriguez
+          Sunset Jewelry Co.
+        
+        assertions:
+          agent_phase: discovery
+          should_detect: [clear_scope, reasonable_timeline, defined_budget]
+      
+      - from: agent
+        assertions:
+          should_confirm: understanding
+          should_outline: basic_ecommerce_features
+      
+      - from: client
+        body: |
+          That sounds good! Oh, I forgot to mention - I also need:
+          - Custom jewelry designer tool (like where customers can choose stones)
+          - Augmented reality try-on feature
+          - Integration with my local store POS system
+          - Mobile app for iOS and Android
+          
+          That's still doable in the $10k budget right?
+        
+        assertions:
+          agent_should_detect: significant_scope_creep
+          agent_should: address_budget_mismatch
+          tone: diplomatic_but_realistic
+
+test_framework:
+  phase_definitions:
+    discovery: "Gathering requirements and understanding client needs"
+    planning: "Proposing solution and timeline"
+    execution: "Active development phase"
+    support: "Post-launch maintenance"
+  
+  assertion_types:
+    should_detect: "Agent identifies key information from client message"
+    should_include: "Response must contain these elements"
+    should_not_include: "Response must not contain these elements"
+    phase_transition: "Agent moves to appropriate phase"
+    tone: "Communication style matches client and situation"
+  
+  quality_metrics:
+    time_to_proposal: "Number of exchanges before concrete proposal"
+    question_relevance: "Are questions appropriate to client type?"
+    response_length: "Appropriate brevity/detail for client"
+    professionalism: "Maintains freelancer professionalism throughout"
