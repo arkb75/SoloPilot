@@ -1,8 +1,27 @@
 const ReactPDF = require('@react-pdf/renderer');
+
+// Sanitize metadata values for S3 compatibility
+const sanitizeMetadata = (metadata) => {
+  const sanitized = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (value != null) {
+      // Replace hyphens and other problematic characters with underscores
+      sanitized[key] = String(value).replace(/[^a-zA-Z0-9_.]/g, '_');
+    }
+  }
+  return sanitized;
+};
+
+
 const React = require('react');
 const S3DocumentHelper = require('./s3-helpers');
 const { getStripeHelper } = require('./stripe-helpers');
 const { createLogger } = require('./logger');
+const { 
+  generatePDFFromTemplate, 
+  validateTemplateData, 
+  getTemplateMetadata 
+} = require('./template-handler');
 
 const { Document, Page, Text, View, StyleSheet, renderToBuffer } = ReactPDF;
 
@@ -54,25 +73,46 @@ const styles = StyleSheet.create({
 const validateInput = (body) => {
   const errors = [];
   
-  if (!body.clientId || typeof body.clientId !== 'string') {
-    errors.push('clientId is required and must be a string');
-  }
-  
-  if (!body.docType || typeof body.docType !== 'string') {
-    errors.push('docType is required and must be a string');
-  }
-  
-  if (!body.filename || typeof body.filename !== 'string') {
-    errors.push('filename is required and must be a string');
-  }
-  
-  if (!body.markdown || typeof body.markdown !== 'string') {
-    errors.push('markdown is required and must be a string');
-  }
-  
-  // Check markdown size (100KB limit)
-  if (body.markdown && Buffer.byteLength(body.markdown, 'utf8') > 100 * 1024) {
-    errors.push('markdown exceeds 100KB limit');
+  // Check if this is a template-based request
+  if (body.template) {
+    // Template-based validation
+    if (!body.clientId || typeof body.clientId !== 'string') {
+      errors.push('clientId is required and must be a string');
+    }
+    
+    // Validate template exists
+    const templateMeta = getTemplateMetadata(body.template);
+    if (!templateMeta) {
+      errors.push(`Unknown template: ${body.template}`);
+    } else {
+      // Validate template data
+      const validation = validateTemplateData(body.template, body.data || {});
+      if (!validation.valid) {
+        errors.push(...validation.errors);
+      }
+    }
+  } else {
+    // Markdown-based validation (existing)
+    if (!body.clientId || typeof body.clientId !== 'string') {
+      errors.push('clientId is required and must be a string');
+    }
+    
+    if (!body.docType || typeof body.docType !== 'string') {
+      errors.push('docType is required and must be a string');
+    }
+    
+    if (!body.filename || typeof body.filename !== 'string') {
+      errors.push('filename is required and must be a string');
+    }
+    
+    if (!body.markdown || typeof body.markdown !== 'string') {
+      errors.push('markdown is required and must be a string');
+    }
+    
+    // Check markdown size (100KB limit)
+    if (body.markdown && Buffer.byteLength(body.markdown, 'utf8') > 100 * 1024) {
+      errors.push('markdown exceeds 100KB limit');
+    }
   }
   
   // Validate Stripe fields if createInvoice is true
@@ -236,6 +276,7 @@ exports.handler = async (event, context) => {
       clientId: body.clientId,
       docType: body.docType,
       filename: body.filename,
+      template: body.template,
       markdownLength: body.markdown ? body.markdown.length : 0
     });
     
@@ -253,23 +294,52 @@ exports.handler = async (event, context) => {
       };
     }
     
-    // Sanitize filename
-    let sanitizedFilename = sanitizeFilename(body.filename);
-    if (!sanitizedFilename.endsWith('.pdf')) {
-      sanitizedFilename += '.pdf';
+    // Determine filename and generate PDF
+    let sanitizedFilename, pdfBuffer, isError = false;
+    
+    if (body.template) {
+      // Template-based generation
+      const templateMeta = getTemplateMetadata(body.template);
+      sanitizedFilename = sanitizeFilename(body.filename || templateMeta.defaultFilename);
+      if (!sanitizedFilename.endsWith('.pdf')) {
+        sanitizedFilename += '.pdf';
+      }
+      
+      try {
+        logger.info('Generating PDF from template', { template: body.template });
+        pdfBuffer = await generatePDFFromTemplate(body.template, body.data || {});
+      } catch (templateError) {
+        logger.error('Template generation error', { 
+          error: templateError.message, 
+          stack: templateError.stack 
+        });
+        // Fall back to error PDF
+        const errorDoc = createErrorPDF(requestId);
+        pdfBuffer = await renderToBuffer(errorDoc);
+        isError = true;
+      }
+    } else {
+      // Markdown-based generation (existing)
+      sanitizedFilename = sanitizeFilename(body.filename);
+      if (!sanitizedFilename.endsWith('.pdf')) {
+        sanitizedFilename += '.pdf';
+      }
+      
+      logger.info('Generating PDF from markdown');
+      const result = await generatePDF(body.markdown, requestId);
+      pdfBuffer = result.pdfBuffer;
+      isError = result.isError;
     }
     
     // Generate S3 key
+    const docType = body.docType || (body.template ? 'template' : 'document');
     const s3Key = s3Helper.generateDocumentKey(
       body.clientId,
-      body.docType,
+      docType,
       sanitizedFilename
     );
     
-    logger.info('Generating PDF', { s3Key });
-    
-    // Generate PDF
-    const { pdfBuffer, isError } = await generatePDF(body.markdown, requestId);
+    logger.info('Generated PDF', { s3Key, size: pdfBuffer.length, isError });
     
     // Upload to S3
     logger.info('Uploading to S3', { 
@@ -282,13 +352,13 @@ exports.handler = async (event, context) => {
       s3Key,
       pdfBuffer,
       'application/pdf',
-      {
+      sanitizeMetadata({
         clientId: body.clientId,
         docType: body.docType,
         originalFilename: body.filename,
         isError: isError.toString(),
         requestId: requestId
-      }
+      })
     );
     
     // Generate signed URL
@@ -378,7 +448,9 @@ exports.handler = async (event, context) => {
         documentUrl: signedUrl,
         s3Key,
         pdfSize: pdfBuffer.length,
+        pdf: pdfBuffer.toString('base64'), // Include base64 PDF for direct attachment
         isError,
+        template: body.template,
         invoice: invoiceData,
         metrics: {
           processingTimeMs: processingTime,

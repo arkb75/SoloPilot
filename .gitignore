@@ -45,6 +45,10 @@ env/
 *.swo
 *~
 
+# Node modules
+node_modules/
+package-lock.json
+
 # OS files
 .DS_Store
 Thumbs.db
@@ -81,6 +85,9 @@ coverage/
 deployment-reports/
 smoke-test-results/
 email_intake_pkg.zip
+*.zip
+deployment-package.zip
+function.zip
 
 # Test artifacts
 .pytest_cache/
@@ -88,6 +95,12 @@ email_intake_pkg.zip
 htmlcov/
 coverage.xml
 test-results.xml
+test-output/
+test-scenarios/
+test-*.js
+test-*.pdf
+**/test-output/
+**/test-scenarios/
 
 # Logs
 *.log

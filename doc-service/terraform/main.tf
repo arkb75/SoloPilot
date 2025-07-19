@@ -95,6 +95,13 @@ resource "aws_iam_policy" "lambda_s3_access" {
           aws_s3_bucket.documents.arn,
           "${aws_s3_bucket.documents.arn}/*"
         ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = "arn:aws:secretsmanager:${var.aws_region}:*:secret:solopilot/stripe/test*"
       }
     ]
   })
