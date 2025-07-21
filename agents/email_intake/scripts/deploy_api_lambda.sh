@@ -20,6 +20,8 @@ cp -r api/*.py /tmp/api_lambda_deploy/
 
 # Copy shared modules that API needs
 cp email_sender.py /tmp/api_lambda_deploy/
+# Include conversation state manager so API Lambda can modify conversation records
+cp conversation_state.py /tmp/api_lambda_deploy/
 cp utils.py /tmp/api_lambda_deploy/
 
 # Create zip file
