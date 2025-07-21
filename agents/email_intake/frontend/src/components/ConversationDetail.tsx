@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
-import { Conversation, PendingReply, Email } from '../types';
+import { Conversation, PendingReply } from '../types';
 import api from '../api/client';
 import ReplyEditor from './ReplyEditor';
 

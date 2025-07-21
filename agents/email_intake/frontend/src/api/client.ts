@@ -1,8 +1,8 @@
 import axios from 'axios';
-import { Conversation, PendingReply, Attachment } from '../types';
+import { Conversation, PendingReply } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
-const API_KEY = import.meta.env.VITE_API_KEY || '';
+const API_BASE_URL = (import.meta as any).env.VITE_API_URL || '/api';
+const API_KEY = (import.meta as any).env.VITE_API_KEY || '';
 
 const client = axios.create({
   baseURL: API_BASE_URL,

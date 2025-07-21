@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+from decimal import Decimal  # Added for Decimal handling
 from typing import Any, Dict, List
 
 try:
@@ -53,11 +54,21 @@ class RequirementExtractor:
         # Build conversation context
         conversation = self._build_conversation_context(email_history)
 
+        # Safely serialize existing requirements by converting Decimal to native types
+        def _decimal_safe(obj: Any):
+            """Custom JSON encoder for Decimal objects."""
+            if isinstance(obj, Decimal):
+                # Preserve integers without .0
+                return int(obj) if obj % 1 == 0 else float(obj)
+            raise TypeError
+
+        safe_existing_json = json.dumps(existing_requirements, indent=2, default=_decimal_safe)
+
         # Create extraction prompt
         prompt = f"""You are a project requirement analyst. Extract project requirements from this email conversation.
 
 Previous requirements (update and enhance these):
-{json.dumps(existing_requirements, indent=2)}
+{safe_existing_json}
 
 Email conversation:
 {conversation}

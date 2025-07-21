@@ -132,6 +132,7 @@ class ConversationalResponder:
         
         # Extract client name for personalized response
         client_name = self._extract_client_name_from_signature(conversation.get("email_history", []))
+        calendly_link = self.calendly_link
         
         prompt = f"""You are {self.sender_name}, a professional freelancer responding to {client_name}.
 
@@ -149,7 +150,7 @@ IMPORTANT RULES:
 3. If client gives short/curt responses, match their brevity
 4. If client ignores a question twice, never ask it again
 5. If client suggests specific meeting times (e.g., "Tuesday or Thursday between 10am-1pm"), respond:
-   "Perfect! I'd love to discuss your project. Please book a time that works best at: {self.calendly_link}"
+   "Perfect! I'd love to discuss your project. Please book a time that works best at: {calendly_link}"
 6. Sign emails as "{self.sender_name}"
 6. Keep responses concise - 2-3 paragraphs max
 7. ALWAYS acknowledge the client's key points:
@@ -186,6 +187,7 @@ CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, think
         
         # Extract client name for personalized proposal
         client_name = self._extract_client_name_from_signature(conversation.get("email_history", []))
+        calendly_link = self.calendly_link
         
         # Extract budget constraints from conversation history
         budget_info = self._extract_budget_constraints(conversation.get("email_history", []))
@@ -257,6 +259,7 @@ CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, think
         
         # Extract client name for personalized response
         client_name = self._extract_client_name_from_signature(conversation.get("email_history", []))
+        calendly_link = self.calendly_link
         
         prompt = f"""You are {self.sender_name}, a professional freelancer responding to {client_name}'s feedback on your proposal.
 
@@ -363,6 +366,7 @@ CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, think
         self, context: str, latest_email: Dict[str, Any]
     ) -> Tuple[str, Dict[str, Any], str]:
         """Handle final approval response with prompt tracking."""
+        calendly_link = self.calendly_link
         prompt = f"""You are {self.sender_name}, a professional freelancer responding to client's decision on the project documentation.
 
 Conversation history:
@@ -408,6 +412,7 @@ CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, think
         self, context: str, latest_email: Dict[str, Any]
     ) -> Tuple[str, Dict[str, Any], str]:
         """Generate general conversational response with prompt tracking."""
+        calendly_link = self.calendly_link
         prompt = f"""You are {self.sender_name}, a professional freelancer in ongoing conversation with a client.
 
 Conversation history:

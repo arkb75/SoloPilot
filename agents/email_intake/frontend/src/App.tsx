@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import ConversationList from './components/ConversationList';
 import ConversationDetail from './components/ConversationDetail';
 import { Conversation } from './types';

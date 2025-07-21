@@ -8,7 +8,8 @@ approving/rejecting replies, and viewing conversation history.
 import json
 import logging
 import os
-from datetime import datetime, timezone
+import sys
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -16,6 +17,10 @@ from uuid import uuid4
 import boto3
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from email_sender import send_reply_email, send_proposal_email, extract_email_metadata, format_proposal_email_body
 
 # Initialize services
 dynamodb = boto3.resource("dynamodb")
@@ -45,6 +50,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         path_params = event.get("pathParameters", {})
         query_params = event.get("queryStringParameters", {})
         body = json.loads(event.get("body", "{}")) if event.get("body") else {}
+        
+        # If pathParameters is empty but we have a path, try to extract IDs manually
+        # This handles direct Lambda invocations (not through API Gateway)
+        if not path_params and path:
+            # Extract reply ID from paths like /replies/{id}/approve
+            if "/replies/" in path:
+                parts = path.split("/")
+                if len(parts) >= 3:
+                    path_params["id"] = parts[2]
+            # Extract conversation ID from paths like /conversations/{id}
+            elif "/conversations/" in path:
+                parts = path.split("/")
+                if len(parts) >= 3:
+                    path_params["id"] = parts[2]
         
         # Route request
         if path == "/conversations" and http_method == "GET":
@@ -342,9 +361,135 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         pending_replies[reply_index]["reviewed_at"] = now
         pending_replies[reply_index]["reviewed_by"] = body.get("reviewed_by", "admin")
         
-        # TODO: Actually send the email here
-        # For now, we'll just mark it as sent
+        # Extract email metadata from the pending reply
+        email_meta = extract_email_metadata(reply_data)
+        
+        # Check if we should send a PDF proposal
+        if email_meta.get("should_send_pdf") and email_meta.get("phase") == "proposal_draft":
+            # Generate PDF proposal
+            try:
+                from pdf_generator import ProposalPDFGenerator
+                # Get PDF Lambda ARN from environment
+                pdf_lambda_arn = os.environ.get("PDF_LAMBDA_ARN", "")
+                if not pdf_lambda_arn:
+                    logger.warning("PDF_LAMBDA_ARN not configured, sending text-only proposal")
+                    success, ses_message_id, error_msg = send_reply_email(
+                        to_email=email_meta["recipient"],
+                        subject=email_meta["subject"],
+                        body=email_meta["body"],
+                        conversation_id=conversation_id,
+                        in_reply_to=email_meta.get("in_reply_to"),
+                        references=email_meta.get("references", [])
+                    )
+                else:
+                    # Initialize PDF generator
+                    pdf_generator = ProposalPDFGenerator(pdf_lambda_arn)
+                    
+                    # Generate PDF
+                    pdf_bytes, pdf_error = pdf_generator.generate_proposal_pdf(conversation)
+                    
+                    if pdf_bytes:
+                        # Extract client name and project title
+                        proposal_data = pdf_generator.extract_proposal_data(conversation)
+                        client_name = proposal_data.get("clientName", "Client")
+                        project_title = proposal_data.get("projectTitle", "Your Project")
+                        
+                        # Use formatted proposal body that includes conversation ID
+                        formatted_body = format_proposal_email_body(
+                            client_name=client_name,
+                            project_title=project_title,
+                            conversation_id=conversation_id
+                        )
+                        
+                        # Send email with PDF attachment
+                        success, ses_message_id, error_msg = send_proposal_email(
+                            to_email=email_meta["recipient"],
+                            subject=email_meta["subject"],
+                            body=formatted_body,
+                            conversation_id=conversation_id,
+                            pdf_content=pdf_bytes,
+                            pdf_filename=f"{client_name.replace(' ', '_')}_proposal.pdf",
+                            in_reply_to=email_meta.get("in_reply_to"),
+                            references=email_meta.get("references", [])
+                        )
+                    else:
+                        # PDF generation failed, send text-only
+                        logger.warning(f"PDF generation failed: {pdf_error}, sending text-only")
+                        success, ses_message_id, error_msg = send_reply_email(
+                            to_email=email_meta["recipient"],
+                            subject=email_meta["subject"],
+                            body=email_meta["body"],
+                            conversation_id=conversation_id,
+                            in_reply_to=email_meta.get("in_reply_to"),
+                            references=email_meta.get("references", [])
+                        )
+            except Exception as pdf_e:
+                logger.error(f"Error with PDF generation: {str(pdf_e)}", exc_info=True)
+                # Fallback to text-only email
+                success, ses_message_id, error_msg = send_reply_email(
+                    to_email=email_meta["recipient"],
+                    subject=email_meta["subject"],
+                    body=email_meta["body"],
+                    conversation_id=conversation_id,
+                    in_reply_to=email_meta.get("in_reply_to"),
+                    references=email_meta.get("references", [])
+                )
+        else:
+            # Send regular text email
+            success, ses_message_id, error_msg = send_reply_email(
+                to_email=email_meta["recipient"],
+                subject=email_meta["subject"],
+                body=email_meta["body"],
+                conversation_id=conversation_id,
+                in_reply_to=email_meta.get("in_reply_to"),
+                references=email_meta.get("references", [])
+            )
+        
+        if not success:
+            logger.error(f"Failed to send email: {error_msg}")
+            return {
+                "statusCode": 500,
+                "body": json.dumps({"error": f"Failed to send email: {error_msg}"})
+            }
+        
+        # Mark as sent with SES message ID
         pending_replies[reply_index]["sent_at"] = now
+        pending_replies[reply_index]["ses_message_id"] = ses_message_id
+        
+        # Store message ID mapping for proper threading
+        # SES uses the MessageId as the actual Message-ID in format: <MessageId@us-east-2.amazonses.com>
+        if ses_message_id:
+            try:
+                # Import canonicalization function
+                sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                from utils import EmailThreadingUtils
+                
+                message_map_table = dynamodb.Table("email_message_map")
+                # Store the SES Message-ID in the format email clients will use
+                ses_formatted_id = f"{ses_message_id}@us-east-2.amazonses.com"
+                canonical_ses_id = EmailThreadingUtils.canonicalize_message_id(ses_formatted_id)
+                
+                # Store with full format (canonical)
+                message_map_table.put_item(Item={
+                    "message_id": canonical_ses_id,
+                    "conversation_id": conversation_id,
+                    "created_at": now,
+                    "ttl": int((datetime.now(timezone.utc) + timedelta(days=30)).timestamp())
+                })
+                logger.info(f"Stored SES Message-ID mapping: {canonical_ses_id} -> {conversation_id}")
+                
+                # Also store without domain for robustness (canonical)
+                canonical_ses_id_no_domain = EmailThreadingUtils.canonicalize_message_id(ses_message_id)
+                message_map_table.put_item(Item={
+                    "message_id": canonical_ses_id_no_domain,
+                    "conversation_id": conversation_id,
+                    "created_at": now,
+                    "ttl": int((datetime.now(timezone.utc) + timedelta(days=30)).timestamp())
+                })
+                logger.info(f"Stored SES Message-ID (no domain) mapping: {canonical_ses_id_no_domain} -> {conversation_id}")
+            except Exception as map_error:
+                logger.error(f"Failed to store message ID mapping: {str(map_error)}")
+                # Don't fail the operation if mapping storage fails
         
         # Update conversation
         table.update_item(

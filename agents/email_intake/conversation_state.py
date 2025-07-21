@@ -1,7 +1,7 @@
 """Enhanced DynamoDB wrapper with manual approval workflow support."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -849,3 +849,103 @@ class ConversationStateManager:
             elif isinstance(value, set):
                 item[key] = list(value)
         return item
+    
+    # Message ID mapping methods for stable conversation IDs
+    def get_conversation_by_message_id(self, message_id: str) -> Optional[str]:
+        """Get conversation ID for a given message ID.
+        
+        Args:
+            message_id: The email Message-ID to lookup
+            
+        Returns:
+            The conversation ID if found, None otherwise
+        """
+        try:
+            logger.info(f"Looking up Message-ID in mapping table: '{message_id}'")
+            
+            # Initialize message map table
+            message_map_table = boto3.resource("dynamodb").Table("email_message_map")
+            
+            response = message_map_table.get_item(
+                Key={"message_id": message_id}
+            )
+            
+            if "Item" in response:
+                conv_id = response["Item"].get("conversation_id")
+                logger.info(f"✓ Found conversation ID: {conv_id} for Message-ID: {message_id}")
+                return conv_id
+            else:
+                logger.info(f"✗ No mapping found for Message-ID: {message_id}")
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error looking up message ID {message_id}: {str(e)}")
+            return None
+    
+    def store_message_id_mapping(
+        self, message_id: str, conversation_id: str
+    ) -> None:
+        """Store a mapping from message ID to conversation ID.
+        
+        Args:
+            message_id: The email Message-ID
+            conversation_id: The stable conversation ID
+        """
+        try:
+            # Initialize message map table
+            message_map_table = boto3.resource("dynamodb").Table("email_message_map")
+            
+            # Calculate TTL (90 days from now)
+            ttl = int((datetime.now(timezone.utc) + timedelta(days=90)).timestamp())
+            
+            # Store mapping with conditional write to avoid overwrites
+            message_map_table.put_item(
+                Item={
+                    "message_id": message_id,
+                    "conversation_id": conversation_id,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "ttl": ttl
+                },
+                ConditionExpression="attribute_not_exists(message_id)"
+            )
+            
+            logger.info(f"Stored message ID mapping: {message_id} -> {conversation_id}")
+            
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                # Mapping already exists, which is fine
+                logger.debug(f"Message ID {message_id} already mapped")
+            else:
+                logger.error(f"Error storing message ID mapping: {str(e)}")
+                raise
+        except Exception as e:
+            logger.error(f"Error storing message ID mapping: {str(e)}")
+            raise
+    
+    def lookup_conversation_from_references(
+        self, in_reply_to: str, references: List[str]
+    ) -> Optional[str]:
+        """Look up conversation ID from In-Reply-To or References headers.
+        
+        Args:
+            in_reply_to: The In-Reply-To header value
+            references: List of Message-IDs from References header
+            
+        Returns:
+            The conversation ID if found, None otherwise
+        """
+        # First check In-Reply-To
+        if in_reply_to:
+            conv_id = self.get_conversation_by_message_id(in_reply_to)
+            if conv_id:
+                return conv_id
+        
+        # Then check References in order (oldest first)
+        for ref_id in references:
+            if ref_id:
+                conv_id = self.get_conversation_by_message_id(ref_id)
+                if conv_id:
+                    return conv_id
+        
+        return None

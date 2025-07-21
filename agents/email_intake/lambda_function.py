@@ -11,7 +11,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import boto3
 from botocore.exceptions import ClientError
@@ -19,7 +19,7 @@ from botocore.exceptions import ClientError
 # Import modules using absolute imports for Lambda
 from conversation_state import ConversationStateManager
 from conversational_responder import ConversationalResponder
-from email_parser import parse_email_from_ses
+from email_parser import EmailParser
 from requirement_extractor import RequirementExtractor
 from pdf_generator import ProposalPDFGenerator
 from utils import EmailThreadingUtils
@@ -39,6 +39,7 @@ DYNAMO_TABLE = os.environ.get("DYNAMO_TABLE", "conversations")
 ENABLE_OUTBOUND_TRACKING = (
     os.environ.get("ENABLE_OUTBOUND_TRACKING", "true").lower() == "true"
 )
+CALENDLY_LINK = os.environ.get("CALENDLY_LINK", "https://calendly.com/your-link")
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -63,46 +64,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         email_obj = s3_client.get_object(Bucket=bucket, Key=key)
         email_content = email_obj["Body"].read().decode("utf-8")
 
-        # Parse email with enhanced threading support
-        parser = EmailParser()
-        parsed_email = parser.parse(email_content)
-
-        # Initialize managers
-        state_manager = ConversationStateManagerV2(table_name=DYNAMO_TABLE)
+        # Initialize managers first
+        state_manager = ConversationStateManager(table_name=DYNAMO_TABLE)
         extractor = RequirementExtractor()
+        
+        # Parse email with state manager for conversation lookups
+        parser = EmailParser(state_manager=state_manager)
+        parsed_email = parser.parse(email_content)
 
         # Get conversation ID and original message ID
         conversation_id = parsed_email["conversation_id"]
         original_message_id = parsed_email.get("original_message_id", "")
         
-        # CRITICAL FIX: Check if this is a reply to a tracked message FIRST
-        in_reply_to = parsed_email.get("in_reply_to", "")
-        if in_reply_to:
-            # Extract clean message ID
-            clean_reply_to = EmailThreadingUtils.extract_message_id(in_reply_to)
-            if clean_reply_to:
-                # Check if this message ID was sent by us
-                existing_conv = state_manager.get_conversation_by_sent_message_id(clean_reply_to)
-                if existing_conv:
-                    # Use the EXISTING conversation instead of creating a new one!
-                    logger.info(f"Found existing conversation {existing_conv['conversation_id']} by In-Reply-To: {clean_reply_to}")
-                    conversation_id = existing_conv['conversation_id']
-                    conversation = existing_conv
-                else:
-                    # Not found by sent_message_id, proceed with normal flow
-                    conversation = state_manager.fetch_or_create_conversation(
-                        conversation_id, original_message_id, parsed_email
-                    )
-            else:
-                # No clean reply-to, proceed normally
-                conversation = state_manager.fetch_or_create_conversation(
-                    conversation_id, original_message_id, parsed_email
-                )
-        else:
-            # Not a reply, proceed normally
-            conversation = state_manager.fetch_or_create_conversation(
-                conversation_id, original_message_id, parsed_email
-            )
+        # Fetch or create conversation (conversation ID is now stable from message mapping)
+        conversation = state_manager.fetch_or_create_conversation(
+            conversation_id, original_message_id, parsed_email
+        )
 
         # Check if this is an automated response
         if EmailThreadingUtils.is_automated_response(
@@ -139,6 +116,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             },
             max_retries=2,  # Allow up to 2 retries for concurrent access
         )
+        
+        # Store message ID mapping for future thread lookups
+        if parsed_email.get("message_id"):
+            raw_msg_id = parsed_email["message_id"]
+            canonical_msg_id = EmailThreadingUtils.canonicalize_message_id(raw_msg_id)
+            logger.info(f"Storing incoming Message-ID mapping: raw='{raw_msg_id}' canonical='{canonical_msg_id}' -> {conversation_id}")
+            if canonical_msg_id:
+                state_manager.store_message_id_mapping(canonical_msg_id, conversation_id)
+                logger.info(f"Successfully stored Message-ID mapping: {canonical_msg_id} -> {conversation_id}")
+        
+        # Also store our custom Message-ID if present (for replies to our emails)
+        if parsed_email.get("x_solopilot_message_id"):
+            custom_msg_id = EmailThreadingUtils.canonicalize_message_id(parsed_email["x_solopilot_message_id"])
+            if custom_msg_id:
+                logger.info(f"Storing custom SoloPilot Message-ID: {custom_msg_id} -> {conversation_id}")
+                state_manager.store_message_id_mapping(custom_msg_id, conversation_id)
 
         # Extract/update requirements with version control
         current_version = conversation.get("requirements_version", 0)
@@ -167,58 +160,79 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Always send to SQS after successful DynamoDB update
         _send_to_queue_enhanced(conversation_id, updated_requirements, conversation)
 
-        # Check if requirements are complete
-        if extractor.is_complete(updated_requirements):
-            # Update status
-            state_manager.update_status(conversation_id, "completed")
-
-            # Send confirmation email
-            confirmation_result = _send_confirmation_email_v2(
-                parsed_email["from"], updated_requirements, conversation_id
-            )
-
-            # Track outbound reply if enabled
-            if ENABLE_OUTBOUND_TRACKING and confirmation_result:
-                ses_message_id, generated_message_id = confirmation_result
-                _track_outbound_reply(
-                    state_manager,
-                    conversation_id,
-                    generated_message_id,  # Use the actual Message-ID we generated
-                    "confirmation",
-                    parsed_email["from"],
-                )
-
-            logger.info(f"Requirements complete for {conversation_id}")
-        else:
-            # Generate follow-up questions
-            questions = extractor.generate_questions(updated_requirements)
-
-            # Send follow-up email with thread context
-            followup_result = _send_followup_email_v2(
-                parsed_email["from"],
-                parsed_email["subject"],
-                questions,
+        # Use ConversationalResponder to generate appropriate response
+        responder = ConversationalResponder(calendly_link=CALENDLY_LINK)
+        response_text, response_metadata, llm_prompt = responder.generate_response_with_tracking(
+            conversation, parsed_email
+        )
+        
+        # Check reply mode (default to manual if not set)
+        reply_mode = conversation.get("reply_mode", "manual")
+        
+        if reply_mode == "manual":
+            # Queue response for manual approval
+            logger.info(f"Manual mode - queuing response for approval")
+            
+            # Add pending reply
+            state_manager.add_pending_reply(
                 conversation_id,
-                parsed_email.get("message_id", ""),
-                conversation.get("original_message_id", ""),
-                conversation.get("thread_references", []),
+                llm_prompt,
+                response_text,
+                response_metadata.get("phase", "unknown"),
+                {
+                    "recipient": parsed_email["from"],
+                    "subject": f"Re: {parsed_email['subject']}",
+                    "in_reply_to": parsed_email.get("message_id", ""),
+                    "references": conversation.get("thread_references", []),
+                    "should_send_pdf": response_metadata.get("should_send_proposal", False)
+                }
             )
-
-            # Update status
-            state_manager.update_status(conversation_id, "pending_info")
-
+            
+            logger.info(f"Response queued for manual approval in conversation {conversation_id}")
+        else:
+            # Auto mode - send immediately
+            logger.info(f"Auto mode - sending response immediately")
+            
+            # Determine email type and send
+            if response_metadata.get("phase") == "proposal_draft":
+                # Send proposal email
+                result = _send_confirmation_email_v2(
+                    parsed_email["from"], updated_requirements, conversation_id
+                )
+            else:
+                # Send follow-up email
+                result = _send_followup_email_v2(
+                    parsed_email["from"],
+                    parsed_email["subject"],
+                    response_text,
+                    conversation_id,
+                    parsed_email.get("message_id", ""),
+                    conversation.get("original_message_id", ""),
+                    conversation.get("thread_references", []),
+                )
+            
             # Track outbound reply if enabled
-            if ENABLE_OUTBOUND_TRACKING and followup_result:
-                ses_message_id, generated_message_id = followup_result
+            if ENABLE_OUTBOUND_TRACKING and result:
                 _track_outbound_reply(
                     state_manager,
                     conversation_id,
-                    generated_message_id,  # Use the actual Message-ID we generated
-                    "followup",
+                    result,  # Pass the full tuple (ses_message_id, generated_message_id)
+                    response_metadata.get("phase", "followup"),
                     parsed_email["from"],
                 )
-
-            logger.info(f"Sent follow-up questions for {conversation_id}")
+            
+            logger.info(f"Sent {response_metadata.get('phase', 'followup')} email for {conversation_id}")
+        
+        # Update conversation phase
+        if "phase" in response_metadata:
+            new_phase = responder.determine_phase_transition(
+                conversation.get("phase", "understanding"),
+                response_metadata,
+                conversation,
+                parsed_email
+            )
+            if new_phase:
+                state_manager.update_phase(conversation_id, new_phase)
 
         return {
             "statusCode": 200,
@@ -308,21 +322,10 @@ def _send_followup_email_v2(
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
     import email.utils
+    from email_sender import format_followup_email_body
     
-    body = f"""Thank you for your interest in our development services!
-
-To better understand your project needs, could you please provide some additional information:
-
-{questions}
-
-Looking forward to your response!
-
-Best regards,
-The SoloPilot Team
-
---
-Conversation ID: {conversation_id}
-"""
+    # Use the formatted email body that includes conversation ID
+    body = format_followup_email_body(questions, conversation_id)
 
     try:
         # Create MIME message with proper headers
@@ -331,9 +334,11 @@ Conversation ID: {conversation_id}
         msg["To"] = to_email
         msg["Subject"] = f"Re: {subject}"
         
-        # Generate our message ID
-        our_message_id = email.utils.make_msgid(domain="solopilot.abdulkhurram.com")
-        msg["Message-ID"] = our_message_id
+        # Don't set Message-ID - let SES handle it
+        # But add our custom tracking ID
+        our_tracking_id = email.utils.make_msgid(domain="solopilot.abdulkhurram.com")
+        msg["X-SoloPilot-Message-ID"] = our_tracking_id
+        msg["X-Conversation-ID"] = conversation_id
         
         # Set In-Reply-To to the message we're replying to
         msg["In-Reply-To"] = f"<{in_reply_to}>"
@@ -376,11 +381,9 @@ Conversation ID: {conversation_id}
         # Extract the message ID without angle brackets for storage
         ses_message_id = response.get("MessageId")
         if ses_message_id:
-            # CRITICAL: Store the SES Message-ID, not our generated one!
-            # SES replaces our Message-ID with its own format
-            logger.info(f"Sent follow-up email - Generated: {our_message_id}, SES: {ses_message_id}")
-            # Return tuple of (SES message ID, SES message ID for tracking)
-            return (ses_message_id, ses_message_id)
+            # Return tuple of (SES message ID, our tracking ID)
+            logger.info(f"Sent follow-up email - SES: {ses_message_id}, Tracking: {our_tracking_id}")
+            return (ses_message_id, our_tracking_id.strip("<>"))
         
         return None
 
@@ -449,10 +452,11 @@ Conversation ID: {conversation_id}
 
         ses_message_id = response.get("MessageId")
         if ses_message_id:
-            # CRITICAL: Store the SES Message-ID, not our generated one!
+            # CRITICAL: SES replaces our Message-ID with its own format
+            # We need to store BOTH for proper threading
             logger.info(f"Sent confirmation email - Generated: {our_message_id}, SES: {ses_message_id}")
-            # Return tuple of (SES message ID, SES message ID for tracking)
-            return (ses_message_id, ses_message_id)
+            # Return tuple of (SES message ID, our generated message ID for dual tracking)
+            return (ses_message_id, our_message_id.strip("<>"))
         
         return None
 
@@ -462,28 +466,60 @@ Conversation ID: {conversation_id}
 
 
 def _track_outbound_reply(
-    state_manager: ConversationStateManagerV2,
+    state_manager: ConversationStateManager,
     conversation_id: str,
-    message_id: str,
+    message_ids: Tuple[str, str],
     email_type: str,
     to_email: str,
 ) -> None:
-    """Track outbound email in conversation history."""
+    """Track outbound email in conversation history and store message ID mapping.
+    
+    Args:
+        state_manager: Conversation state manager
+        conversation_id: Conversation ID
+        message_ids: Tuple of (ses_message_id, our_generated_message_id)
+        email_type: Type of email sent
+        to_email: Recipient email
+    """
     try:
+        ses_message_id, our_message_id = message_ids
+        
         state_manager.add_outbound_reply(
             conversation_id,
             {
-                "message_id": message_id,
+                "message_id": ses_message_id,  # Store SES ID in history
+                "generated_message_id": our_message_id,  # Also store our ID
                 "from": SENDER_EMAIL,
                 "to": [to_email],
                 "subject": f"{email_type.title()} Email",
                 "body": f"[System generated {email_type} email]",
                 "metadata": {
                     "email_type": email_type,
-                    "generated_by": "lambda_function_v2",
+                    "generated_by": "lambda_function",
                 },
             },
         )
+        
+        # Store SES Message ID mapping - this is what appears in email headers!
+        if ses_message_id:
+            # Store the SES Message-ID in the format email clients will use
+            ses_formatted_id = f"{ses_message_id}@us-east-2.amazonses.com"
+            canonical_ses_id = EmailThreadingUtils.canonicalize_message_id(ses_formatted_id)
+            state_manager.store_message_id_mapping(canonical_ses_id, conversation_id)
+            logger.info(f"Stored SES Message-ID mapping: {canonical_ses_id} -> {conversation_id}")
+            
+            # Also store without domain for robustness
+            canonical_ses_id_no_domain = EmailThreadingUtils.canonicalize_message_id(ses_message_id)
+            state_manager.store_message_id_mapping(canonical_ses_id_no_domain, conversation_id)
+            logger.info(f"Stored SES Message-ID (no domain) mapping: {canonical_ses_id_no_domain} -> {conversation_id}")
+        
+        # Also store our custom tracking ID if present
+        if our_message_id:
+            canonical_tracking_id = EmailThreadingUtils.canonicalize_message_id(our_message_id)
+            if canonical_tracking_id:
+                state_manager.store_message_id_mapping(canonical_tracking_id, conversation_id)
+                logger.info(f"Stored custom tracking ID mapping: {canonical_tracking_id} -> {conversation_id}")
+        
         logger.info(
             f"Tracked outbound {email_type} email for conversation {conversation_id}"
         )

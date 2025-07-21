@@ -16,6 +16,14 @@ logger = logging.getLogger(__name__)
 
 class EmailParser:
     """Parses raw email content to extract relevant information."""
+    
+    def __init__(self, state_manager=None):
+        """Initialize parser with optional state manager.
+        
+        Args:
+            state_manager: ConversationStateManager instance for lookups
+        """
+        self.state_manager = state_manager
 
     def parse(self, raw_email: str) -> Dict[str, Any]:
         """Parse raw email content.
@@ -73,6 +81,9 @@ class EmailParser:
                 "timestamp": timestamp,
                 "is_reply": bool(in_reply_to or references),
                 "attachments": self._extract_attachments(msg),
+                # Custom headers for better tracking
+                "x_conversation_id": msg.get("X-Conversation-ID", ""),
+                "x_solopilot_message_id": msg.get("X-SoloPilot-Message-ID", ""),
             }
 
             logger.info(f"Parsed email from {from_addr} with thread {thread_info}")
@@ -114,7 +125,8 @@ class EmailParser:
             ref_list,
             subject,
             from_addr,
-            self._parse_date(self.current_msg.get("Date", "")) if hasattr(self, "current_msg") else None
+            self._parse_date(self.current_msg.get("Date", "")) if hasattr(self, "current_msg") else None,
+            self.state_manager  # Pass state manager for lookups
         )
         
         return {
