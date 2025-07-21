@@ -21,6 +21,7 @@ from botocore.exceptions import ClientError
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from email_sender import send_reply_email, send_proposal_email, extract_email_metadata, format_proposal_email_body
+from conversation_state import ConversationStateManager  # Needed to append sent email to history
 
 # Initialize services
 dynamodb = boto3.resource("dynamodb")
@@ -33,6 +34,9 @@ CORS_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+# Outbound sender address (keep in sync with Lambda sender config)
+SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "noreply@solopilot.ai")
 
 # Type deserializer for DynamoDB
 deserializer = TypeDeserializer()
@@ -490,6 +494,32 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
             except Exception as map_error:
                 logger.error(f"Failed to store message ID mapping: {str(map_error)}")
                 # Don't fail the operation if mapping storage fails
+
+        # ------------------------------------------------------------------
+        #  Add the outbound email to email_history so the frontend sees it
+        # ------------------------------------------------------------------
+        try:
+            state_mgr = ConversationStateManager(table_name=TABLE_NAME)
+            state_mgr.add_outbound_reply(
+                conversation_id,
+                {
+                    "message_id": ses_message_id,
+                    "from": SENDER_EMAIL,
+                    "to": [email_meta["recipient"]],
+                    "subject": email_meta["subject"],
+                    "body": email_meta["body"],
+                    "timestamp": now,
+                    "direction": "outbound",
+                    "metadata": {
+                        "approved_by": body.get("reviewed_by", "admin"),
+                        "pending_reply_id": reply_id,
+                        "email_type": email_meta.get("phase", "reply"),
+                    },
+                },
+            )
+        except Exception as hist_err:
+            # Log but don’t fail approval if history append fails
+            logger.warning(f"Failed to append outbound email to history: {hist_err}")
         
         # Update conversation
         table.update_item(
