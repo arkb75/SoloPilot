@@ -2,10 +2,7 @@
 
 import json
 import os
-from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from agents.email_intake import lambda_handler
 
@@ -23,7 +20,9 @@ class TestSQSIntegration:
     ):
         """Test that SQS message is sent even for new conversations."""
         # Set environment variables
-        os.environ["REQUIREMENT_QUEUE_URL"] = "https://sqs.us-east-2.amazonaws.com/123456789/requirement-handoff"
+        os.environ["REQUIREMENT_QUEUE_URL"] = (
+            "https://sqs.us-east-2.amazonaws.com/123456789/requirement-handoff"
+        )
         os.environ["SENDER_EMAIL"] = "noreply@solopilot.ai"
 
         # Mock S3 email content
@@ -43,18 +42,18 @@ I need a website for my startup. We're in the fintech space.
         mock_state.get_or_create.return_value = {
             "conversation_id": "test-new-123",
             "email_history": [],
-            "status": "active"
+            "status": "active",
         }
         mock_state.add_email.return_value = {
             "conversation_id": "test-new-123",
             "email_history": [{"from": "newclient@example.com"}],
-            "status": "active"
+            "status": "active",
         }
         mock_state.update_requirements.return_value = {
             "conversation_id": "test-new-123",
             "email_history": [{"from": "newclient@example.com"}],
             "requirements": {"title": "Fintech Website"},
-            "status": "active"
+            "status": "active",
         }
         mock_state_class.return_value = mock_state
 
@@ -68,17 +67,14 @@ I need a website for my startup. We're in the fintech space.
         # Mock SQS response
         mock_sqs.send_message.return_value = {
             "MessageId": "test-message-id-123",
-            "ResponseMetadata": {"HTTPStatusCode": 200}
+            "ResponseMetadata": {"HTTPStatusCode": 200},
         }
 
         # Lambda event
         event = {
-            "Records": [{
-                "s3": {
-                    "bucket": {"name": "email-bucket"},
-                    "object": {"key": "emails/new123.eml"}
-                }
-            }]
+            "Records": [
+                {"s3": {"bucket": {"name": "email-bucket"}, "object": {"key": "emails/new123.eml"}}}
+            ]
         }
 
         # Execute Lambda
@@ -89,18 +85,18 @@ I need a website for my startup. We're in the fintech space.
 
         # Verify SQS was called exactly once
         mock_sqs.send_message.assert_called_once()
-        
+
         # Verify the call parameters
         sqs_call = mock_sqs.send_message.call_args
         # call_args returns (args, kwargs) - we can access them as [0] and [1]
         call_kwargs = sqs_call[1]
-        
+
         # The QueueUrl should be set from environment variable
         # Since module was imported before we set the env var, it will be empty string
         # Let's verify the message was sent with the right structure
         assert "QueueUrl" in call_kwargs
         assert "MessageBody" in call_kwargs
-        
+
         # Parse and verify the message body
         message_body = json.loads(call_kwargs["MessageBody"])
         # The conversation_id comes from parsed email thread_id, not our mock
@@ -124,7 +120,9 @@ I need a website for my startup. We're in the fintech space.
     ):
         """Test that Lambda fails if SQS send_message returns non-200 status."""
         # Set environment variables
-        os.environ["REQUIREMENT_QUEUE_URL"] = "https://sqs.us-east-2.amazonaws.com/123456789/requirement-handoff"
+        os.environ["REQUIREMENT_QUEUE_URL"] = (
+            "https://sqs.us-east-2.amazonaws.com/123456789/requirement-handoff"
+        )
 
         # Mock S3 email content
         mock_s3.get_object.return_value = {
@@ -133,9 +131,15 @@ I need a website for my startup. We're in the fintech space.
 
         # Mock conversation state
         mock_state = MagicMock()
-        mock_state.get_or_create.return_value = {"conversation_id": "test-fail", "email_history": []}
+        mock_state.get_or_create.return_value = {
+            "conversation_id": "test-fail",
+            "email_history": [],
+        }
         mock_state.add_email.return_value = {"conversation_id": "test-fail", "email_history": [{}]}
-        mock_state.update_requirements.return_value = {"conversation_id": "test-fail", "requirements": {}}
+        mock_state.update_requirements.return_value = {
+            "conversation_id": "test-fail",
+            "requirements": {},
+        }
         mock_state_class.return_value = mock_state
 
         # Mock requirement extractor
@@ -144,18 +148,13 @@ I need a website for my startup. We're in the fintech space.
         mock_extractor_class.return_value = mock_extractor
 
         # Mock SQS failure
-        mock_sqs.send_message.return_value = {
-            "ResponseMetadata": {"HTTPStatusCode": 500}
-        }
+        mock_sqs.send_message.return_value = {"ResponseMetadata": {"HTTPStatusCode": 500}}
 
         # Lambda event
         event = {
-            "Records": [{
-                "s3": {
-                    "bucket": {"name": "email-bucket"},
-                    "object": {"key": "emails/fail.eml"}
-                }
-            }]
+            "Records": [
+                {"s3": {"bucket": {"name": "email-bucket"}, "object": {"key": "emails/fail.eml"}}}
+            ]
         }
 
         # Execute Lambda - should fail

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Fix email threading by updating Lambda to use send_raw_email with proper headers."""
 
-import os
 import sys
 from pathlib import Path
 
@@ -142,5 +141,5 @@ print("2. Rebuild the Lambda package")
 print("3. Upload to AWS Lambda")
 print("\nNew functions to add:")
 print(FIXED_FOLLOWUP_FUNCTION)
-print("\n" + "="*60 + "\n")
+print("\n" + "=" * 60 + "\n")
 print(FIXED_CONFIRMATION_FUNCTION)

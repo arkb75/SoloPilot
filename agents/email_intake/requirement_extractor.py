@@ -9,10 +9,12 @@ from typing import Any, Dict, List
 try:
     from agents.ai_providers import get_provider
     from agents.ai_providers.base import log_call
+
     USE_AI_PROVIDER = True
 except ImportError:
     # Running in Lambda environment
     import boto3
+
     USE_AI_PROVIDER = False
 
 logger = logging.getLogger(__name__)
@@ -31,12 +33,10 @@ class RequirementExtractor:
         else:
             # Lambda environment - use Bedrock directly
             self.bedrock_client = boto3.client(
-                "bedrock-runtime",
-                region_name=os.environ.get("AWS_REGION", "us-east-2")
+                "bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-2")
             )
             self.model_id = os.environ.get(
-                "BEDROCK_MODEL_ID",
-                "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+                "BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0"
             )
 
     def extract(
@@ -97,20 +97,14 @@ Return ONLY valid JSON, no additional text."""
                 request_body = {
                     "anthropic_version": "bedrock-2023-05-31",
                     "max_tokens": 4000,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ],
-                    "temperature": 0.3
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
                 }
-                
+
                 response = self.bedrock_client.invoke_model(
-                    modelId=self.model_id,
-                    body=json.dumps(request_body)
+                    modelId=self.model_id, body=json.dumps(request_body)
                 )
-                
+
                 response_body = json.loads(response["body"].read())
                 llm_response = response_body["content"][0]["text"]
 

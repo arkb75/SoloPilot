@@ -2,7 +2,6 @@
 
 import email
 import email.message
-import hashlib
 import logging
 import re
 from datetime import datetime, timezone
@@ -16,10 +15,10 @@ logger = logging.getLogger(__name__)
 
 class EmailParser:
     """Parses raw email content to extract relevant information."""
-    
+
     def __init__(self, state_manager=None):
         """Initialize parser with optional state manager.
-        
+
         Args:
             state_manager: ConversationStateManager instance for lookups
         """
@@ -51,7 +50,9 @@ class EmailParser:
             cc_addrs = self._extract_recipients(msg.get("Cc", ""))
 
             # Extract thread information
-            thread_info = self._extract_thread_id(message_id, in_reply_to, references, subject, from_addr)
+            thread_info = self._extract_thread_id(
+                message_id, in_reply_to, references, subject, from_addr
+            )
 
             # Extract timestamp
             date_str = msg.get("Date", "")
@@ -111,13 +112,13 @@ class EmailParser:
         self, message_id: str, in_reply_to: str, references: str, subject: str, from_addr: str
     ) -> Dict[str, Any]:
         """Extract thread information using RFC 5322 compliant logic.
-        
+
         Returns:
             Dict with conversation_id, original_message_id, and references list
         """
         # Parse references into list
         ref_list = EmailThreadingUtils.parse_references(references)
-        
+
         # Determine conversation ID
         conv_id, original_id = EmailThreadingUtils.determine_conversation_id(
             message_id,
@@ -125,47 +126,57 @@ class EmailParser:
             ref_list,
             subject,
             from_addr,
-            self._parse_date(self.current_msg.get("Date", "")) if hasattr(self, "current_msg") else None,
-            self.state_manager  # Pass state manager for lookups
+            (
+                self._parse_date(self.current_msg.get("Date", ""))
+                if hasattr(self, "current_msg")
+                else None
+            ),
+            self.state_manager,  # Pass state manager for lookups
         )
-        
+
         return {
             "conversation_id": conv_id,
             "original_message_id": original_id,
-            "references": ref_list
+            "references": ref_list,
         }
 
     def _extract_recipients(self, header_value: str) -> List[str]:
         """Extract email addresses from To/Cc headers."""
         if not header_value:
             return []
-        
+
         addresses = []
         # Simple extraction - can be enhanced with email.utils.getaddresses
         for part in header_value.split(","):
             addr = self._extract_email_address(part.strip())
             if addr:
                 addresses.append(addr)
-        
+
         return addresses
 
     def _extract_attachments(self, msg: email.message.Message) -> List[Dict[str, Any]]:
         """Extract attachment information from email."""
         attachments = []
-        
+
         if msg.is_multipart():
             for part in msg.walk():
                 content_disposition = part.get("Content-Disposition", "")
-                
+
                 if "attachment" in content_disposition:
                     filename = part.get_filename()
                     if filename:
-                        attachments.append({
-                            "filename": filename,
-                            "content_type": part.get_content_type(),
-                            "size": len(part.get_payload(decode=True)) if part.get_payload(decode=True) else 0
-                        })
-        
+                        attachments.append(
+                            {
+                                "filename": filename,
+                                "content_type": part.get_content_type(),
+                                "size": (
+                                    len(part.get_payload(decode=True))
+                                    if part.get_payload(decode=True)
+                                    else 0
+                                ),
+                            }
+                        )
+
         return attachments
 
     def _parse_date(self, date_str: str) -> str:

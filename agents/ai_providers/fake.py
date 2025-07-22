@@ -45,9 +45,11 @@ class FakeProvider(BaseProvider):
         self.call_count += 1
 
         # Check if JSON response is requested
-        if "json" in prompt.lower() and ("return only valid json" in prompt.lower() or "extract" in prompt.lower()):
+        if "json" in prompt.lower() and (
+            "return only valid json" in prompt.lower() or "extract" in prompt.lower()
+        ):
             return self._generate_json_response(prompt)
-        
+
         # Extract language/technology hints from prompt and files
         language = self._infer_language(prompt, files)
 
@@ -438,7 +440,7 @@ class {class_name}ImplementationTest {{
     def _generate_json_response(self, prompt: str) -> str:
         """Generate fake JSON response for requirement extraction."""
         self._last_prompt = prompt
-        
+
         # Check if it's an email requirement extraction
         if "extract project requirements" in prompt.lower():
             return """{
@@ -458,7 +460,7 @@ class {class_name}ImplementationTest {{
     "budget": "$25,000 - $30,000",
     "constraints": ["Must integrate with existing inventory system"]
 }"""
-        
+
         # Default JSON response
         return """{
     "status": "success",

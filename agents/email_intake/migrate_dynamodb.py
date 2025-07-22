@@ -23,7 +23,7 @@ class DynamoDBMigration:
         # Use AWS_DEFAULT_REGION if set, otherwise fallback to provided region or us-east-2
         if region is None:
             region = os.environ.get("AWS_DEFAULT_REGION", "us-east-2")
-        
+
         self.dynamodb = boto3.resource("dynamodb", region_name=region)
         self.table = self.dynamodb.Table(table_name)
         self.table_name = table_name
@@ -44,9 +44,7 @@ class DynamoDBMigration:
         )
 
         # Scan all items
-        scan_kwargs = {
-            "ProjectionExpression": "conversation_id, updated_at, email_history"
-        }
+        scan_kwargs = {"ProjectionExpression": "conversation_id, updated_at, email_history"}
 
         done = False
         start_key = None
@@ -103,9 +101,7 @@ class DynamoDBMigration:
         updates["last_seq"] = Decimal(len(item.get("email_history", [])))
 
         # Add last_updated_at (copy from updated_at)
-        updates["last_updated_at"] = item.get(
-            "updated_at", datetime.now(timezone.utc).isoformat()
-        )
+        updates["last_updated_at"] = item.get("updated_at", datetime.now(timezone.utc).isoformat())
 
         # Add TTL (30 days from last update)
         updates["ttl"] = EmailThreadingUtils.calculate_ttl(days=30)
@@ -128,9 +124,7 @@ class DynamoDBMigration:
 
             # Collect message IDs for thread references
             if email.get("message_id"):
-                thread_refs.append(
-                    EmailThreadingUtils.extract_message_id(email["message_id"])
-                )
+                thread_refs.append(EmailThreadingUtils.extract_message_id(email["message_id"]))
 
         updates["participants"] = participants
         updates["thread_references"] = thread_refs
@@ -163,9 +157,7 @@ class DynamoDBMigration:
             logger.info(f"Migrated conversation: {conversation_id}")
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-                logger.warning(
-                    f"Conversation {conversation_id} was deleted during migration"
-                )
+                logger.warning(f"Conversation {conversation_id} was deleted during migration")
             else:
                 raise
 
@@ -181,9 +173,7 @@ class DynamoDBMigration:
         response = self.dynamodb.meta.client.describe_table(TableName=self.table_name)
         table_desc = response["Table"]
 
-        existing_gsis = {
-            gsi["IndexName"] for gsi in table_desc.get("GlobalSecondaryIndexes", [])
-        }
+        existing_gsis = {gsi["IndexName"] for gsi in table_desc.get("GlobalSecondaryIndexes", [])}
 
         required_gsis = {
             "StatusIndex": {
@@ -214,9 +204,7 @@ class DynamoDBMigration:
 
         if missing_gsis:
             logger.warning(f"Missing GSIs: {[g['IndexName'] for g in missing_gsis]}")
-            logger.warning(
-                "Please create these GSIs through AWS Console or CloudFormation"
-            )
+            logger.warning("Please create these GSIs through AWS Console or CloudFormation")
 
             if not dry_run:
                 # Print CloudFormation snippet
@@ -229,13 +217,9 @@ class DynamoDBMigration:
                         print(f"      - AttributeName: {key['AttributeName']}")
                         print(f"        KeyType: {key['KeyType']}")
                     print("    Projection:")
-                    print(
-                        f"      ProjectionType: {gsi['Projection']['ProjectionType']}"
-                    )
+                    print(f"      ProjectionType: {gsi['Projection']['ProjectionType']}")
                     if "NonKeyAttributes" in gsi["Projection"]:
-                        print(
-                            f"      NonKeyAttributes: {gsi['Projection']['NonKeyAttributes']}"
-                        )
+                        print(f"      NonKeyAttributes: {gsi['Projection']['NonKeyAttributes']}")
                     print("    ProvisionedThroughput:")
                     print("      ReadCapacityUnits: 5")
                     print("      WriteCapacityUnits: 5")
@@ -250,12 +234,8 @@ def main():
     parser = argparse.ArgumentParser(description="Migrate DynamoDB conversations table")
     parser.add_argument("--table", default="conversations", help="DynamoDB table name")
     parser.add_argument("--region", help="AWS region (defaults to AWS_DEFAULT_REGION or us-east-2)")
-    parser.add_argument(
-        "--dry-run", action="store_true", help="Simulate migration without changes"
-    )
-    parser.add_argument(
-        "--check-gsi", action="store_true", help="Check for required GSIs"
-    )
+    parser.add_argument("--dry-run", action="store_true", help="Simulate migration without changes")
+    parser.add_argument("--check-gsi", action="store_true", help="Check for required GSIs")
 
     args = parser.parse_args()
 

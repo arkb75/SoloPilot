@@ -257,7 +257,7 @@ I need a website for my bakery.
                     {"name": "Contact", "desc": "Contact form"},
                     {"name": "Gallery", "desc": "Photo gallery"},
                 ],
-            }
+            },
         }
         mock_state_class.return_value = mock_state
 
@@ -279,7 +279,7 @@ I need a website for my bakery.
         # Mock SQS response
         mock_sqs.send_message.return_value = {
             "MessageId": "test-message-id",
-            "ResponseMetadata": {"HTTPStatusCode": 200}
+            "ResponseMetadata": {"HTTPStatusCode": 200},
         }
 
         # Lambda event
@@ -330,11 +330,14 @@ I need help with a project.
         # Mock conversation state
         mock_state = MagicMock()
         mock_state.get_or_create.return_value = {"conversation_id": "test-456", "email_history": []}
-        mock_state.add_email.return_value = {"conversation_id": "test-456", "email_history": [{"from": "test@example.com"}]}
+        mock_state.add_email.return_value = {
+            "conversation_id": "test-456",
+            "email_history": [{"from": "test@example.com"}],
+        }
         mock_state.update_requirements.return_value = {
             "conversation_id": "test-456",
             "email_history": [{"from": "test@example.com"}],
-            "requirements": {"title": "Some Project"}
+            "requirements": {"title": "Some Project"},
         }
         mock_state_class.return_value = mock_state
 
@@ -348,7 +351,7 @@ I need help with a project.
         # Mock SQS response
         mock_sqs.send_message.return_value = {
             "MessageId": "test-message-id-456",
-            "ResponseMetadata": {"HTTPStatusCode": 200}
+            "ResponseMetadata": {"HTTPStatusCode": 200},
         }
 
         event = {

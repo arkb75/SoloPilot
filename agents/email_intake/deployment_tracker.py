@@ -85,9 +85,7 @@ class DeploymentTracker:
             Deployment record or None
         """
         try:
-            response = self.table.get_item(
-                Key={"client_id": client_id}, ConsistentRead=True
-            )
+            response = self.table.get_item(Key={"client_id": client_id}, ConsistentRead=True)
 
             if "Item" in response:
                 return self._deserialize_item(response["Item"])
@@ -127,9 +125,7 @@ class DeploymentTracker:
                 ReturnValues="ALL_NEW",
             )
 
-            logger.info(
-                f"Updated Vercel project for client {client_id}: {vercel_project_id}"
-            )
+            logger.info(f"Updated Vercel project for client {client_id}: {vercel_project_id}")
             return self._deserialize_item(response["Attributes"])
 
         except Exception as e:
@@ -166,9 +162,7 @@ class DeploymentTracker:
                 ReturnValues="ALL_NEW",
             )
 
-            logger.info(
-                f"Updated GitHub repo for client {client_id}: {github_repo_url}"
-            )
+            logger.info(f"Updated GitHub repo for client {client_id}: {github_repo_url}")
             return self._deserialize_item(response["Attributes"])
 
         except Exception as e:
@@ -222,9 +216,7 @@ class DeploymentTracker:
                 ReturnValues="ALL_NEW",
             )
 
-            logger.info(
-                f"Added deployment URL for client {client_id}: {deployment_url}"
-            )
+            logger.info(f"Added deployment URL for client {client_id}: {deployment_url}")
             return self._deserialize_item(response["Attributes"])
 
         except Exception as e:
@@ -300,9 +292,7 @@ class DeploymentTracker:
             logger.error(f"Error listing deployments: {str(e)}")
             return []
 
-    def get_deployment_by_vercel_project(
-        self, vercel_project_id: str
-    ) -> Optional[Dict[str, Any]]:
+    def get_deployment_by_vercel_project(self, vercel_project_id: str) -> Optional[Dict[str, Any]]:
         """Find deployment by Vercel project ID.
 
         Args:

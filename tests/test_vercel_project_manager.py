@@ -28,9 +28,7 @@ class TestVercelProjectManager:
 
         # Create manager and project
         manager = VercelProjectManager("test-token")
-        project_id, project_name = manager.create_project(
-            "Smith Consulting", "site", "nextjs"
-        )
+        project_id, project_name = manager.create_project("Smith Consulting", "site", "nextjs")
 
         # Verify results
         assert project_id == "prj_abc123"
@@ -165,9 +163,7 @@ class TestVercelProjectManager:
         assert manager._get_output_directory("nextjs") == ".next"
 
         # Test Python
-        assert (
-            manager._get_install_command("python") == "pip install -r requirements.txt"
-        )
+        assert manager._get_install_command("python") == "pip install -r requirements.txt"
         assert manager._get_build_command("python") == ""
         assert manager._get_output_directory("python") == "."
 

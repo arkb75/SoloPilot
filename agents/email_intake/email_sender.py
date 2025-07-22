@@ -1,13 +1,12 @@
 """Email sender module for sending replies via AWS SES."""
 
+import email.utils
 import logging
 import os
-from datetime import datetime, timezone
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
-import email.utils
-from typing import Dict, Any, List, Optional, Tuple
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from typing import Any, Dict, List, Optional, Tuple
 
 import boto3
 from botocore.exceptions import ClientError
@@ -32,7 +31,7 @@ def send_reply_email(
     attachments: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[bool, Optional[str], Optional[str]]:
     """Send a reply email with proper threading headers.
-    
+
     Args:
         to_email: Recipient email address
         subject: Email subject (should include Re: prefix)
@@ -41,7 +40,7 @@ def send_reply_email(
         in_reply_to: Message-ID of the email being replied to
         references: List of Message-IDs in the thread
         attachments: Optional list of attachments
-        
+
     Returns:
         Tuple of (success, ses_message_id, error_message)
     """
@@ -51,14 +50,16 @@ def send_reply_email(
         msg["From"] = f"{SENDER_NAME} <{SENDER_EMAIL}>"
         msg["To"] = to_email
         msg["Subject"] = subject
-        
+
         # Don't set Message-ID - let SES handle it
         # SES will generate its own Message-ID regardless of what we set
-        
+
         # Set threading headers
         if in_reply_to:
-            msg["In-Reply-To"] = f"<{in_reply_to}>" if not in_reply_to.startswith("<") else in_reply_to
-        
+            msg["In-Reply-To"] = (
+                f"<{in_reply_to}>" if not in_reply_to.startswith("<") else in_reply_to
+            )
+
         if references:
             # Build proper references chain
             ref_list = []
@@ -68,30 +69,31 @@ def send_reply_email(
                 elif ref:
                     ref_list.append(ref)
             msg["References"] = " ".join(ref_list)
-        
+
         msg["Reply-To"] = SENDER_EMAIL
-        
+
         # Add conversation tracking headers
         msg["X-Conversation-ID"] = conversation_id
         # Add a unique tracking ID that we control
         msg["X-SoloPilot-Message-ID"] = email.utils.make_msgid(domain="solopilot.abdulkhurram.com")
-        
+
         # Add body - ensure conversation ID is visible
         # If conversation ID not already in body, append it
         if f"Conversation ID: {conversation_id}" not in body:
             body = f"{body}\n\n--\nConversation ID: {conversation_id}"
         msg.attach(MIMEText(body, "plain"))
-        
+
         # Add attachments if any
         if attachments:
             for attachment in attachments:
                 part = MIMEApplication(
-                    attachment.get("content", b""),
-                    Name=attachment.get("filename", "attachment")
+                    attachment.get("content", b""), Name=attachment.get("filename", "attachment")
                 )
-                part["Content-Disposition"] = f'attachment; filename="{attachment.get("filename", "attachment")}"'
+                part["Content-Disposition"] = (
+                    f'attachment; filename="{attachment.get("filename", "attachment")}"'
+                )
                 msg.attach(part)
-        
+
         # Send raw email
         response = ses_client.send_raw_email(
             Source=SENDER_EMAIL,
@@ -102,12 +104,12 @@ def send_reply_email(
                 {"Name": "email_type", "Value": "reply"},
             ],
         )
-        
+
         ses_message_id = response.get("MessageId")
         logger.info(f"Sent reply email successfully. SES MessageId: {ses_message_id}")
-        
+
         return True, ses_message_id, None
-        
+
     except ClientError as e:
         error_msg = f"AWS SES error: {str(e)}"
         logger.error(error_msg)
@@ -129,7 +131,7 @@ def send_proposal_email(
     references: Optional[List[str]] = None,
 ) -> Tuple[bool, Optional[str], Optional[str]]:
     """Send a proposal email with PDF attachment.
-    
+
     Args:
         to_email: Recipient email address
         subject: Email subject
@@ -139,16 +141,13 @@ def send_proposal_email(
         pdf_filename: Name for the PDF attachment
         in_reply_to: Message-ID of the email being replied to
         references: List of Message-IDs in the thread
-        
+
     Returns:
         Tuple of (success, ses_message_id, error_message)
     """
     # Create attachment structure
-    attachments = [{
-        "content": pdf_content,
-        "filename": pdf_filename
-    }]
-    
+    attachments = [{"content": pdf_content, "filename": pdf_filename}]
+
     # Use the regular send_reply_email with attachment
     return send_reply_email(
         to_email=to_email,
@@ -157,17 +156,17 @@ def send_proposal_email(
         conversation_id=conversation_id,
         in_reply_to=in_reply_to,
         references=references,
-        attachments=attachments
+        attachments=attachments,
     )
 
 
 def format_followup_email_body(questions: str, conversation_id: str) -> str:
     """Format a follow-up email body.
-    
+
     Args:
         questions: The questions or content to include
         conversation_id: Conversation ID for tracking
-        
+
     Returns:
         Formatted email body
     """
@@ -187,18 +186,14 @@ Conversation ID: {conversation_id}
 """
 
 
-def format_proposal_email_body(
-    client_name: str,
-    project_title: str,
-    conversation_id: str
-) -> str:
+def format_proposal_email_body(client_name: str, project_title: str, conversation_id: str) -> str:
     """Format a proposal email body.
-    
+
     Args:
         client_name: Client's name
         project_title: Project title
         conversation_id: Conversation ID for tracking
-        
+
     Returns:
         Formatted email body
     """
@@ -230,22 +225,22 @@ Conversation ID: {conversation_id}
 
 def extract_email_metadata(pending_reply: Dict[str, Any]) -> Dict[str, Any]:
     """Extract email metadata from a pending reply object.
-    
+
     Args:
         pending_reply: Pending reply object from DynamoDB
-        
+
     Returns:
         Dictionary with email metadata
     """
     metadata = pending_reply.get("metadata", {})
-    
+
     # Check if we have a separate email_body in metadata (from new structured response)
     # This would be present for proposal phase responses
     email_body = metadata.get("email_body")
     if not email_body:
         # Fallback to the raw LLM response for backward compatibility
         email_body = pending_reply.get("llm_response", "")
-    
+
     return {
         "recipient": metadata.get("recipient", ""),
         "subject": metadata.get("subject", ""),

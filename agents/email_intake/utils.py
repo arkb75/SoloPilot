@@ -16,10 +16,10 @@ class EmailThreadingUtils:
     @staticmethod
     def canonicalize_message_id(message_id: str) -> str:
         """Normalize Message-ID for consistent storage/lookup.
-        
+
         Args:
             message_id: Raw Message-ID string
-            
+
         Returns:
             Canonical form: lowercase, no brackets, no whitespace
         """
@@ -115,20 +115,22 @@ class EmailThreadingUtils:
             Tuple of (conversation_id, original_message_id)
         """
         # Extract and canonicalize IDs
-        logger.info(f"determine_conversation_id called with:")
+        logger.info("determine_conversation_id called with:")
         logger.info(f"  raw message_id: '{message_id}'")
         logger.info(f"  raw in_reply_to: '{in_reply_to}'")
         logger.info(f"  raw references: {references}")
-        
+
         clean_message_id = EmailThreadingUtils.extract_message_id(message_id)
         canonical_message_id = EmailThreadingUtils.canonicalize_message_id(message_id)
         canonical_in_reply_to = EmailThreadingUtils.canonicalize_message_id(in_reply_to)
-        
+
         # Canonicalize references list
-        canonical_references = [EmailThreadingUtils.canonicalize_message_id(ref) for ref in references if ref]
+        canonical_references = [
+            EmailThreadingUtils.canonicalize_message_id(ref) for ref in references if ref
+        ]
         canonical_references = [ref for ref in canonical_references if ref]  # Remove empty values
-        
-        logger.info(f"After canonicalization:")
+
+        logger.info("After canonicalization:")
         logger.info(f"  canonical message_id: '{canonical_message_id}'")
         logger.info(f"  canonical in_reply_to: '{canonical_in_reply_to}'")
         logger.info(f"  canonical references: {canonical_references}")
@@ -140,10 +142,12 @@ class EmailThreadingUtils:
             existing_conv_id = state_manager.lookup_conversation_from_references(
                 canonical_in_reply_to, canonical_references
             )
-            
+
             if existing_conv_id:
                 # Found existing conversation
-                original_id = canonical_in_reply_to or (canonical_references[0] if canonical_references else "")
+                original_id = canonical_in_reply_to or (
+                    canonical_references[0] if canonical_references else ""
+                )
                 logger.info(
                     f"✓ Found existing conversation: {existing_conv_id} from reply/references"
                 )
@@ -152,7 +156,7 @@ class EmailThreadingUtils:
                 logger.info("✗ No existing conversation found in message ID mappings")
 
         # No existing conversation found, create new one
-        
+
         # Case 1: This is a reply but conversation not found - create new from parent
         if canonical_in_reply_to:
             # Generate stable ID from the parent message we're replying to
@@ -167,23 +171,17 @@ class EmailThreadingUtils:
             # Use the first (oldest) reference as the thread root
             original_id = canonical_references[0]
             conv_id = EmailThreadingUtils.hash_conversation_id(original_id)
-            logger.info(
-                f"Thread with references, new conversation: {conv_id}, root={original_id}"
-            )
+            logger.info(f"Thread with references, new conversation: {conv_id}, root={original_id}")
             return conv_id, original_id
 
         # Case 3: Brand new conversation - use current Message-ID
         if canonical_message_id:
             conv_id = EmailThreadingUtils.hash_conversation_id(canonical_message_id)
-            logger.info(
-                f"New conversation: {conv_id}, original={canonical_message_id}"
-            )
+            logger.info(f"New conversation: {conv_id}, original={canonical_message_id}")
             return conv_id, canonical_message_id
 
         # Case 4: Fallback - hash from+subject+date
-        fallback_data = (
-            f"{from_addr}:{subject}:{date or datetime.now(timezone.utc).isoformat()}"
-        )
+        fallback_data = f"{from_addr}:{subject}:{date or datetime.now(timezone.utc).isoformat()}"
         conv_id = EmailThreadingUtils.hash_conversation_id(fallback_data)
         logger.warning(f"Fallback conversation ID: {conv_id} from {fallback_data}")
         return conv_id, ""
@@ -340,23 +338,21 @@ class EmailThreadingUtils:
                 break
 
         new_content = "\n".join(lines[:quote_start]).strip()
-        quoted_content = (
-            "\n".join(lines[quote_start:]).strip() if quote_start < len(lines) else ""
-        )
+        quoted_content = "\n".join(lines[quote_start:]).strip() if quote_start < len(lines) else ""
 
         return new_content, quoted_content
 
 
 class DynamoDBUtils:
     """Utilities for DynamoDB operations."""
-    
+
     @staticmethod
     def convert_floats_to_decimal(obj: Any) -> Any:
         """Recursively convert all float values to Decimal for DynamoDB.
-        
+
         Args:
             obj: Object to convert (dict, list, or primitive)
-            
+
         Returns:
             Object with floats converted to Decimal
         """
@@ -372,21 +368,21 @@ class DynamoDBUtils:
         else:
             # Return as-is for other types (str, int, bool, None, Decimal)
             return obj
-    
+
     @staticmethod
     def prepare_for_dynamodb(data: Dict[str, Any]) -> Dict[str, Any]:
         """Prepare a dictionary for DynamoDB by converting floats and handling special cases.
-        
+
         Args:
             data: Dictionary to prepare
-            
+
         Returns:
             Dictionary ready for DynamoDB
         """
         # Convert all floats to Decimal
         prepared = DynamoDBUtils.convert_floats_to_decimal(data)
-        
+
         # Remove any None values (DynamoDB doesn't support NULL in some contexts)
         prepared = {k: v for k, v in prepared.items() if v is not None}
-        
+
         return prepared
