@@ -331,7 +331,7 @@ Additional Requirements:
         # Simulate LLM failure by patching the standardized client if available, or primary_llm as fallback
         if text_parser.standardized_client:
             # Import BedrockError for the test
-            from agents.common.bedrock_client import BedrockError
+            from src.common.bedrock_client import BedrockError
 
             with patch.object(
                 text_parser.standardized_client,

@@ -322,8 +322,8 @@ describe('ProjectSetup', () => {
     def test_bedrock_failure_raises_exception(self, temp_config_file):
         """Test that Bedrock failures raise exceptions instead of returning stubs."""
         # Mock standardized client to fail
-        with patch("agents.common.bedrock_client.StandardizedBedrockClient") as mock_client_class:
-            from agents.common.bedrock_client import BedrockError
+        with patch("src.common.bedrock_client.StandardizedBedrockClient") as mock_client_class:
+            from src.common.bedrock_client import BedrockError
 
             mock_client = MagicMock()
             mock_client.simple_invoke_with_metadata.side_effect = BedrockError(

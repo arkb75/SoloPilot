@@ -39,7 +39,7 @@ except ImportError:
 
 # Import standardized Bedrock client
 try:
-    from agents.common.bedrock_client import (
+    from src.common.bedrock_client import (
         BedrockError,
         create_bedrock_client,
         get_standardized_error_message,
