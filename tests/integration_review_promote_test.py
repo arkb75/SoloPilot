@@ -21,7 +21,7 @@ sys.path.insert(0, str(project_root))
 
 from agents.review.reviewer_agent import ReviewerAgent
 from scripts.check_review_status import extract_status_from_report
-from utils.github_review import GitHubReviewer
+from src.utils.github_review import GitHubReviewer
 
 
 @pytest.fixture

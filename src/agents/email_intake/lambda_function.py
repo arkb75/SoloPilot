@@ -22,7 +22,7 @@ from conversational_responder import ConversationalResponder
 from email_parser import EmailParser
 from requirement_extractor import RequirementExtractor
 
-from utils import EmailThreadingUtils
+from src.utils import EmailThreadingUtils
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

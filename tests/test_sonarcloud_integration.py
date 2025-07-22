@@ -16,7 +16,7 @@ import pytest
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from utils.sonarcloud_integration import SonarCloudClient
+from src.utils.sonarcloud_integration import SonarCloudClient
 
 
 class TestSonarCloudIntegration:
@@ -122,7 +122,7 @@ class TestSonarCloudIntegration:
         assert not validation["organization_exists"]
         assert "NO_NETWORK=1 - SonarCloud integration disabled" in validation["issues"]
 
-    @patch("utils.sonarcloud_integration.requests.Session")
+    @patch("src.utils.sonarcloud_integration.requests.Session")
     def test_configuration_validation_success(self, mock_session_class):
         """Test successful configuration validation."""
         # Set up environment
@@ -146,7 +146,7 @@ class TestSonarCloudIntegration:
         assert validation["organization_exists"]
         assert len(validation["issues"]) == 0
 
-    @patch("utils.sonarcloud_integration.requests.Session")
+    @patch("src.utils.sonarcloud_integration.requests.Session")
     def test_configuration_validation_invalid_org(self, mock_session_class):
         """Test configuration validation with invalid organization."""
         # Set up environment
@@ -170,7 +170,7 @@ class TestSonarCloudIntegration:
         assert not validation["organization_exists"]
         assert "Organization 'test-org' not found or no access" in validation["issues"]
 
-    @patch("utils.sonarcloud_integration.requests.Session")
+    @patch("src.utils.sonarcloud_integration.requests.Session")
     def test_project_creation_success(self, mock_session_class):
         """Test successful project creation."""
         # Set up environment
@@ -229,7 +229,7 @@ class TestSonarCloudIntegration:
         assert "url" in result
         assert result.get("existed") is not True
 
-    @patch("utils.sonarcloud_integration.requests.Session")
+    @patch("src.utils.sonarcloud_integration.requests.Session")
     def test_project_creation_already_exists(self, mock_session_class):
         """Test project creation when project already exists."""
         # Set up environment
@@ -265,7 +265,7 @@ class TestSonarCloudIntegration:
         assert result["project_key"] == "test-org_existing-project"
         assert result["existed"] is True
 
-    @patch("utils.sonarcloud_integration.requests.Session")
+    @patch("src.utils.sonarcloud_integration.requests.Session")
     def test_project_creation_retry_logic(self, mock_session_class):
         """Test retry logic for project creation."""
         # Set up environment
@@ -334,7 +334,7 @@ class TestSonarCloudIntegration:
         # Verify that POST was called 3 times (2 failures + 1 success)
         assert mock_session.post.call_count == 3
 
-    @patch("utils.sonarcloud_integration.requests.Session")
+    @patch("src.utils.sonarcloud_integration.requests.Session")
     def test_setup_project_from_git_url_success(self, mock_session_class):
         """Test complete project setup from Git URL."""
         # Set up environment

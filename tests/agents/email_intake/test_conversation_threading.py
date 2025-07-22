@@ -11,7 +11,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from email_parser import EmailParser
 
-from utils import EmailThreadingUtils
+from src.utils import EmailThreadingUtils
 
 
 class MockStateManager:

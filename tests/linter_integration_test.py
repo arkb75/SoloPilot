@@ -6,7 +6,7 @@ Tests for linter integration functionality in SoloPilot.
 import unittest
 from unittest.mock import MagicMock, patch
 
-from utils.linter_integration import (
+from src.utils.linter_integration import (
     BanditLinter,
     ESLintLinter,
     LinterManager,

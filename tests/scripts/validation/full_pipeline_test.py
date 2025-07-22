@@ -22,7 +22,7 @@ from agents.dev.dev_agent import DevAgent
 from tests.regression.complex_projects.large_ecommerce_platform import (
     create_large_ecommerce_project,
 )
-from utils.sonarcloud_integration import SonarCloudClient
+from src.utils.sonarcloud_integration import SonarCloudClient
 
 
 class FullPipelineValidator:

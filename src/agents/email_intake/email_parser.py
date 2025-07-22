@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Dict, List
 
-from utils import EmailThreadingUtils
+from src.utils import EmailThreadingUtils
 
 logger = logging.getLogger(__name__)
 

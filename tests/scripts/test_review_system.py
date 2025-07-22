@@ -126,7 +126,7 @@ def test_github_integration():
             [
                 sys.executable,
                 "-c",
-                "from utils.github_review import GitHubReviewer; "
+                "from src.utils.github_review import GitHubReviewer; "
                 "reviewer = GitHubReviewer(); "
                 "import json; "
                 "print(json.dumps(reviewer.get_status(), indent=2))",

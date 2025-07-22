@@ -17,7 +17,7 @@ import yaml
 
 from agents.ai_providers import ProviderError, get_provider
 from agents.dev.context_engine import get_context_engine
-from utils.linter_integration import LinterManager
+from src.utils.linter_integration import LinterManager
 
 
 class DevAgent:

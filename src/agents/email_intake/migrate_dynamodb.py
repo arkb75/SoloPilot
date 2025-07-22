@@ -9,7 +9,7 @@ from typing import Any, Dict
 import boto3
 from botocore.exceptions import ClientError
 
-from utils import EmailThreadingUtils
+from src.utils import EmailThreadingUtils
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

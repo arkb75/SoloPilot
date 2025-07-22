@@ -12,7 +12,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from utils.sonarcloud_integration import SonarCloudClient
+from src.utils.sonarcloud_integration import SonarCloudClient
 
 
 def main():

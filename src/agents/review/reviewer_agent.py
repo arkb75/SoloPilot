@@ -17,7 +17,7 @@ import yaml
 
 from agents.ai_providers import get_provider
 from agents.ai_providers.base import BaseProvider, ProviderError
-from utils.sonarcloud_integration import SonarCloudClient
+from src.utils.sonarcloud_integration import SonarCloudClient
 
 
 class ReviewerAgent:
