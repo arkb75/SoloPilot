@@ -239,6 +239,13 @@ def extract_email_metadata(pending_reply: Dict[str, Any]) -> Dict[str, Any]:
     """
     metadata = pending_reply.get("metadata", {})
     
+    # Check if we have a separate email_body in metadata (from new structured response)
+    # This would be present for proposal phase responses
+    email_body = metadata.get("email_body")
+    if not email_body:
+        # Fallback to the raw LLM response for backward compatibility
+        email_body = pending_reply.get("llm_response", "")
+    
     return {
         "recipient": metadata.get("recipient", ""),
         "subject": metadata.get("subject", ""),
@@ -246,5 +253,8 @@ def extract_email_metadata(pending_reply: Dict[str, Any]) -> Dict[str, Any]:
         "references": metadata.get("references", []),
         "should_send_pdf": metadata.get("should_send_pdf", False),
         "phase": pending_reply.get("phase", "unknown"),
-        "body": pending_reply.get("llm_response", ""),
+        "body": email_body,
+        "proposal_content": metadata.get("proposal_content", ""),  # For PDF generation
+        "client_name": metadata.get("client_name", "Client"),
+        "sender_name": metadata.get("sender_name", "The SoloPilot Team"),
     }

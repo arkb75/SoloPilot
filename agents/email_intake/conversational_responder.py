@@ -203,6 +203,9 @@ CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, think
             target_budget = budget_info["initial_budget"]
             budget_guidance = f"Client's budget is around ${target_budget}. Stay within this range."
         
+        # Check if client explicitly asked for a call
+        asked_for_call = self._check_if_call_requested(conversation.get("email_history", []))
+        
         prompt = f"""You are {self.sender_name}, a professional freelancer presenting a project proposal to {client_name}.
 
 CRITICAL: Address the client as "{client_name}" throughout your response.
@@ -219,38 +222,72 @@ Requirements gathered:
 BUDGET CONSTRAINTS:
 {json.dumps(budget_info, indent=2)}
 
-IMPORTANT RULES:
-1. Address the client as "{client_name}" (NOT as any other name)
-2. Be direct and action-oriented
-3. {budget_guidance}
-4. Sign as "{self.sender_name}"
-5. If they mention "call" or "meeting", end with: "Book a time at: {self.calendly_link}"
-6. NO questions like "Are you available?" or "When works for you?"
+IMPORTANT: Generate TWO separate outputs in this exact format:
 
-Generate a VERY concise proposal:
+===EMAIL_BODY===
+Hi {client_name},
+
+Please find the proposal attached. Let me know what you think.
+
+Best,
+{self.sender_name}
+{"[Include Calendly link: " + self.calendly_link + "]" if asked_for_call else "[No Calendly link - client didn't ask for a call]"}
+===END_EMAIL_BODY===
+
+===PROPOSAL_CONTENT===
+Generate a VERY concise proposal for the PDF:
 1. Project Overview: Briefly reference their specific project (e.g., "Shopify dashboard", "e-commerce platform", etc.)
 2. Scope: 3-4 bullet points based on THEIR actual requirements from the conversation
 3. Investment: Single total amount{"" if not target_budget else f" (target: ${target_budget})"}
 4. Timeline: Simple duration (e.g., "1 week" or "3 weeks")
-5. If they asked about calling: "Book a time at: {self.calendly_link}"
 
 CRITICAL: Use their SPECIFIC project details, not generic "web development solution" language.
 Base the scope on what they actually described in their emails.
-
 Keep it under 100 words. Be decisive and specific.
+===END_PROPOSAL_CONTENT===
 
-CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, thinking, or explanation. Start directly with the greeting."""
+CRITICAL: Output EXACTLY in the format shown above with the markers. The email body should be minimal since a PDF will be attached."""
 
         response = self._call_llm(prompt)
+        
+        # Parse the structured response to extract email body and proposal content
+        email_body = response  # Default to full response if parsing fails
+        proposal_content = response
+        
+        try:
+            # Extract email body
+            if "===EMAIL_BODY===" in response and "===END_EMAIL_BODY===" in response:
+                email_body_start = response.find("===EMAIL_BODY===") + len("===EMAIL_BODY===")
+                email_body_end = response.find("===END_EMAIL_BODY===")
+                email_body = response[email_body_start:email_body_end].strip()
+                
+                # Handle the Calendly link instruction
+                if "[Include Calendly link:" in email_body:
+                    email_body = email_body.replace(f"[Include Calendly link: {self.calendly_link}]", 
+                                                    f"\nP.S. You can book a time at: {self.calendly_link}")
+                elif "[No Calendly link" in email_body:
+                    email_body = email_body.replace("[No Calendly link - client didn't ask for a call]", "")
+            
+            # Extract proposal content
+            if "===PROPOSAL_CONTENT===" in response and "===END_PROPOSAL_CONTENT===" in response:
+                content_start = response.find("===PROPOSAL_CONTENT===") + len("===PROPOSAL_CONTENT===")
+                content_end = response.find("===END_PROPOSAL_CONTENT===")
+                proposal_content = response[content_start:content_end].strip()
+        except Exception as e:
+            logger.warning(f"Failed to parse structured proposal response: {str(e)}")
+            # Fallback to using the whole response as both
         
         metadata = {
             "phase": "proposal_draft",
             "proposal_version": 1,
             "should_send_proposal": True,  # Always generate PDF for proposals
+            "email_body": email_body,  # Minimal email body for sending
+            "proposal_content": proposal_content,  # Detailed content for PDF
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
-        return response, metadata, prompt
+        # For backward compatibility, return the email body as the main response
+        return email_body, metadata, prompt
 
     def _handle_proposal_feedback_tracked(
         self, context: str, latest_email: Dict[str, Any], conversation: Dict[str, Any]
@@ -440,6 +477,24 @@ CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, think
         
         return response, metadata, prompt
 
+    def _check_if_call_requested(self, email_history: List[Dict]) -> bool:
+        """Check if client explicitly requested a call or meeting."""
+        call_indicators = [
+            "book a call", "schedule a call", "let's meet", "can we meet",
+            "meeting", "discuss over a call", "phone call", "video call",
+            "zoom", "teams", "google meet", "calendly", "let me know when",
+            "when can we talk", "available to talk", "time to chat"
+        ]
+        
+        for email in email_history:
+            if email.get('direction') == 'inbound':
+                body = email.get('body', '').lower()
+                for indicator in call_indicators:
+                    if indicator in body:
+                        return True
+        
+        return False
+    
     def _extract_client_name_from_signature(self, email_history: List[Dict]) -> str:
         """Extract client name from email signature using improved logic."""
         if not email_history:

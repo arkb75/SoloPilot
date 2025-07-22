@@ -376,11 +376,24 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
                 # Get PDF Lambda ARN from environment
                 pdf_lambda_arn = os.environ.get("PDF_LAMBDA_ARN", "")
                 if not pdf_lambda_arn:
-                    logger.warning("PDF_LAMBDA_ARN not configured, sending text-only proposal")
+                    logger.error(f"PDF_LAMBDA_ARN not configured for conversation {conversation_id}. "
+                                f"Client: {email_meta['recipient']}. Falling back to text-only email.")
+                    
+                    # Use a proper fallback message instead of the detailed proposal
+                    fallback_body = f"""Hi {email_meta.get('client_name', 'there')},
+
+I've prepared your project proposal. Let me know what you think.
+
+Best,
+{email_meta.get('sender_name', 'The SoloPilot Team')}
+
+--
+Conversation ID: {conversation_id}"""
+                    
                     success, ses_message_id, error_msg = send_reply_email(
                         to_email=email_meta["recipient"],
                         subject=email_meta["subject"],
-                        body=email_meta["body"],
+                        body=fallback_body,
                         conversation_id=conversation_id,
                         in_reply_to=email_meta.get("in_reply_to"),
                         references=email_meta.get("references", [])
@@ -417,23 +430,48 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
                             references=email_meta.get("references", [])
                         )
                     else:
-                        # PDF generation failed, send text-only
-                        logger.warning(f"PDF generation failed: {pdf_error}, sending text-only")
+                        # PDF generation failed, send text-only with proper fallback
+                        logger.error(f"PDF generation failed for conversation {conversation_id}. "
+                                    f"Client: {email_meta['recipient']}. Error: {pdf_error}")
+                        
+                        # Use a proper fallback message
+                        fallback_body = f"""Hi {email_meta.get('client_name', 'there')},
+
+I've prepared your project proposal. Let me know what you think.
+
+Best,
+{email_meta.get('sender_name', 'The SoloPilot Team')}
+
+--
+Conversation ID: {conversation_id}"""
+                        
                         success, ses_message_id, error_msg = send_reply_email(
                             to_email=email_meta["recipient"],
                             subject=email_meta["subject"],
-                            body=email_meta["body"],
+                            body=fallback_body,
                             conversation_id=conversation_id,
                             in_reply_to=email_meta.get("in_reply_to"),
                             references=email_meta.get("references", [])
                         )
             except Exception as pdf_e:
-                logger.error(f"Error with PDF generation: {str(pdf_e)}", exc_info=True)
-                # Fallback to text-only email
+                logger.error(f"PDF generation exception for conversation {conversation_id}. "
+                            f"Client: {email_meta['recipient']}. Error: {str(pdf_e)}", exc_info=True)
+                
+                # Fallback to text-only email with proper message
+                fallback_body = f"""Hi {email_meta.get('client_name', 'there')},
+
+I've prepared your project proposal. Let me know what you think.
+
+Best,
+{email_meta.get('sender_name', 'The SoloPilot Team')}
+
+--
+Conversation ID: {conversation_id}"""
+                
                 success, ses_message_id, error_msg = send_reply_email(
                     to_email=email_meta["recipient"],
                     subject=email_meta["subject"],
-                    body=email_meta["body"],
+                    body=fallback_body,
                     conversation_id=conversation_id,
                     in_reply_to=email_meta.get("in_reply_to"),
                     references=email_meta.get("references", [])

@@ -174,18 +174,40 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.info(f"Manual mode - queuing response for approval")
             
             # Add pending reply
+            metadata_to_store = {
+                "recipient": parsed_email["from"],
+                "subject": f"Re: {parsed_email['subject']}",
+                "in_reply_to": parsed_email.get("message_id", ""),
+                "references": conversation.get("thread_references", []),
+                "should_send_pdf": response_metadata.get("should_send_proposal", False)
+            }
+            
+            # If we have structured email_body and proposal_content, include them
+            if "email_body" in response_metadata:
+                metadata_to_store["email_body"] = response_metadata["email_body"]
+            if "proposal_content" in response_metadata:
+                metadata_to_store["proposal_content"] = response_metadata["proposal_content"]
+            
+            # Extract client name from conversation for better personalization
+            email_history = conversation.get("email_history", [])
+            client_name = "Client"  # Default
+            for email in email_history:
+                if email.get("direction") == "inbound" and email.get("from"):
+                    # Try to extract name from email address
+                    from_email = email["from"]
+                    if "@" in from_email:
+                        client_name = from_email.split("@")[0].replace(".", " ").replace("_", " ").title()
+                        break
+            
+            metadata_to_store["client_name"] = client_name
+            metadata_to_store["sender_name"] = responder.sender_name
+            
             state_manager.add_pending_reply(
                 conversation_id,
                 llm_prompt,
                 response_text,
                 response_metadata.get("phase", "unknown"),
-                {
-                    "recipient": parsed_email["from"],
-                    "subject": f"Re: {parsed_email['subject']}",
-                    "in_reply_to": parsed_email.get("message_id", ""),
-                    "references": conversation.get("thread_references", []),
-                    "should_send_pdf": response_metadata.get("should_send_proposal", False)
-                }
+                metadata_to_store
             )
             
             logger.info(f"Response queued for manual approval in conversation {conversation_id}")
