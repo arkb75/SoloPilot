@@ -13,6 +13,12 @@ Transform freelance development by automating everything except client relations
 ## AI Collaboration Rules
 
 ### MCP Partners
+- **Context7** (`mcp__context7__*`): Use automatically for library documentation. When implementing features with specific frameworks/libraries:
+  - ALWAYS check for latest API changes
+  - Get implementation examples
+  - Verify best practices
+  - Especially critical for: React hooks, Next.js app router, Tailwind classes, AWS SDK changes
+
 - **ChatGPT** (`mcp__chatgpt-mcp__chatgpt`): Architecture reasoning partner. Consult for:
   - Complex architectural decisions
   - Trade-off analysis
@@ -115,5 +121,46 @@ CONTEXT_ENGINE=serena SERENA_CONTEXT_MODE=MINIMAL python scripts/run_dev_agent.p
 
 ## Current Sprint Focus
 Check Notion roadmap for active sprint items. Update status after each work session.
+
+### Email Intake System - Recent Changes (Jan 2025)
+
+#### Problem Solved: PDF Proposals Not Attaching
+**Issue**: In manual mode, proposals were showing detailed text instead of attaching PDFs.
+**Root Cause**: PDF generation was failing due to missing `PDF_LAMBDA_ARN` env var or PDF Lambda errors. The fallback was sending the full proposal text instead of a minimal message.
+
+#### Changes Made:
+1. **Separated Email Body from Proposal Content** (`conversational_responder.py`)
+   - LLM now generates two outputs: minimal email body + detailed proposal content
+   - Email says "Please find the proposal attached" while PDF contains full details
+   
+2. **Enhanced Error Handling** (`api/lambda_api.py`)
+   - Better logging with conversation ID and client email
+   - Proper fallback messages when PDF fails
+   - ERROR level logging (not WARNING) for monitoring
+
+3. **Fixed Email Metadata** (`email_sender.py`, `lambda_function.py`)
+   - Extracts structured email_body when available
+   - Falls back to llm_response for backward compatibility
+   - Includes client_name and sender_name for personalization
+
+4. **Removed Hardcoded Calendly Links**
+   - Only included when client explicitly requests a call
+   - Added `_check_if_call_requested()` method
+
+#### Next Steps (TODO):
+1. **Verify Infrastructure**
+   - Check `PDF_LAMBDA_ARN` is set in Lambda environment
+   - Verify IAM permissions for PDF Lambda invocation
+   - Add CloudWatch alarms for PDF generation failures
+
+2. **Monitor & Debug**
+   - Watch logs for specific error patterns
+   - Track PDF success/failure rates
+   - Consider adding metrics for monitoring
+
+3. **Future Improvements**
+   - Add unit tests for PDF success/failure paths
+   - Consider caching PDF generation for identical proposals
+   - Implement retry logic for transient PDF failures
 
 Remember: We're building a system that makes freelancers superhuman, not replacing them. Every line of code should serve that vision.
