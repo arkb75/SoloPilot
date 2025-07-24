@@ -19,7 +19,7 @@ import pytest
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from agents.review.reviewer_agent import ReviewerAgent
+from src.agents.review.reviewer_agent import ReviewerAgent
 from scripts.check_review_status import extract_status_from_report
 from src.utils.github_review import GitHubReviewer
 
@@ -250,7 +250,7 @@ my_list = [1, 2, 3
 class TestReviewPromoteIntegration:
     """Integration tests for review → promote workflow."""
 
-    @patch("agents.review.reviewer_agent.get_provider")
+    @patch("src.agents.review.reviewer_agent.get_provider")
     def test_good_code_review_passes(self, mock_get_provider, good_code_milestone):
         """Test that good code passes review and can be promoted."""
         # Mock AI provider to return positive review
@@ -315,7 +315,7 @@ class TestReviewPromoteIntegration:
             status = extract_status_from_report(report_file)
             assert status == "pass"
 
-    @patch("agents.review.reviewer_agent.get_provider")
+    @patch("src.agents.review.reviewer_agent.get_provider")
     def test_bad_code_review_fails(self, mock_get_provider, bad_code_milestone):
         """Test that bad code fails review and blocks promotion."""
         # Mock AI provider to return negative review

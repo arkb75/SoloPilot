@@ -18,7 +18,7 @@ import pytest
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from agents.review.reviewer_agent import ReviewerAgent
+from src.agents.review.reviewer_agent import ReviewerAgent
 
 
 @pytest.fixture
@@ -271,7 +271,7 @@ reviewer:
             assert "not found" in result["summary"]
             assert len(result["comments"]) == 0
 
-    @patch("agents.review.reviewer_agent.get_provider")
+    @patch("src.agents.review.reviewer_agent.get_provider")
     def test_review_good_code_passes(self, mock_get_provider, good_code_milestone, mock_provider):
         """Test that good quality code passes review."""
         mock_get_provider.return_value = mock_provider
@@ -319,7 +319,7 @@ reviewer:
             report_file = good_code_milestone / "review-report.md"
             assert report_file.exists()
 
-    @patch("agents.review.reviewer_agent.get_provider")
+    @patch("src.agents.review.reviewer_agent.get_provider")
     def test_review_bad_code_fails(self, mock_get_provider, bad_code_milestone):
         """Test that poor quality code fails review."""
         # Mock provider to return critical issues
@@ -387,7 +387,7 @@ reviewer:
             high_severity_comments = [c for c in result["comments"] if c.get("severity") == "high"]
             assert len(high_severity_comments) > 0
 
-    @patch("agents.review.reviewer_agent.get_provider")
+    @patch("src.agents.review.reviewer_agent.get_provider")
     def test_review_empty_milestone(self, mock_get_provider, empty_milestone, mock_provider):
         """Test review of empty milestone directory."""
         mock_get_provider.return_value = mock_provider
@@ -510,7 +510,7 @@ reviewer:
 class TestReviewerAgentIntegration:
     """Integration tests for ReviewerAgent."""
 
-    @patch("agents.review.reviewer_agent.get_provider")
+    @patch("src.agents.review.reviewer_agent.get_provider")
     def test_end_to_end_review_workflow(
         self, mock_get_provider, good_code_milestone, mock_provider
     ):
