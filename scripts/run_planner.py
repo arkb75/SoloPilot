@@ -18,7 +18,7 @@ from pathlib import Path
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agents.planning.planner import ProjectPlanner
+from src.agents.planning.planner import ProjectPlanner
 
 
 def find_latest_specification(base_dir: str = "analysis/output") -> str:

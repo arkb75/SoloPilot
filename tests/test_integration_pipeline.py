@@ -16,7 +16,7 @@ import pytest
 
 from src.agents.analyser.parser import SpecBuilder, TextParser
 from src.agents.dev.dev_agent import DevAgent
-from agents.planning.planner import ProjectPlanner
+from src.agents.planning.planner import ProjectPlanner
 
 
 class TestIntegrationPipeline(unittest.TestCase):
