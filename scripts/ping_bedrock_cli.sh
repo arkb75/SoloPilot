@@ -54,7 +54,7 @@ cat > "$BODY_FILE" << EOF
     "temperature": 0.1,
     "messages": [
         {
-            "role": "user", 
+            "role": "user",
             "content": "Say hello"
         }
     ]
@@ -72,9 +72,9 @@ if aws bedrock-runtime invoke-model \
     --cli-binary-format raw-in-base64-out \
     --region "$REGION" \
     "$OUTPUT_FILE"; then
-    
+
     echo "✅ AWS CLI Bedrock test successful!"
-    
+
     # Parse response
     if command -v jq >/dev/null 2>&1; then
         echo "📊 Response details:"
@@ -86,7 +86,7 @@ if aws bedrock-runtime invoke-model \
         head -c 200 "$OUTPUT_FILE"
         echo "..."
     fi
-    
+
     echo "🎉 Bedrock CLI ping test passed!"
 else
     echo "❌ AWS CLI Bedrock test failed"

@@ -14,7 +14,7 @@ export interface Conversation {
   attachments?: Attachment[];
 }
 
-export type ConversationPhase = 
+export type ConversationPhase =
   | 'understanding'
   | 'proposal_draft'
   | 'proposal_feedback'

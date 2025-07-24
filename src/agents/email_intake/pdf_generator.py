@@ -445,7 +445,7 @@ Based on our discussion, I understand you need {self._get_project_description(re
 
 **Scope of Work**
 1. Discovery & Planning - Understanding your exact needs
-2. Design & Prototyping - Creating the perfect user experience  
+2. Design & Prototyping - Creating the perfect user experience
 3. Development - Building your solution with modern technology
 4. Testing & Launch - Ensuring everything works flawlessly
 

@@ -51,7 +51,7 @@ paths:
               nextToken:
                 type: string
       x-amazon-apigateway-integration:
-        uri: 
+        uri:
           Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
         passthroughBehavior: when_no_match
         httpMethod: POST
@@ -73,7 +73,7 @@ paths:
         404:
           description: Conversation not found
       x-amazon-apigateway-integration:
-        uri: 
+        uri:
           Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
         passthroughBehavior: when_no_match
         httpMethod: POST
@@ -106,7 +106,7 @@ paths:
         404:
           description: Conversation not found
       x-amazon-apigateway-integration:
-        uri: 
+        uri:
           Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
         passthroughBehavior: when_no_match
         httpMethod: POST
@@ -137,7 +137,7 @@ paths:
         404:
           description: Conversation not found
       x-amazon-apigateway-integration:
-        uri: 
+        uri:
           Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
         passthroughBehavior: when_no_match
         httpMethod: POST
@@ -171,7 +171,7 @@ paths:
         404:
           description: Reply not found
       x-amazon-apigateway-integration:
-        uri: 
+        uri:
           Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
         passthroughBehavior: when_no_match
         httpMethod: POST
@@ -208,7 +208,7 @@ paths:
         404:
           description: Reply not found
       x-amazon-apigateway-integration:
-        uri: 
+        uri:
           Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
         passthroughBehavior: when_no_match
         httpMethod: POST
@@ -245,7 +245,7 @@ paths:
         404:
           description: Reply not found
       x-amazon-apigateway-integration:
-        uri: 
+        uri:
           Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
         passthroughBehavior: when_no_match
         httpMethod: POST
@@ -272,7 +272,7 @@ paths:
         404:
           description: Reply not found
       x-amazon-apigateway-integration:
-        uri: 
+        uri:
           Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
         passthroughBehavior: when_no_match
         httpMethod: POST
@@ -301,7 +301,7 @@ paths:
         404:
           description: Attachment not found
       x-amazon-apigateway-integration:
-        uri: 
+        uri:
           Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
         passthroughBehavior: when_no_match
         httpMethod: POST

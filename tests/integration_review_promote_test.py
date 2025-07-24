@@ -69,10 +69,10 @@ from typing import List, Optional
 
 def calculate_total(items: List[float]) -> float:
     """Calculate the total of a list of numbers.
-    
+
     Args:
         items: List of numbers to sum
-        
+
     Returns:
         The total sum
     """
@@ -81,11 +81,11 @@ def calculate_total(items: List[float]) -> float:
 
 def format_currency(amount: float, currency: str = "USD") -> str:
     """Format amount as currency string.
-    
+
     Args:
         amount: Amount to format
         currency: Currency code (default: USD)
-        
+
     Returns:
         Formatted currency string
     """
@@ -114,19 +114,19 @@ from main import calculate_total, format_currency
 
 class TestCalculateTotal:
     """Test calculate_total function."""
-    
+
     def test_positive_numbers(self):
         """Test with positive numbers."""
         assert calculate_total([1.0, 2.0, 3.0]) == 6.0
-    
+
     def test_empty_list(self):
         """Test with empty list."""
         assert calculate_total([]) == 0.0
-    
+
     def test_mixed_numbers(self):
         """Test with mixed positive and negative numbers."""
         assert calculate_total([10.0, -5.0, 2.5]) == 7.5
-    
+
     def test_single_item(self):
         """Test with single item."""
         assert calculate_total([42.0]) == 42.0
@@ -134,19 +134,19 @@ class TestCalculateTotal:
 
 class TestFormatCurrency:
     """Test format_currency function."""
-    
+
     def test_default_currency(self):
         """Test with default USD currency."""
         assert format_currency(10.5) == "10.50 USD"
-    
+
     def test_custom_currency(self):
         """Test with custom currency."""
         assert format_currency(25.75, "EUR") == "25.75 EUR"
-    
+
     def test_zero_amount(self):
         """Test with zero amount."""
         assert format_currency(0.0) == "0.00 USD"
-    
+
     def test_rounding(self):
         """Test proper rounding."""
         assert format_currency(10.999) == "11.00 USD"
@@ -210,7 +210,7 @@ def badFunction(x,y):  # Poor naming, no types, no docstring
 class badClass:  # Poor naming
     def __init__(self,value):  # No spaces, no types
         self.value=value
-        
+
     def process(self):  # No error handling
         return self.value/0  # Will always raise ZeroDivisionError
 

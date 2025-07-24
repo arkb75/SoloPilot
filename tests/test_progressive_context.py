@@ -189,11 +189,11 @@ def main():
 
 class UserManager:
     '''Manages user operations'''
-    
+
     def authenticate(self, username):
         '''Authenticate user'''
         return self.validate_credentials(username)
-    
+
     def validate_credentials(self, username):
         '''Validate user credentials'''
         return username == "test"
@@ -296,29 +296,29 @@ class TestProgressiveContextBenchmarks(unittest.TestCase):
             "auth.py": """
 class AuthManager:
     '''Authentication manager with OAuth2 support'''
-    
+
     def __init__(self):
         self.oauth_client = OAuthClient()
         self.session_store = SessionStore()
-    
+
     def authenticate(self, username, password):
         '''Authenticate user with username/password'''
         if self.validate_credentials(username, password):
             return self.create_session(username)
         return None
-    
+
     def oauth_authenticate(self, token):
         '''Authenticate using OAuth2 token'''
         user_info = self.oauth_client.verify_token(token)
         if user_info:
             return self.create_session(user_info['username'])
         return None
-    
+
     def validate_credentials(self, username, password):
         '''Validate user credentials against database'''
         # Complex validation logic here
         return True
-    
+
     def create_session(self, username):
         '''Create new user session'''
         session = Session(username)
@@ -328,12 +328,12 @@ class AuthManager:
             "oauth.py": """
 class OAuthClient:
     '''OAuth2 client implementation'''
-    
+
     def verify_token(self, token):
         '''Verify OAuth2 token'''
         # Token verification logic
         return {'username': 'test_user'}
-    
+
     def refresh_token(self, refresh_token):
         '''Refresh OAuth2 token'''
         # Token refresh logic
@@ -342,22 +342,22 @@ class OAuthClient:
             "session.py": """
 class Session:
     '''User session management'''
-    
+
     def __init__(self, username):
         self.username = username
         self.created_at = datetime.now()
-    
+
     def is_valid(self):
         '''Check if session is still valid'''
         return True
 
 class SessionStore:
     '''Session storage manager'''
-    
+
     def save(self, session):
         '''Save session to storage'''
         pass
-    
+
     def get(self, session_id):
         '''Get session by ID'''
         pass

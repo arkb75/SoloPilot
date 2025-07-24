@@ -72,22 +72,22 @@ class AuthenticationManager:
     Comprehensive authentication manager supporting multiple auth methods.
     Handles OAuth2, JWT tokens, session management, and security policies.
     '''
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.oauth_client = OAuthClient(config.get('oauth_settings'))
         self.session_store = SessionStore(config.get('session_config'))
         self.security_policy = SecurityPolicy(config.get('security_config'))
         self.audit_logger = AuditLogger()
-    
+
     def authenticate_user(self, username: str, password: str) -> Optional[Dict[str, Any]]:
         '''
         Authenticate user with username and password.
-        
+
         Args:
             username: User's username
             password: User's password
-            
+
         Returns:
             Authentication result with user info and session token
         '''
@@ -96,40 +96,40 @@ class AuthenticationManager:
             if not self.security_policy.check_rate_limit(username):
                 self.audit_logger.log_failed_attempt(username, 'rate_limited')
                 return None
-            
+
             # Validate credentials
             user = self.validate_credentials(username, password)
             if not user:
                 self.audit_logger.log_failed_attempt(username, 'invalid_credentials')
                 return None
-            
+
             # Check security policies
             if not self.security_policy.validate_user_access(user):
                 self.audit_logger.log_failed_attempt(username, 'policy_violation')
                 return None
-            
+
             # Create session
             session = self.create_user_session(user)
             self.audit_logger.log_successful_login(username)
-            
+
             return {
                 'user': user,
                 'session': session,
                 'token': self.generate_jwt_token(user),
                 'expires_at': session.expires_at
             }
-            
+
         except Exception as e:
             self.audit_logger.log_error(f"Authentication error for {username}: {e}")
             return None
-    
+
     def oauth_authenticate(self, oauth_token: str) -> Optional[Dict[str, Any]]:
         '''
         Authenticate user using OAuth2 token.
-        
+
         Args:
             oauth_token: OAuth2 access token
-            
+
         Returns:
             Authentication result with user info and session
         '''
@@ -139,37 +139,37 @@ class AuthenticationManager:
             if not user_info:
                 self.audit_logger.log_failed_attempt('oauth_user', 'invalid_oauth_token')
                 return None
-            
+
             # Get or create user from OAuth info
             user = self.get_or_create_oauth_user(user_info)
-            
+
             # Security policy check
             if not self.security_policy.validate_user_access(user):
                 self.audit_logger.log_failed_attempt(user.username, 'oauth_policy_violation')
                 return None
-            
+
             # Create session
             session = self.create_user_session(user)
             self.audit_logger.log_successful_oauth_login(user.username)
-            
+
             return {
                 'user': user,
                 'session': session,
                 'token': self.generate_jwt_token(user),
                 'oauth_info': user_info
             }
-            
+
         except Exception as e:
             self.audit_logger.log_error(f"OAuth authentication error: {e}")
             return None
-    
+
     def validate_credentials(self, username: str, password: str) -> Optional['User']:
         '''Validate user credentials against database.'''
         user = self.user_repository.get_by_username(username)
         if user and self.hash_password(password) == user.password_hash:
             return user
         return None
-    
+
     def create_user_session(self, user: 'User') -> 'Session':
         '''Create new user session with security tracking.'''
         session = Session(
@@ -182,7 +182,7 @@ class AuthenticationManager:
         )
         self.session_store.save(session)
         return session
-    
+
     def generate_jwt_token(self, user: 'User') -> str:
         '''Generate JWT token for authenticated user.'''
         payload = {
@@ -196,7 +196,7 @@ class AuthenticationManager:
 
 class OAuthClient:
     '''OAuth2 client for external authentication providers.'''
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.providers = {
@@ -204,7 +204,7 @@ class OAuthClient:
             'github': GitHubOAuthProvider(config.get('github')),
             'microsoft': MicrosoftOAuthProvider(config.get('microsoft'))
         }
-    
+
     def verify_token(self, token: str) -> Optional[Dict[str, Any]]:
         '''Verify OAuth token with provider.'''
         for provider_name, provider in self.providers.items():
@@ -219,24 +219,24 @@ class OAuthClient:
 
 class SecurityPolicy:
     '''Security policy enforcement for authentication.'''
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.rate_limiter = RateLimiter(config.get('rate_limit'))
         self.access_control = AccessControl(config.get('access_control'))
-    
+
     def check_rate_limit(self, username: str) -> bool:
         '''Check if user has exceeded rate limits.'''
         return self.rate_limiter.is_allowed(username)
-    
+
     def validate_user_access(self, user: 'User') -> bool:
         '''Validate user meets security access requirements.'''
         return self.access_control.validate_user(user)
 
 class Session:
     '''User session with security tracking.'''
-    
-    def __init__(self, user_id: int, username: str, created_at: datetime, 
+
+    def __init__(self, user_id: int, username: str, created_at: datetime,
                  expires_at: datetime, ip_address: str, user_agent: str):
         self.user_id = user_id
         self.username = username
@@ -245,11 +245,11 @@ class Session:
         self.ip_address = ip_address
         self.user_agent = user_agent
         self.is_active = True
-    
+
     def is_expired(self) -> bool:
         '''Check if session has expired.'''
         return datetime.utcnow() > self.expires_at
-    
+
     def refresh(self, hours: int = 24):
         '''Refresh session expiration.'''
         self.expires_at = datetime.utcnow() + timedelta(hours=hours)
@@ -262,12 +262,12 @@ from abc import ABC, abstractmethod
 
 class OAuthProvider(ABC):
     '''Abstract base class for OAuth providers.'''
-    
+
     @abstractmethod
     def verify_token(self, token: str) -> Optional[Dict[str, Any]]:
         '''Verify OAuth token and return user info.'''
         pass
-    
+
     @abstractmethod
     def get_user_info(self, token: str) -> Optional[Dict[str, Any]]:
         '''Get user information from provider.'''
@@ -275,13 +275,13 @@ class OAuthProvider(ABC):
 
 class GoogleOAuthProvider(OAuthProvider):
     '''Google OAuth2 provider implementation.'''
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.client_id = config.get('client_id')
         self.client_secret = config.get('client_secret')
         self.userinfo_endpoint = 'https://www.googleapis.com/oauth2/v2/userinfo'
-    
+
     def verify_token(self, token: str) -> Optional[Dict[str, Any]]:
         '''Verify Google OAuth token.'''
         try:
@@ -290,7 +290,7 @@ class GoogleOAuthProvider(OAuthProvider):
                 headers={'Authorization': f'Bearer {token}'},
                 timeout=10
             )
-            
+
             if response.status_code == 200:
                 user_data = response.json()
                 return {
@@ -303,18 +303,18 @@ class GoogleOAuthProvider(OAuthProvider):
         except Exception:
             pass
         return None
-    
+
     def get_user_info(self, token: str) -> Optional[Dict[str, Any]]:
         '''Get detailed user info from Google.'''
         return self.verify_token(token)
 
 class GitHubOAuthProvider(OAuthProvider):
     '''GitHub OAuth provider implementation.'''
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.api_endpoint = 'https://api.github.com/user'
-    
+
     def verify_token(self, token: str) -> Optional[Dict[str, Any]]:
         '''Verify GitHub OAuth token.'''
         try:
@@ -323,7 +323,7 @@ class GitHubOAuthProvider(OAuthProvider):
                 headers={'Authorization': f'token {token}'},
                 timeout=10
             )
-            
+
             if response.status_code == 200:
                 user_data = response.json()
                 return {

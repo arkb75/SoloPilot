@@ -65,10 +65,10 @@ from typing import List, Optional
 
 def calculate_sum(numbers: List[int]) -> int:
     \"\"\"Calculate the sum of a list of numbers.
-    
+
     Args:
         numbers: List of integers to sum
-        
+
     Returns:
         The sum of all numbers
     \"\"\"
@@ -77,16 +77,16 @@ def calculate_sum(numbers: List[int]) -> int:
 
 def process_data(data: Optional[str] = None) -> str:
     \"\"\"Process input data with proper error handling.
-    
+
     Args:
         data: Optional input data string
-        
+
     Returns:
         Processed data string
     \"\"\"
     if data is None:
         return "No data provided"
-    
+
     return data.strip().upper()
 
 
@@ -95,7 +95,7 @@ if __name__ == "__main__":
     numbers = [1, 2, 3, 4, 5]
     result = calculate_sum(numbers)
     print(f"Sum: {result}")
-    
+
     processed = process_data("  hello world  ")
     print(f"Processed: {processed}")
 """
@@ -170,7 +170,7 @@ def badFunction(x,y):  # Poor naming, no types, no docstring
 class badClass:  # Poor naming, no inheritance
     def __init__(self,value):  # No spaces, no types
         self.value=value
-        
+
     def getValue(self):
         return self.value  # No error handling
 

@@ -168,7 +168,7 @@ class ProjectPlanner:
         spec_json = json.dumps(specification, indent=2)
 
         return f"""
-You are a senior software architect and project manager. Given the following project specification, 
+You are a senior software architect and project manager. Given the following project specification,
 create a detailed project plan that breaks the work into ≤5 logical milestones.
 
 Project Specification:

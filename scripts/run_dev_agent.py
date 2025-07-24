@@ -27,16 +27,16 @@ def main():
 Examples:
   # Process latest planning output
   python scripts/run_dev_agent.py
-  
+
   # Process specific planning file
   python scripts/run_dev_agent.py --planning analysis/planning/20250608_014159/planning_output.json
-  
+
   # Enable Context7 scouting
   C7_SCOUT=1 python scripts/run_dev_agent.py
-  
+
   # Custom output directory
   python scripts/run_dev_agent.py --output ./my_output
-  
+
   # Custom config
   python scripts/run_dev_agent.py --config ./custom_config.yaml
         """,

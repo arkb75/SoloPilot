@@ -64,7 +64,7 @@ VERCEL_ADDITIONAL_DOMAINS: www.solopilot.ai,app.solopilot.ai
    git merge main
    git push origin production
    ```
-   
+
    This triggers:
    - Build and test
    - Deploy to Vercel

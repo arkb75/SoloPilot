@@ -5,7 +5,7 @@
 This is a proof of concept for a Lambda function that converts Markdown to PDF using React-PDF. The goal is to validate that we can meet the performance and size requirements:
 
 - Lambda package size: < 15MB
-- Memory usage: < 128MB  
+- Memory usage: < 128MB
 - Cold start time: < 1 second
 
 ## Setup

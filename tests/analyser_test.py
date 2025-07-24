@@ -26,7 +26,7 @@ class TestTextParser:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
             f.write(
                 """# Project Requirements
-            
+
 ## Overview
 Build a simple todo app with user authentication.
 
@@ -257,12 +257,12 @@ class TestIntegration:
             input_file = Path(temp_dir) / "requirements.md"
             input_file.write_text(
                 """# E-commerce Platform
-            
+
 Build a modern e-commerce platform with the following features:
 
 ## Core Features
 - Product catalog with search and filtering
-- Shopping cart and checkout process  
+- Shopping cart and checkout process
 - User accounts and order history
 - Admin panel for inventory management
 

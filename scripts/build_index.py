@@ -7,7 +7,7 @@ Builds/updates the Chroma vector store by indexing:
 - Sample milestones and planning outputs
 - Project documentation and examples
 
-This script is called by `make index` and automatically by `make dev` 
+This script is called by `make index` and automatically by `make dev`
 when using CONTEXT_ENGINE=lc_chroma and no index exists.
 """
 

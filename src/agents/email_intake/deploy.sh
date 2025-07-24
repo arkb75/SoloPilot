@@ -33,7 +33,7 @@ cd api
 zip -r ../api-lambda.zip lambda_api.py ../conversation_state_v3.py ../utils.py
 cd ..
 
-# Package Email Lambda  
+# Package Email Lambda
 zip -r email-lambda.zip lambda_function_manual_approval.py conversational_responder_v2.py conversation_state_v3.py email_parser.py requirement_extractor.py pdf_generator.py utils.py
 
 # Step 2: Update Lambda functions

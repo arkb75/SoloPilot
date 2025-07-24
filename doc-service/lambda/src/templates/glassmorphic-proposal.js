@@ -21,7 +21,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     position: 'relative',
   },
-  
+
   // Cover page styles
   coverPage: {
     padding: 0,
@@ -30,7 +30,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'relative',
   },
-  
+
   coverBackground: {
     position: 'absolute',
     top: 0,
@@ -39,7 +39,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: colors.background,
   },
-  
+
   coverLogoContainer: {
     width: 200,
     height: 200,
@@ -50,7 +50,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     border: `1px solid rgba(255, 255, 255, 0.2)`,
   },
-  
+
   coverTitle: {
     fontSize: 48,
     fontFamily: 'Helvetica',
@@ -59,7 +59,7 @@ const styles = StyleSheet.create({
     marginTop: 40,
     textAlign: 'center',
   },
-  
+
   coverSubtitle: {
     fontSize: 20,
     fontFamily: 'Helvetica',
@@ -68,12 +68,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
     textAlign: 'center',
   },
-  
+
   // Content page styles
   contentPage: {
     padding: 60,
   },
-  
+
   // Glass panel styles
   glassPanel: {
     backgroundColor: colors.glass,
@@ -82,11 +82,11 @@ const styles = StyleSheet.create({
     border: `1px solid rgba(255, 255, 255, 0.2)`,
     marginBottom: 20,
   },
-  
+
   glassPanelDark: {
     backgroundColor: colors.glassDark,
   },
-  
+
   // Typography
   h1: {
     fontSize: 36,
@@ -95,7 +95,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 30,
   },
-  
+
   h2: {
     fontSize: 24,
     fontFamily: 'Helvetica',
@@ -103,7 +103,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 20,
   },
-  
+
   h3: {
     fontSize: 18,
     fontFamily: 'Helvetica',
@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 15,
   },
-  
+
   body: {
     fontSize: 14,
     fontFamily: 'Helvetica',
@@ -119,25 +119,25 @@ const styles = StyleSheet.create({
     color: colors.text,
     lineHeight: 1.6,
   },
-  
+
   bodyLight: {
     color: colors.textLight,
   },
-  
+
   // Scope cards
   scopeGrid: {
     display: 'flex',
     flexDirection: 'column',
     gap: 15,
   },
-  
+
   scopeCard: {
     backgroundColor: colors.glass,
     borderRadius: 16,
     padding: 25,
     border: `1px solid rgba(255, 255, 255, 0.3)`,
   },
-  
+
   scopeCardTitle: {
     fontSize: 18,
     fontFamily: 'Helvetica',
@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 10,
   },
-  
+
   scopeCardDescription: {
     fontSize: 13,
     fontFamily: 'Helvetica',
@@ -153,14 +153,14 @@ const styles = StyleSheet.create({
     color: colors.textLight,
     lineHeight: 1.5,
   },
-  
+
   // Timeline styles
   timeline: {
     position: 'relative',
     marginTop: 40,
     marginBottom: 40,
   },
-  
+
   timelineTrack: {
     position: 'absolute',
     top: 25,
@@ -170,17 +170,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.neon,
     opacity: 0.3,
   },
-  
+
   timelineItems: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  
+
   timelineItem: {
     alignItems: 'center',
     width: 120,
   },
-  
+
   timelineDot: {
     width: 50,
     height: 50,
@@ -192,7 +192,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  
+
   timelineLabel: {
     fontSize: 12,
     fontFamily: 'Helvetica',
@@ -200,12 +200,12 @@ const styles = StyleSheet.create({
     color: colors.text,
     textAlign: 'center',
   },
-  
+
   // Pricing table
   pricingTable: {
     marginTop: 30,
   },
-  
+
   pricingRow: {
     backgroundColor: colors.glass,
     borderRadius: 25,
@@ -216,21 +216,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     border: `1px solid rgba(255, 255, 255, 0.3)`,
   },
-  
+
   pricingItem: {
     fontSize: 14,
     fontFamily: 'Helvetica',
     fontWeight: 400,
     color: colors.text,
   },
-  
+
   pricingAmount: {
     fontSize: 16,
     fontFamily: 'Helvetica',
     fontWeight: 500,
     color: colors.text,
   },
-  
+
   // Tech stack chips
   techStack: {
     flexDirection: 'row',
@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 20,
   },
-  
+
   techChip: {
     backgroundColor: colors.glass,
     borderRadius: 20,
@@ -246,21 +246,21 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     border: `1px solid rgba(255, 255, 255, 0.3)`,
   },
-  
+
   techChipText: {
     fontSize: 12,
     fontFamily: 'Helvetica',
     fontWeight: 400,
     color: colors.text,
   },
-  
+
   // Signature section
   signatureSection: {
     marginTop: 40,
     flexDirection: 'row',
     gap: 20,
   },
-  
+
   signatureColumn: {
     flex: 1,
     backgroundColor: colors.glass,
@@ -268,7 +268,7 @@ const styles = StyleSheet.create({
     padding: 30,
     border: `1px solid rgba(255, 255, 255, 0.2)`,
   },
-  
+
   signatureLabel: {
     fontSize: 12,
     fontFamily: 'Helvetica',
@@ -276,21 +276,21 @@ const styles = StyleSheet.create({
     color: colors.textLight,
     marginBottom: 30,
   },
-  
+
   signatureLine: {
     borderBottomWidth: 1,
     borderBottomColor: colors.textLight,
     marginBottom: 10,
     opacity: 0.3,
   },
-  
+
   // Gradient accent
   gradientAccent: {
     height: 4,
     marginVertical: 30,
     borderRadius: 2,
   },
-  
+
   // Page number
   pageNumber: {
     position: 'absolute',
@@ -335,12 +335,12 @@ const LogoPlaceholder = () => React.createElement(
     )
   ),
   React.createElement(Circle, { cx: "60", cy: "60", r: "50", fill: "url(#logoGradient)", opacity: "0.1" }),
-  React.createElement(Text, { 
-    x: "60", 
-    y: "65", 
-    textAnchor: "middle", 
-    fontSize: "24", 
-    fill: "url(#logoGradient)", 
+  React.createElement(Text, {
+    x: "60",
+    y: "65",
+    textAnchor: "middle",
+    fontSize: "24",
+    fill: "url(#logoGradient)",
     fontFamily: "Helvetica",
     style: { textAlign: 'center' }
   }, "LOGO")

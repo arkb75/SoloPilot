@@ -21,7 +21,7 @@ jobs:
   ai-review:
     name: AI Code Review
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -55,13 +55,13 @@ jobs:
           # For manual workflow dispatch
           git diff --name-only HEAD~1...HEAD > changed_files.txt
         fi
-        
+
         # Filter for Python files and other relevant files
         grep -E '\.(py|md|yml|yaml|json)$' changed_files.txt > relevant_files.txt || true
-        
+
         echo "Changed files:"
         cat relevant_files.txt || echo "No relevant files changed"
-        
+
         # Set output for later steps
         echo "has_changes=$([ -s relevant_files.txt ] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
 
@@ -77,7 +77,7 @@ jobs:
       run: |
         # Create review directory with changed files
         mkdir -p temp_review/milestone-pr
-        
+
         # Copy changed files to review directory
         while IFS= read -r file; do
           if [ -f "$file" ]; then
@@ -85,18 +85,18 @@ jobs:
             cp "$file" "temp_review/milestone-pr/$file"
           fi
         done < relevant_files.txt
-        
+
         # Add context files if they exist
         for context_file in README.md requirements.txt setup.py pyproject.toml; do
           if [ -f "$context_file" ]; then
             cp "$context_file" "temp_review/milestone-pr/" 2>/dev/null || true
           fi
         done
-        
+
         # Run reviewer agent
         source .venv/bin/activate
         python -m src.agents.review.reviewer_agent temp_review/milestone-pr
-        
+
         # Save review status for later steps
         REVIEW_STATUS=$(python scripts/check_review_status.py temp_review/milestone-pr/review-report.md)
         echo "review_status=$REVIEW_STATUS" >> $GITHUB_ENV
@@ -108,7 +108,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         source .venv/bin/activate
-        
+
         # Post review comments to PR
         if [ -f "temp_review/milestone-pr/review-report.md" ]; then
           python scripts/post_review_to_pr.py temp_review/milestone-pr/review-report.md || echo "Failed to post review comments"
@@ -122,7 +122,7 @@ jobs:
         script: |
           const status = '${{ env.review_status }}';
           const conclusion = status === 'pass' ? 'success' : (status === 'fail' ? 'failure' : 'neutral');
-          
+
           const checkRun = await github.rest.checks.create({
             owner: context.repo.owner,
             repo: context.repo.repo,
@@ -153,7 +153,7 @@ jobs:
         script: |
           const fs = require('fs');
           const status = '${{ env.review_status }}';
-          
+
           let statusEmoji = '❓';
           let statusText = 'Unknown';
           if (status === 'pass') {
@@ -163,20 +163,20 @@ jobs:
             statusEmoji = '❌';
             statusText = 'FAILED';
           }
-          
+
           const comment = `## ${statusEmoji} AI Code Review Status: ${statusText}
-          
+
           The AI Pair Reviewer has completed its analysis of this PR.
-          
-          ${status === 'pass' ? 
-            '✨ **Great job!** The code meets quality standards.' : 
+
+          ${status === 'pass' ?
+            '✨ **Great job!** The code meets quality standards.' :
             '⚠️ **Issues found.** Please address the review comments below.'}
-          
+
           [View detailed report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-          
+
           ---
           <sub>🤖 Powered by SoloPilot AI Review System</sub>`;
-          
+
           github.rest.issues.createComment({
             issue_number: context.issue.number,
             owner: context.repo.owner,
@@ -188,7 +188,7 @@ jobs:
     name: SonarCloud Analysis
     runs-on: ubuntu-latest
     needs: ai-review
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -226,7 +226,7 @@ jobs:
       run: |
         # Wait for SonarCloud analysis to complete
         sleep 10
-        
+
         # Check quality gate status (this is a placeholder - actual implementation would use SonarCloud API)
         echo "Quality Gate check would happen here"
         echo "sonar_status=pass" >> $GITHUB_ENV
@@ -236,19 +236,19 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ai-review, sonarcloud]
     if: always()
-    
+
     steps:
     - name: Determine overall status
       run: |
         # This job serves as a required status check for PR merge
         # It will fail if either AI review or SonarCloud fails
-        
+
         AI_RESULT="${{ needs.ai-review.result }}"
         SONAR_RESULT="${{ needs.sonarcloud.result }}"
-        
+
         echo "AI Review Result: $AI_RESULT"
         echo "SonarCloud Result: $SONAR_RESULT"
-        
+
         if [ "$AI_RESULT" = "success" ] && [ "$SONAR_RESULT" = "success" ]; then
           echo "✅ All quality checks passed!"
           exit 0

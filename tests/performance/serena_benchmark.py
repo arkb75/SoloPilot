@@ -2,7 +2,7 @@
 """
 Serena LSP Performance Benchmark Suite
 
-Validates that Serena LSP integration solves Claude 4 timeout issues and 
+Validates that Serena LSP integration solves Claude 4 timeout issues and
 achieves the target 30-50% token reduction compared to chunk-based context.
 """
 
@@ -63,16 +63,16 @@ class UserController:
     def __init__(self):
         self.auth_service = AuthService()
         self.user_service = UserService()
-        
+
     def authenticate(self, username: str, password: str) -> bool:
         """Authenticate user with username and password."""
         return self.auth_service.validate_credentials(username, password)
-    
+
     def create_user(self, user_data: dict) -> User:
         """Create a new user account."""
         user = User(**user_data)
         return self.user_service.save(user)
-    
+
     def update_user(self, user_id: int, updates: dict) -> User:
         """Update existing user account."""
         user = self.user_service.get_by_id(user_id)
@@ -81,15 +81,15 @@ class UserController:
                 setattr(user, key, value)
             return self.user_service.save(user)
         return None
-    
+
     def delete_user(self, user_id: int) -> bool:
         """Delete user account."""
         return self.user_service.delete(user_id)
-    
+
     def list_users(self, page: int = 1, limit: int = 20) -> List[User]:
         """List users with pagination."""
         return self.user_service.list_paginated(page, limit)
-    
+
     def search_users(self, query: str) -> List[User]:
         """Search users by query."""
         return self.user_service.search(query)
@@ -106,19 +106,19 @@ class UserService:
     def get_by_id(self, user_id: int) -> User:
         # Database lookup logic
         pass
-    
+
     def save(self, user: "User") -> "User":
         # Database save logic
         pass
-    
+
     def delete(self, user_id: int) -> bool:
         # Database delete logic
         pass
-    
+
     def list_paginated(self, page: int, limit: int) -> List["User"]:
         # Paginated query logic
         pass
-    
+
     def search(self, query: str) -> List["User"]:
         # Search logic
         pass
@@ -138,14 +138,14 @@ class User:
         self.created_at = datetime.now()
         self.updated_at = datetime.now()
         self.is_active = True
-    
+
     def _hash_password(self, password: str) -> str:
         # Password hashing logic
         return f"hashed_{password}"
-    
+
     def verify_password(self, password: str) -> bool:
         return self._hash_password(password) == self.password_hash
-    
+
     def update_password(self, new_password: str) -> None:
         self.password_hash = self._hash_password(new_password)
         self.updated_at = datetime.now()
@@ -157,17 +157,17 @@ class Token:
         self.value = self._generate_token()
         self.expires_at = self._calculate_expiry()
         self.created_at = datetime.now()
-    
+
     def _generate_token(self) -> str:
         # Token generation logic
         import secrets
         return secrets.token_urlsafe(32)
-    
+
     def _calculate_expiry(self) -> datetime:
         # Calculate token expiry
         from datetime import timedelta
         return datetime.now() + timedelta(hours=24)
-    
+
     def is_expired(self) -> bool:
         return datetime.now() > self.expires_at
 """
@@ -213,11 +213,11 @@ def login():
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
-    
+
     if user_controller.authenticate(username, password):
         # Generate token logic here
         return jsonify({'token': 'generated_token'})
-    
+
     return jsonify({'error': 'Invalid credentials'}), 401
 """
 

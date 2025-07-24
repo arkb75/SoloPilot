@@ -269,7 +269,7 @@ Return a JSON object with these exact keys:
 
 {{
   "title": "Brief project title",
-  "summary": "2-3 sentence project summary", 
+  "summary": "2-3 sentence project summary",
   "features": [
     {{"name": "Feature name", "desc": "Feature description"}}
   ],

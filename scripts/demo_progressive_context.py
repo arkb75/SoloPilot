@@ -29,29 +29,29 @@ def create_demo_project():
     auth_code = '''
 class AuthManager:
     """Authentication manager with OAuth2 support."""
-    
+
     def __init__(self):
         self.oauth_client = OAuthClient()
         self.session_store = SessionStore()
-    
+
     def authenticate(self, username, password):
         """Authenticate user with username/password."""
         if self.validate_credentials(username, password):
             return self.create_session(username)
         return None
-    
+
     def oauth_authenticate(self, token):
         """Authenticate using OAuth2 token."""
         user_info = self.oauth_client.verify_token(token)
         if user_info:
             return self.create_session(user_info['username'])
         return None
-    
+
     def validate_credentials(self, username, password):
         """Validate user credentials."""
         # Credential validation logic
         return True
-    
+
     def create_session(self, username):
         """Create new user session."""
         session = Session(username)
@@ -60,7 +60,7 @@ class AuthManager:
 
 class OAuthClient:
     """OAuth2 client implementation."""
-    
+
     def verify_token(self, token):
         """Verify OAuth2 token."""
         # Token verification logic
@@ -68,7 +68,7 @@ class OAuthClient:
 
 class Session:
     """User session management."""
-    
+
     def __init__(self, username):
         self.username = username
 '''
@@ -106,13 +106,13 @@ class AuthManager:
         # ... many more lines of implementation details
         # ... including comments, debug code, unused methods
         # ... full imports, docstrings, examples
-    
+
     def authenticate(self, username, password):
         # Detailed implementation with extensive comments
         if self.validate_credentials(username, password):
             return self.create_session(username)
         return None
-    
+
     # ... many more methods with full implementations
 '''}
 
@@ -126,7 +126,7 @@ class OAuthClient:
     # ... configuration options, multiple provider support
     pass
 
-# session.py - Full file content  
+# session.py - Full file content
 class Session:
     # Complete session management
     # ... extensive session tracking

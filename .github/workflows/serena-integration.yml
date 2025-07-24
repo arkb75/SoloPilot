@@ -9,7 +9,7 @@ on:
 jobs:
   test-serena:
     runs-on: ubuntu-latest
-    
+
     services:
       serena:
         image: ghcr.io/rafaykhurram/solopilot-serena:latest
@@ -23,27 +23,27 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Python 3.11
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
-    
+
     - name: Install uv
       run: curl -LsSf https://astral.sh/uv/install.sh | sh
-      
+
     - name: Create virtual environment
       run: |
         source $HOME/.local/bin/env
         uv venv .venv
         source .venv/bin/activate
         uv pip install -r requirements.txt
-    
+
     - name: Install Serena
       run: |
         source $HOME/.local/bin/env
         uvx --from git+https://github.com/oraios/serena index-project .
-    
+
     - name: Test Serena Integration
       env:
         CONTEXT_ENGINE: serena
@@ -51,7 +51,7 @@ jobs:
       run: |
         source .venv/bin/activate
         python -m pytest tests/test_serena_context_engine.py -v --tb=short
-        
+
     - name: Test Performance Benchmarks
       env:
         CONTEXT_ENGINE: serena
@@ -59,7 +59,7 @@ jobs:
       run: |
         source .venv/bin/activate
         python tests/performance/serena_benchmark.py
-        
+
     - name: Validate Serena Token Budgets
       env:
         CONTEXT_ENGINE: serena
@@ -67,14 +67,14 @@ jobs:
       run: |
         source .venv/bin/activate
         python scripts/ci_token_validation.py
-        
+
     - name: Upload benchmark results
       uses: actions/upload-artifact@v4
       if: always()
       with:
         name: serena-benchmark-results
         path: tests/performance/serena_benchmark_results.json
-        
+
     - name: Upload token validation results
       uses: actions/upload-artifact@v4
       if: always()

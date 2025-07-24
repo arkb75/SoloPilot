@@ -4,7 +4,7 @@ const path = require('path');
 
 async function testLambda() {
   console.log('Testing React-PDF Lambda PoC...\n');
-  
+
   const testMarkdown = `# Hello World
 
 This is a test document to validate our React-PDF Lambda implementation.
@@ -32,14 +32,14 @@ The Lambda uses React-PDF to generate PDFs from markdown input. This approach pr
   };
 
   console.log('Input markdown length:', testMarkdown.length, 'characters\n');
-  
+
   try {
     const startTime = Date.now();
     const result = await handler(event);
     const totalTime = Date.now() - startTime;
-    
+
     const response = JSON.parse(result.body);
-    
+
     if (response.success) {
       console.log('✅ PDF generation successful!');
       console.log('\nMetrics:');
@@ -47,40 +47,40 @@ The Lambda uses React-PDF to generate PDFs from markdown input. This approach pr
       console.log(`- Processing time: ${response.metrics.processingTimeMs}ms`);
       console.log(`- Memory used: ${response.metrics.memoryUsedMB}MB`);
       console.log(`- Total execution time: ${totalTime}ms`);
-      
+
       // Save PDF for manual inspection
       const pdfBuffer = Buffer.from(response.pdfBase64, 'base64');
       const outputPath = path.join(__dirname, 'test-output.pdf');
       fs.writeFileSync(outputPath, pdfBuffer);
       console.log(`\n📄 PDF saved to: ${outputPath}`);
-      
+
       // Check package size
       console.log('\nChecking package size...');
       const { execSync } = require('child_process');
-      
+
       try {
         // Install production dependencies
         execSync('npm ci --production', { stdio: 'inherit' });
-        
+
         // Create zip and check size
         execSync('zip -r function.zip . -x "*.git*" -x "test*" -x "*.pdf"', { stdio: 'pipe' });
         const stats = fs.statSync('function.zip');
         const sizeMB = stats.size / 1024 / 1024;
-        
+
         console.log(`\n📦 Lambda package size: ${sizeMB.toFixed(2)}MB`);
-        
+
         if (sizeMB < 15) {
           console.log('✅ Package size is within target (<15MB)');
         } else {
           console.log('❌ Package size exceeds target (>15MB)');
         }
-        
+
         // Clean up
         fs.unlinkSync('function.zip');
       } catch (error) {
         console.error('Error checking package size:', error.message);
       }
-      
+
     } else {
       console.log('❌ PDF generation failed:', response.error);
     }
@@ -94,7 +94,7 @@ async function testInvalidMarkdown() {
   console.log('\n\n================================================');
   console.log('Testing Error Handling with Invalid Markdown...');
   console.log('================================================\n');
-  
+
   const testCases = [
     {
       name: 'Null markdown',
@@ -122,30 +122,30 @@ async function testInvalidMarkdown() {
       description: 'Testing with undefined input'
     }
   ];
-  
+
   for (const testCase of testCases) {
     console.log(`\n🧪 Test Case: ${testCase.name}`);
     console.log(`   ${testCase.description}`);
-    
+
     const event = {
       body: JSON.stringify({
         markdown: testCase.markdown
       })
     };
-    
+
     try {
       const startTime = Date.now();
       const result = await handler(event);
       const totalTime = Date.now() - startTime;
-      
+
       const response = JSON.parse(result.body);
-      
+
       if (response.success) {
         if (response.isError) {
           console.log('   ✅ Error handled gracefully - Fallback PDF generated');
           console.log(`   - PDF size: ${(response.pdfSize / 1024).toFixed(2)}KB`);
           console.log(`   - Processing time: ${response.metrics.processingTimeMs}ms`);
-          
+
           // Save error PDF for inspection
           const pdfBuffer = Buffer.from(response.pdfBase64, 'base64');
           const outputPath = path.join(__dirname, `test-error-${testCase.name.replace(/\s+/g, '-').toLowerCase()}.pdf`);
@@ -161,7 +161,7 @@ async function testInvalidMarkdown() {
       console.log('   ❌ Lambda crashed:', error.message);
     }
   }
-  
+
   console.log('\n================================================');
   console.log('Error Handling Tests Complete');
   console.log('================================================');
@@ -171,7 +171,7 @@ async function testInvalidMarkdown() {
 async function runAllTests() {
   await testLambda();
   await testInvalidMarkdown();
-  
+
   // Clean up error PDFs
   console.log('\nCleaning up test files...');
   const files = fs.readdirSync(__dirname);

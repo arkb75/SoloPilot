@@ -5,7 +5,7 @@
 llm:
   # Primary LLM only (Bedrock)
   primary: "bedrock"
-  
+
   # AWS Bedrock Configuration (Inference Profile ARNs required)
   bedrock:
     # Primary inference profile ARN (Claude 4 Sonnet - Production)
@@ -16,12 +16,12 @@ llm:
       temperature: 0.1
       top_p: 0.9
       max_tokens: 2048
-    
+
     # Alternative inference profile ARNs (comment/uncomment as needed):
     # inference_profile_arn: "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0"  # Claude 3.5 Haiku (LEGACY)
     # inference_profile_arn: "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-sonnet-20240620-v1:0"  # Claude 3.5 Sonnet v1
     # inference_profile_arn: "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-sonnet-20241022-v2:0"  # Claude 3.5 Sonnet v2
-  
+
 
 # Processing Configuration
 processing:
@@ -30,7 +30,7 @@ processing:
     max_file_size_mb: 10
     chunk_size: 4000  # characters per chunk for large files
     overlap: 200     # character overlap between chunks
-  
+
   # Image processing
   image:
     max_file_size_mb: 50
@@ -38,12 +38,12 @@ processing:
     ocr_config: "--oem 3 --psm 6"  # tesseract configuration
     supported_formats:
       - "png"
-      - "jpg" 
+      - "jpg"
       - "jpeg"
       - "gif"
       - "bmp"
       - "tiff"
-  
+
   # Archive processing
   archive:
     max_extract_size_mb: 100
@@ -54,13 +54,13 @@ output:
   # Directory structure
   base_dir: "analysis/output"
   create_timestamp_dirs: true
-  
+
   # Artifact generation
   artifacts:
     generate_diagrams: true
     generate_wireframes: true
     diagram_format: "mermaid"
-    
+
   # Export formats
   export:
     json: true
@@ -73,10 +73,10 @@ prompts:
   extraction: |
     Analyze the following client requirement text and extract structured information.
     Return a JSON object with these exact keys:
-    
+
     {
       "title": "Brief project title",
-      "summary": "2-3 sentence project summary", 
+      "summary": "2-3 sentence project summary",
       "features": [
         {"name": "Feature name", "desc": "Feature description"}
       ],
@@ -85,19 +85,19 @@ prompts:
       "timeline": "Estimated timeline if mentioned",
       "budget": "Budget constraints if mentioned"
     }
-    
+
     Client Requirements:
     {text}
-    
+
     Respond with ONLY the JSON object, no additional text:
-  
+
   # Feature enhancement prompt
   enhancement: |
-    Based on the extracted requirements, suggest 2-3 additional features 
+    Based on the extracted requirements, suggest 2-3 additional features
     that would enhance the project but weren't explicitly mentioned:
-    
+
     Requirements: {requirements}
-    
+
     Return as JSON array:
     [{"name": "Feature", "desc": "Description", "priority": "low|medium|high"}]
 
@@ -106,11 +106,11 @@ performance:
   # Caching
   cache_llm_responses: true
   cache_duration_hours: 24
-  
+
   # Parallel processing
   max_concurrent_files: 3
   max_concurrent_images: 2
-  
+
   # Memory management
   max_memory_mb: 1024
 
@@ -118,19 +118,19 @@ performance:
 linting:
   # Enable/disable linting during code generation
   enabled: true
-  
+
   # Maximum correction iterations per code generation
   max_correction_iterations: 3
-  
+
   # Timeout for each linter run (seconds)
   timeout: 30
-  
+
   # Languages to enable linting for
   enabled_languages:
     - "python"
     - "javascript"
     - "typescript"
-  
+
   # Language-specific configurations
   python:
     # Python linters: ruff (style), mypy (types), bandit (security)
@@ -139,7 +139,7 @@ linting:
     enable_bandit: true
     # Fail on security issues
     fail_on_security: true
-  
+
   javascript:
     # JavaScript/TypeScript linters
     enable_eslint: true

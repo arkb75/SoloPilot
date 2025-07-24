@@ -198,7 +198,7 @@ class EmailFlowTester:
                 "subject": "Need a website for my bakery",
                 "body": """Hi,
 
-I need a website for my bakery business. We want to showcase our products 
+I need a website for my bakery business. We want to showcase our products
 and allow customers to place orders online.
 
 Budget is around $5000 and we need it done in 2 months.
@@ -214,7 +214,7 @@ Test Customer""",
                 "subject": "E-commerce Platform Development",
                 "body": """Hello,
 
-I'm looking for a development team to build a custom e-commerce platform for 
+I'm looking for a development team to build a custom e-commerce platform for
 my artisan jewelry business.
 
 Requirements:

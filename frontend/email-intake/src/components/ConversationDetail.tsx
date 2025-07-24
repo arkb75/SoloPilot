@@ -130,7 +130,7 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
                   View Prompt
                 </button>
               </div>
-              
+
               {editingReply?.reply_id === reply.reply_id ? (
                 <ReplyEditor
                   initialContent={reply.llm_response}

@@ -24,7 +24,7 @@ Transform freelance development by automating everything except client relations
   - Trade-off analysis
   - Design pattern selection
   - "Should we..." questions
-  
+
 - **Gemini** (`mcp__gemini__*`): Deep analysis and verification. Use for:
   - Large codebase analysis
   - Pre-commit validation
@@ -94,10 +94,10 @@ git add -p  # Selective staging
 ### Context Engine Selection
 ```bash
 # Development (generous context)
-CONTEXT_ENGINE=serena SERENA_BALANCED_TARGET=2000 python scripts/run_dev_agent.py
+CONTEXT_ENGINE=serena SERENA_BALANCED_TARGET=2000 poetry run python scripts/run_dev_agent.py
 
 # CI/Production (strict limits)
-CONTEXT_ENGINE=serena SERENA_CONTEXT_MODE=MINIMAL python scripts/run_dev_agent.py
+CONTEXT_ENGINE=serena SERENA_CONTEXT_MODE=MINIMAL poetry run python scripts/run_dev_agent.py
 ```
 
 ### Email Intake Management
@@ -107,10 +107,10 @@ CONTEXT_ENGINE=serena SERENA_CONTEXT_MODE=MINIMAL python scripts/run_dev_agent.p
 - PDF proposals auto-generated for proposal phase
 
 ### Testing Hierarchy
-1. `make lint` - Fast, run frequently
-2. `NO_NETWORK=1 make test` - Offline tests
-3. `make test` - Full test suite
-4. `make demo` - End-to-end validation
+1. `poetry run pre-commit run --all-files` - Linting and formatting
+2. `NO_NETWORK=1 poetry run pytest` - Offline tests
+3. `poetry run pytest` - Full test suite with coverage
+4. `poetry run make demo` - End-to-end validation
 
 ## Success Metrics
 - **Response Time**: <2 hours from email to proposal
@@ -122,6 +122,62 @@ CONTEXT_ENGINE=serena SERENA_CONTEXT_MODE=MINIMAL python scripts/run_dev_agent.p
 ## Current Sprint Focus
 Check Notion roadmap for active sprint items. Update status after each work session.
 
+### Major Refactoring Completed (Jan 2025)
+
+#### Project Structure Reorganization
+**Problem**: Codebase was a "code dumpster" with 1,462 `__pycache__` directories, duplicate files (v2, v3), and mixed concerns.
+
+**Solution**: Complete monorepo reorganization following Python best practices:
+```
+SoloPilot/
+├── src/                    # All source code (NEW)
+│   ├── agents/            # Agent implementations
+│   ├── providers/         # AI provider implementations (renamed from ai_providers)
+│   ├── common/           # Shared utilities
+│   └── utils/            # General utilities
+├── frontend/             # Frontend applications
+├── infrastructure/       # Deployment & IaC
+├── tests/               # All tests in one place
+├── examples/            # Example inputs (renamed from sample_input)
+├── scripts/             # Development & CI scripts
+├── docs/                # Documentation
+└── pyproject.toml       # Poetry dependency management (NEW)
+```
+
+#### Development Improvements
+1. **Migrated to Poetry**: Modern dependency management with lock file
+2. **Pre-commit Hooks**: Automatic code quality checks
+   - Black, isort, Ruff for formatting and linting
+   - MyPy for type checking
+   - Bandit for security scanning
+   - Custom import validation
+3. **Enhanced CI/CD**:
+   - Matrix testing on Python 3.9-3.12
+   - Type checking job
+   - Pre-commit integration
+   - Poetry-based workflows
+4. **Import Convention**: All imports now use `src.` prefix:
+   ```python
+   from src.agents.dev import dev_agent
+   from src.providers.bedrock import BedrockProvider
+   ```
+
+#### Quick Start (Updated)
+```bash
+# Install Poetry
+curl -sSL https://install.python-poetry.org | python3 -
+
+# Install dependencies
+poetry install
+
+# Install pre-commit hooks
+poetry run pre-commit install
+
+# Run commands with Poetry
+poetry run pytest
+poetry run python scripts/run_dev_agent.py
+```
+
 ### Email Intake System - Recent Changes (Jan 2025)
 
 #### Problem Solved: PDF Proposals Not Attaching
@@ -132,7 +188,7 @@ Check Notion roadmap for active sprint items. Update status after each work sess
 1. **Separated Email Body from Proposal Content** (`conversational_responder.py`)
    - LLM now generates two outputs: minimal email body + detailed proposal content
    - Email says "Please find the proposal attached" while PDF contains full details
-   
+
 2. **Enhanced Error Handling** (`api/lambda_api.py`)
    - Better logging with conversation ID and client email
    - Proper fallback messages when PDF fails

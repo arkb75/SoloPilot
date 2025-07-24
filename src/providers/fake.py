@@ -173,14 +173,14 @@ class {task_name.replace(" ", "")}Implementation {{
         // TODO: Initialize {task_name.lower()}
         this.initialized = false;
     }}
-    
+
     async execute() {{
         // TODO: Implement {task_name.lower()} functionality
         console.log("Executing {task_name.lower()}...");
         this.initialized = true;
         return {{ success: true, message: "Fake implementation completed" }};
     }}
-    
+
     validate() {{
         // TODO: Add validation logic
         return this.initialized;
@@ -194,22 +194,22 @@ const {task_name.replace(" ", "")}Implementation = require('./{task_name.replace
 
 describe('{task_name}Implementation', () => {{
     let implementation;
-    
+
     beforeEach(() => {{
         implementation = new {task_name.replace(" ", "")}Implementation();
     }});
-    
+
     test('should initialize correctly', () => {{
         expect(implementation).toBeDefined();
         expect(implementation.initialized).toBe(false);
     }});
-    
+
     test('should execute successfully', async () => {{
         const result = await implementation.execute();
         expect(result.success).toBe(true);
         expect(implementation.initialized).toBe(true);
     }});
-    
+
     test('should validate correctly', () => {{
         expect(implementation.validate()).toBe(false);
         implementation.initialized = true;
@@ -239,21 +239,21 @@ interface ExecutionResult {{
 
 class {task_name.replace(" ", "")}Implementation implements I{task_name.replace(" ", "")} {{
     private initialized: boolean = false;
-    
+
     constructor() {{
         // TODO: Initialize {task_name.lower()}
     }}
-    
+
     async execute(): Promise<ExecutionResult> {{
         // TODO: Implement {task_name.lower()} functionality
         console.log("Executing {task_name.lower()}...");
         this.initialized = true;
-        return {{ 
-            success: true, 
-            message: "Fake implementation completed" 
+        return {{
+            success: true,
+            message: "Fake implementation completed"
         }};
     }}
-    
+
     validate(): boolean {{
         // TODO: Add validation logic
         return this.initialized;
@@ -267,16 +267,16 @@ import {{ {task_name.replace(" ", "")}Implementation }} from './{task_name.repla
 
 describe('{task_name}Implementation', () => {{
     let implementation: {task_name.replace(" ", "")}Implementation;
-    
+
     beforeEach(() => {{
         implementation = new {task_name.replace(" ", "")}Implementation();
     }});
-    
+
     test('should initialize correctly', () => {{
         expect(implementation).toBeDefined();
         expect(implementation.validate()).toBe(false);
     }});
-    
+
     test('should execute successfully', async () => {{
         const result = await implementation.execute();
         expect(result.success).toBe(true);
@@ -301,17 +301,17 @@ logger = logging.getLogger(__name__)
 
 class {class_name}Implementation:
     """Fake implementation for {task_name.lower()}."""
-    
+
     def __init__(self):
         """Initialize {task_name.lower()}."""
         # TODO: Initialize {task_name.lower()}
         self.initialized = False
         logger.info("Initializing {task_name.lower()} implementation")
-    
+
     async def execute(self) -> Dict[str, Any]:
         """
         Execute {task_name.lower()} functionality.
-        
+
         Returns:
             Dict containing execution result
         """
@@ -322,11 +322,11 @@ class {class_name}Implementation:
             "success": True,
             "message": "Fake implementation completed"
         }}
-    
+
     def validate(self) -> bool:
         """
         Validate {task_name.lower()} state.
-        
+
         Returns:
             True if valid, False otherwise
         """
@@ -339,24 +339,24 @@ from unittest.mock import Mock, patch
 
 class Test{class_name}Implementation:
     """Test cases for {class_name}Implementation."""
-    
+
     @pytest.fixture
     def implementation(self):
         """Create implementation instance for testing."""
         return {class_name}Implementation()
-    
+
     def test_initialization(self, implementation):
         """Test that implementation initializes correctly."""
         assert implementation is not None
         assert implementation.initialized is False
-    
+
     @pytest.mark.asyncio
     async def test_execute_success(self, implementation):
         """Test successful execution."""
         result = await implementation.execute()
         assert result["success"] is True
         assert implementation.initialized is True
-    
+
     def test_validate(self, implementation):
         """Test validation functionality."""
         assert implementation.validate() is False
@@ -383,24 +383,24 @@ import java.util.logging.Logger;
 public class {class_name}Implementation {{
     private static final Logger logger = Logger.getLogger({class_name}Implementation.class.getName());
     private boolean initialized = false;
-    
+
     public {class_name}Implementation() {{
         // TODO: Initialize {task_name.lower()}
         logger.info("Initializing {task_name.lower()} implementation");
     }}
-    
+
     public CompletableFuture<Map<String, Object>> execute() {{
         // TODO: Implement {task_name.lower()} functionality
         logger.info("Executing {task_name.lower()}...");
         this.initialized = true;
-        
+
         Map<String, Object> result = new HashMap<>();
         result.put("success", true);
         result.put("message", "Fake implementation completed");
-        
+
         return CompletableFuture.completedFuture(result);
     }}
-    
+
     public boolean validate() {{
         // TODO: Add validation logic
         return this.initialized;
@@ -416,18 +416,18 @@ import java.util.concurrent.ExecutionException;
 
 class {class_name}ImplementationTest {{
     private {class_name}Implementation implementation;
-    
+
     @BeforeEach
     void setUp() {{
         implementation = new {class_name}Implementation();
     }}
-    
+
     @Test
     void testInitialization() {{
         assertNotNull(implementation);
         assertFalse(implementation.validate());
     }}
-    
+
     @Test
     void testExecuteSuccess() throws ExecutionException, InterruptedException {{
         Map<String, Object> result = implementation.execute().get();

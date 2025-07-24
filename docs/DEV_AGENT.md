@@ -293,14 +293,14 @@ class AuthenticationService {
         // TODO: Initialize database connection
         // TODO: Configure JWT settings
     }
-    
+
     async register(userData) {
         // TODO: Validate user input
         // TODO: Hash password
         // TODO: Save to database
         throw new Error('Not implemented');
     }
-    
+
     async login(credentials) {
         // TODO: Validate credentials
         // TODO: Generate JWT token
@@ -314,7 +314,7 @@ describe('AuthenticationService', () => {
         // TODO: Test user registration
         expect(true).toBe(true);
     });
-    
+
     test('should login existing user', async () => {
         // TODO: Test user login
         expect(true).toBe(true);
@@ -328,6 +328,6 @@ The Dev Agent now requires AWS Bedrock inference profiles for all model access. 
 
 ---
 
-**Generated**: 2025-06-08  
-**Version**: v0.1  
+**Generated**: 2025-06-08
+**Version**: v0.1
 **Branch**: `feature/dev-agent-v0`

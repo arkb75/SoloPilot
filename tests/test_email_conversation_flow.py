@@ -53,7 +53,7 @@ Date: Mon, 15 Jan 2024 10:00:00 +0000
 
 Hi SoloPilot team,
 
-We're looking to build an e-commerce platform. We need shopping cart functionality 
+We're looking to build an e-commerce platform. We need shopping cart functionality
 and payment processing.
 
 Can you help?

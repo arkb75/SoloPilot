@@ -23,7 +23,7 @@ brew install awscli  # macOS
 # Configure AWS credentials
 aws configure --profile solopilot
 # Enter your Access Key ID
-# Enter your Secret Access Key  
+# Enter your Secret Access Key
 # Enter region: us-east-1
 # Enter output format: json
 
@@ -63,7 +63,7 @@ llm:
   bedrock:
     # Claude 4 Sonnet (high-performance, reasoning-optimized)
     inference_profile_arn: "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"
-    
+
     # Alternative models:
     # model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"  # More capable, higher cost
     # model_id: "meta.llama3-1-8b-instruct-v1:0"            # Llama 3.1 8B, lower cost

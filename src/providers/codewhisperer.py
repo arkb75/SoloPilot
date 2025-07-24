@@ -258,7 +258,7 @@ public class DataProcessor {
             return result;
         }
     }
-    
+
     public static void main(String[] args) {
         DataProcessor processor = new DataProcessor();
         List<String> sampleData = Arrays.asList("item1", "item2", "item3");

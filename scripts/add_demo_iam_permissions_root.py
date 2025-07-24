@@ -7,10 +7,10 @@ to the abdul user for the demo.
 Usage:
     # First, switch to root credentials:
     export AWS_PROFILE=root  # or whatever your root profile is named
-    
+
     # Then run:
     python add_demo_iam_permissions_root.py
-    
+
     # To remove:
     python add_demo_iam_permissions_root.py --remove
 """

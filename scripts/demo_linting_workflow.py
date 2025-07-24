@@ -58,13 +58,13 @@ import json
 def process_user_data(data):
     # Security issue: eval usage
     result = eval(data)
-    
+
     # Type issue: inconsistent return types
     if result > 10:
         return "high"
     else:
         return 42
-    
+
     # Unused variable
     unused_var = "will trigger warning"
 

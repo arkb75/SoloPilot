@@ -13,7 +13,7 @@ class StripeHelper {
     this.stripe = null;
     this.secretName = process.env.STRIPE_SECRET_NAME || 'solopilot/stripe/test';
   }
-  
+
   /**
    * Initialize Stripe with keys from Secrets Manager
    */
@@ -21,22 +21,22 @@ class StripeHelper {
     if (this.stripe) {
       return this.stripe;
     }
-    
+
     try {
-      logger.info('Retrieving Stripe keys from Secrets Manager', { 
-        secretName: this.secretName 
+      logger.info('Retrieving Stripe keys from Secrets Manager', {
+        secretName: this.secretName
       });
-      
+
       const secret = await secretsManager.getSecretValue({
         SecretId: this.secretName
       }).promise();
-      
+
       const secretData = JSON.parse(secret.SecretString);
-      
+
       if (!secretData.secret_key) {
         throw new Error('Stripe secret key not found in secrets');
       }
-      
+
       this.stripe = new Stripe(secretData.secret_key, {
         apiVersion: '2023-10-16',
         appInfo: {
@@ -44,7 +44,7 @@ class StripeHelper {
           version: '1.0.0'
         }
       });
-      
+
       logger.info('Stripe initialized successfully');
       return this.stripe;
     } catch (error) {
@@ -55,7 +55,7 @@ class StripeHelper {
       throw error;
     }
   }
-  
+
   /**
    * Create or retrieve a Stripe customer
    * @param {Object} customerData - Customer information
@@ -63,16 +63,16 @@ class StripeHelper {
    */
   async createOrGetCustomer(customerData) {
     await this.initialize();
-    
+
     const { clientId, email, name } = customerData;
-    
+
     try {
       // Search for existing customer by clientId in metadata
       const existingCustomers = await this.stripe.customers.search({
         query: `metadata['clientId']:'${clientId}'`,
         limit: 1
       });
-      
+
       if (existingCustomers.data.length > 0) {
         logger.info('Found existing Stripe customer', {
           customerId: existingCustomers.data[0].id,
@@ -80,7 +80,7 @@ class StripeHelper {
         });
         return existingCustomers.data[0];
       }
-      
+
       // Create new customer
       const customer = await this.stripe.customers.create({
         email,
@@ -90,12 +90,12 @@ class StripeHelper {
           source: 'solopilot_doc_generator'
         }
       });
-      
+
       logger.info('Created new Stripe customer', {
         customerId: customer.id,
         clientId
       });
-      
+
       return customer;
     } catch (error) {
       logger.error('Failed to create/get Stripe customer', {
@@ -105,7 +105,7 @@ class StripeHelper {
       throw error;
     }
   }
-  
+
   /**
    * Upload a file to Stripe
    * @param {Buffer} fileBuffer - File content
@@ -115,14 +115,14 @@ class StripeHelper {
    */
   async uploadFile(fileBuffer, filename, purpose = 'invoice_statement') {
     await this.initialize();
-    
+
     try {
-      logger.info('Uploading file to Stripe', { 
+      logger.info('Uploading file to Stripe', {
         filename,
         size: fileBuffer.length,
         purpose
       });
-      
+
       // Note: Stripe file uploads require multipart/form-data
       // In production, you might need to use FormData or similar
       // For now, we'll skip the actual file upload and just log it
@@ -130,7 +130,7 @@ class StripeHelper {
         filename,
         size: fileBuffer.length
       });
-      
+
       // Return mock file object for development
       return {
         id: 'file_mock_' + Date.now(),
@@ -138,7 +138,7 @@ class StripeHelper {
         purpose: purpose,
         url: 'https://files.stripe.com/mock/' + filename
       };
-      
+
     } catch (error) {
       logger.error('Failed to upload file to Stripe', {
         error: error.message,
@@ -147,7 +147,7 @@ class StripeHelper {
       throw error;
     }
   }
-  
+
   /**
    * Parse line items from markdown content
    * @param {string} markdown - Markdown content
@@ -156,16 +156,16 @@ class StripeHelper {
   parseLineItems(markdown) {
     const lineItems = [];
     const lines = markdown.split('\n');
-    
+
     // Simple parser looking for patterns like "- Service: $1,000"
     const pricePattern = /[-•]\s*(.+?):\s*\$?([\d,]+(?:\.\d{2})?)/;
-    
+
     lines.forEach(line => {
       const match = line.match(pricePattern);
       if (match) {
         const description = match[1].trim();
         const amount = parseInt(match[2].replace(/,/g, ''), 10) * 100; // Convert to cents
-        
+
         if (!isNaN(amount) && amount > 0) {
           lineItems.push({
             description,
@@ -176,7 +176,7 @@ class StripeHelper {
         }
       }
     });
-    
+
     // If no line items found, create a default one
     if (lineItems.length === 0) {
       lineItems.push({
@@ -186,10 +186,10 @@ class StripeHelper {
         quantity: 1
       });
     }
-    
+
     return lineItems;
   }
-  
+
   /**
    * Create a draft invoice with PDF attachment
    * @param {Object} invoiceData - Invoice information
@@ -197,7 +197,7 @@ class StripeHelper {
    */
   async createInvoice(invoiceData) {
     await this.initialize();
-    
+
     const {
       customer,
       lineItems,
@@ -207,7 +207,7 @@ class StripeHelper {
       pdfBuffer,
       pdfFilename
     } = invoiceData;
-    
+
     try {
       // Create the invoice
       const invoice = await this.stripe.invoices.create({
@@ -221,12 +221,12 @@ class StripeHelper {
           source: 'solopilot_doc_generator'
         }
       });
-      
+
       logger.info('Created Stripe invoice', {
         invoiceId: invoice.id,
         customerId: customer.id
       });
-      
+
       // Add line items
       for (const item of lineItems) {
         await this.stripe.invoiceItems.create({
@@ -238,7 +238,7 @@ class StripeHelper {
           quantity: item.quantity
         });
       }
-      
+
       // Add PDF URL reference if provided
       let pdfAttached = false;
       if (metadata.documentUrl) {
@@ -254,25 +254,25 @@ class StripeHelper {
             value: metadata.documentUrl
           }]
         });
-        
+
         pdfAttached = true;
-        
+
         logger.info('Added document URL to invoice', {
           invoiceId: invoice.id,
           documentUrl: metadata.documentUrl
         });
       }
-      
+
       // Fetch updated invoice with line items
       const updatedInvoice = await this.stripe.invoices.retrieve(invoice.id);
-      
+
       logger.info('Invoice created successfully', {
         invoiceId: updatedInvoice.id,
         total: updatedInvoice.total,
         status: updatedInvoice.status,
         pdfAttached
       });
-      
+
       return {
         invoice: updatedInvoice,
         pdfAttached
@@ -285,7 +285,7 @@ class StripeHelper {
       throw error;
     }
   }
-  
+
   /**
    * Finalize and send an invoice
    * @param {string} invoiceId - Stripe invoice ID
@@ -293,16 +293,16 @@ class StripeHelper {
    */
   async finalizeInvoice(invoiceId) {
     await this.initialize();
-    
+
     try {
       const invoice = await this.stripe.invoices.finalizeInvoice(invoiceId);
-      
+
       logger.info('Invoice finalized', {
         invoiceId: invoice.id,
         status: invoice.status,
         hostedInvoiceUrl: invoice.hosted_invoice_url
       });
-      
+
       return invoice;
     } catch (error) {
       logger.error('Failed to finalize invoice', {

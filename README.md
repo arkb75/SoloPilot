@@ -46,7 +46,7 @@ flowchart TD
         A[Apollo.io Outreach] --> B[Email Reply]
         B --> C[AWS SES]
     end
-    
+
     subgraph "Email Processing"
         C --> D[S3 Storage]
         D --> E[Lambda: Email Intake Agent]
@@ -55,7 +55,7 @@ flowchart TD
         G --> H[SES: Send Follow-ups]
         E --> I[SQS: Pipeline Handoff]
     end
-    
+
     subgraph "Development Pipeline"
         I --> J[Analyser Agent]
         J --> K[Planning Agent]
@@ -64,7 +64,7 @@ flowchart TD
         M --> |Pass| N[Auto Deploy]
         M --> |Fail| O[Block & Fix]
     end
-    
+
     subgraph "Delivery"
         N --> P[Vercel/Netlify]
         P --> Q[Custom Domain]
@@ -73,7 +73,42 @@ flowchart TD
     end
 ```
 
-## 📂 Module Overview
+## 📂 Project Structure
+
+```
+SoloPilot/
+├── src/                          # All source code
+│   ├── agents/                   # Agent implementations
+│   │   ├── analyser/            # Requirements analysis
+│   │   ├── dev/                 # Code generation with context engines
+│   │   ├── email_intake/        # Email processing & client communication
+│   │   ├── marketing/           # Portfolio & case study generation
+│   │   ├── planning/            # Project planning & milestones
+│   │   └── review/              # AI code review & quality gates
+│   ├── providers/               # AI provider implementations
+│   │   ├── base.py             # Abstract base provider
+│   │   ├── bedrock.py          # AWS Bedrock (Claude)
+│   │   ├── openai.py           # OpenAI GPT-4
+│   │   └── fake.py             # Testing provider
+│   ├── common/                  # Shared utilities
+│   │   └── bedrock_client.py   # Centralized Bedrock client
+│   └── utils/                   # General utilities
+│       ├── github_review.py     # GitHub PR integration
+│       ├── linter_integration.py # Code quality tools
+│       └── sonarcloud_integration.py # SonarCloud analysis
+├── frontend/                    # Frontend applications
+│   └── email-intake/           # Email intake dashboard (React)
+├── infrastructure/             # Deployment & IaC
+│   ├── terraform/             # Infrastructure as Code
+│   └── lambda/                # Lambda functions
+├── tests/                     # All test files
+├── examples/                  # Example inputs & demos
+├── scripts/                   # Development & CI scripts
+├── docs/                      # Documentation
+└── pyproject.toml            # Poetry dependency management
+```
+
+## 📋 Module Overview
 
 | Module | Status | Purpose |
 |--------|--------|---------|
@@ -95,14 +130,15 @@ flowchart TD
 - **Deployment**: Vercel/Netlify with GitHub Actions
 
 ### Development Stack
-- **Backend**: Python 3.13, FastAPI
+- **Backend**: Python 3.9+, FastAPI, Poetry
 - **Frontend**: Next.js 14, TypeScript, Tailwind CSS
 - **Database**: Supabase (PostgreSQL + Auth)
 - **Payments**: Stripe (planned)
 
 ### Quality & Monitoring
-- **CI/CD**: GitHub Actions with matrix testing
-- **Code Quality**: Ruff, Black, MyPy, SonarCloud
+- **CI/CD**: GitHub Actions with matrix testing (Python 3.9-3.12)
+- **Code Quality**: Pre-commit hooks, Black, isort, Ruff, MyPy, Bandit
+- **Static Analysis**: SonarCloud integration
 - **Monitoring**: CloudWatch, custom telemetry
 - **Cost Tracking**: Per-call LLM logging to `logs/llm_calls.log`
 
@@ -113,9 +149,12 @@ flowchart TD
 # AWS CLI configured with credentials
 aws configure
 
-# Python 3.11+ and Node.js 18+
-python --version
-node --version
+# Python 3.9+ and Node.js 18+
+python --version  # 3.9 or higher
+node --version    # 18 or higher
+
+# Install Poetry (dependency management)
+curl -sSL https://install.python-poetry.org | python3 -
 ```
 
 ### Local Development
@@ -124,18 +163,23 @@ node --version
 git clone <repo-url>
 cd SoloPilot
 
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
+# Install dependencies with Poetry
+poetry install
 
-# Install dependencies
-pip install -r requirements.txt
+# Install pre-commit hooks
+poetry run pre-commit install
 
 # Run the full pipeline
-make plan-dev
+poetry run make plan-dev
 
 # With Serena context engine
-CONTEXT_ENGINE=serena make dev
+CONTEXT_ENGINE=serena poetry run make dev
+
+# Run tests
+poetry run pytest
+
+# Run linting and formatting
+poetry run pre-commit run --all-files
 ```
 
 ### Email Intake Setup

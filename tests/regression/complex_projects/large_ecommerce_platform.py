@@ -1302,7 +1302,7 @@ export default class GeneratedClass {{
     constructor() {{
         // TODO: Implement constructor logic
     }}
-    
+
     public async execute(): Promise<void> {{
         // TODO: Implement execution logic
         console.log('Executing {file_path}');

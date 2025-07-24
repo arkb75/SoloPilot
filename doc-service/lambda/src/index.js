@@ -17,10 +17,10 @@ const React = require('react');
 const S3DocumentHelper = require('./s3-helpers');
 const { getStripeHelper } = require('./stripe-helpers');
 const { createLogger } = require('./logger');
-const { 
-  generatePDFFromTemplate, 
-  validateTemplateData, 
-  getTemplateMetadata 
+const {
+  generatePDFFromTemplate,
+  validateTemplateData,
+  getTemplateMetadata
 } = require('./template-handler');
 
 const { Document, Page, Text, View, StyleSheet, renderToBuffer } = ReactPDF;
@@ -72,14 +72,14 @@ const styles = StyleSheet.create({
 // Input validation
 const validateInput = (body) => {
   const errors = [];
-  
+
   // Check if this is a template-based request
   if (body.template) {
     // Template-based validation
     if (!body.clientId || typeof body.clientId !== 'string') {
       errors.push('clientId is required and must be a string');
     }
-    
+
     // Validate template exists
     const templateMeta = getTemplateMetadata(body.template);
     if (!templateMeta) {
@@ -96,36 +96,36 @@ const validateInput = (body) => {
     if (!body.clientId || typeof body.clientId !== 'string') {
       errors.push('clientId is required and must be a string');
     }
-    
+
     if (!body.docType || typeof body.docType !== 'string') {
       errors.push('docType is required and must be a string');
     }
-    
+
     if (!body.filename || typeof body.filename !== 'string') {
       errors.push('filename is required and must be a string');
     }
-    
+
     if (!body.markdown || typeof body.markdown !== 'string') {
       errors.push('markdown is required and must be a string');
     }
-    
+
     // Check markdown size (100KB limit)
     if (body.markdown && Buffer.byteLength(body.markdown, 'utf8') > 100 * 1024) {
       errors.push('markdown exceeds 100KB limit');
     }
   }
-  
+
   // Validate Stripe fields if createInvoice is true
   if (body.createInvoice) {
     if (!body.customerEmail || typeof body.customerEmail !== 'string') {
       errors.push('customerEmail is required when createInvoice is true');
     }
-    
+
     if (body.customerEmail && !body.customerEmail.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
       errors.push('customerEmail must be a valid email address');
     }
   }
-  
+
   return errors;
 };
 
@@ -180,10 +180,10 @@ const parseMarkdown = (markdown) => {
   if (!markdown || typeof markdown !== 'string') {
     throw new Error('Invalid markdown input: must be a non-empty string');
   }
-  
+
   const lines = markdown.split('\n');
   const elements = [];
-  
+
   lines.forEach((line, index) => {
     if (line.startsWith('# ')) {
       elements.push({
@@ -205,7 +205,7 @@ const parseMarkdown = (markdown) => {
       });
     }
   });
-  
+
   return elements;
 };
 
@@ -213,11 +213,11 @@ const parseMarkdown = (markdown) => {
 const generatePDF = async (markdown, errorId = null) => {
   let doc;
   let isError = false;
-  
+
   try {
     // Parse markdown
     const elements = parseMarkdown(markdown);
-    
+
     // Create PDF document
     const textElements = elements.map(element => {
       switch (element.type) {
@@ -231,7 +231,7 @@ const generatePDF = async (markdown, errorId = null) => {
           return null;
       }
     }).filter(el => el !== null);
-    
+
     doc = React.createElement(
       Document,
       {},
@@ -250,7 +250,7 @@ const generatePDF = async (markdown, errorId = null) => {
     doc = createErrorPDF(errorId);
     isError = true;
   }
-  
+
   const pdfBuffer = await renderToBuffer(doc);
   return { pdfBuffer, isError };
 };
@@ -259,19 +259,19 @@ const generatePDF = async (markdown, errorId = null) => {
 exports.handler = async (event, context) => {
   const startTime = Date.now();
   const requestId = context.requestId;
-  
+
   // Initialize logger with request context
   logger.setContext({ requestId });
-  
+
   try {
     // Parse request body
     const body = event.body ? JSON.parse(event.body) : event;
-    
+
     // Add clientId to logger context
     if (body.clientId) {
       logger.setContext({ clientId: body.clientId });
     }
-    
+
     logger.info('Processing document generation request', {
       clientId: body.clientId,
       docType: body.docType,
@@ -279,7 +279,7 @@ exports.handler = async (event, context) => {
       template: body.template,
       markdownLength: body.markdown ? body.markdown.length : 0
     });
-    
+
     // Validate input
     const validationErrors = validateInput(body);
     if (validationErrors.length > 0) {
@@ -293,10 +293,10 @@ exports.handler = async (event, context) => {
         })
       };
     }
-    
+
     // Determine filename and generate PDF
     let sanitizedFilename, pdfBuffer, isError = false;
-    
+
     if (body.template) {
       // Template-based generation
       const templateMeta = getTemplateMetadata(body.template);
@@ -304,14 +304,14 @@ exports.handler = async (event, context) => {
       if (!sanitizedFilename.endsWith('.pdf')) {
         sanitizedFilename += '.pdf';
       }
-      
+
       try {
         logger.info('Generating PDF from template', { template: body.template });
         pdfBuffer = await generatePDFFromTemplate(body.template, body.data || {});
       } catch (templateError) {
-        logger.error('Template generation error', { 
-          error: templateError.message, 
-          stack: templateError.stack 
+        logger.error('Template generation error', {
+          error: templateError.message,
+          stack: templateError.stack
         });
         // Fall back to error PDF
         const errorDoc = createErrorPDF(requestId);
@@ -324,13 +324,13 @@ exports.handler = async (event, context) => {
       if (!sanitizedFilename.endsWith('.pdf')) {
         sanitizedFilename += '.pdf';
       }
-      
+
       logger.info('Generating PDF from markdown');
       const result = await generatePDF(body.markdown, requestId);
       pdfBuffer = result.pdfBuffer;
       isError = result.isError;
     }
-    
+
     // Generate S3 key
     const docType = body.docType || (body.template ? 'template' : 'document');
     const s3Key = s3Helper.generateDocumentKey(
@@ -338,16 +338,16 @@ exports.handler = async (event, context) => {
       docType,
       sanitizedFilename
     );
-    
+
     logger.info('Generated PDF', { s3Key, size: pdfBuffer.length, isError });
-    
+
     // Upload to S3
-    logger.info('Uploading to S3', { 
+    logger.info('Uploading to S3', {
       bucketName: BUCKET_NAME,
       key: s3Key,
-      size: pdfBuffer.length 
+      size: pdfBuffer.length
     });
-    
+
     await s3Helper.uploadDocument(
       s3Key,
       pdfBuffer,
@@ -360,10 +360,10 @@ exports.handler = async (event, context) => {
         requestId: requestId
       })
     );
-    
+
     // Generate signed URL
     const signedUrl = await s3Helper.getSignedDownloadUrl(s3Key, 86400); // 24 hours
-    
+
     // Create Stripe invoice if requested
     let invoiceData = null;
     if (body.createInvoice && !isError) {
@@ -372,17 +372,17 @@ exports.handler = async (event, context) => {
           clientId: body.clientId,
           customerEmail: body.customerEmail
         });
-        
+
         // Create or get customer
         const customer = await stripeHelper.createOrGetCustomer({
           clientId: body.clientId,
           email: body.customerEmail,
           name: body.customerName || body.clientId
         });
-        
+
         // Parse line items from markdown
         const lineItems = stripeHelper.parseLineItems(body.markdown);
-        
+
         // Create invoice with document URL reference
         const { invoice, pdfAttached } = await stripeHelper.createInvoice({
           customer,
@@ -396,7 +396,7 @@ exports.handler = async (event, context) => {
           },
           daysUntilDue: body.daysUntilDue || 30
         });
-        
+
         invoiceData = {
           invoiceId: invoice.id,
           invoiceNumber: invoice.number,
@@ -410,7 +410,7 @@ exports.handler = async (event, context) => {
           customerEmail: customer.email,
           documentUrlAttached: pdfAttached
         };
-        
+
         logger.info('Stripe invoice created successfully', {
           invoiceId: invoice.id,
           total: invoice.total
@@ -421,7 +421,7 @@ exports.handler = async (event, context) => {
           type: stripeError.type,
           code: stripeError.code
         });
-        
+
         // Don't fail the entire request if Stripe fails
         invoiceData = {
           error: 'Failed to create invoice',
@@ -430,16 +430,16 @@ exports.handler = async (event, context) => {
         };
       }
     }
-    
+
     const processingTime = Date.now() - startTime;
-    
+
     logger.info('Document generation completed', {
       processingTimeMs: processingTime,
       pdfSize: pdfBuffer.length,
       isError,
       invoiceCreated: !!invoiceData && !invoiceData.error
     });
-    
+
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -458,16 +458,16 @@ exports.handler = async (event, context) => {
         }
       })
     };
-    
+
   } catch (error) {
     const processingTime = Date.now() - startTime;
-    
+
     logger.error('Document generation failed', {
       error: error.message,
       stack: error.stack,
       processingTimeMs: processingTime
     });
-    
+
     return {
       statusCode: 500,
       headers: { 'Content-Type': 'application/json' },

@@ -29,7 +29,7 @@ export const api = {
   listConversations: async (limit = 20, nextToken?: string) => {
     const params = new URLSearchParams({ limit: limit.toString() });
     if (nextToken) params.append('nextToken', nextToken);
-    
+
     const response = await client.get<{
       conversations: Conversation[];
       count: number;

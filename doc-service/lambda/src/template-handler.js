@@ -18,26 +18,26 @@ const GlassmorphicProposal = require('./templates/glassmorphic-proposal-fixed');
  */
 async function generatePDFFromTemplate(templateName, data) {
   let TemplateComponent;
-  
+
   // Select template based on name
   switch (templateName) {
     case 'glassmorphic-proposal':
       TemplateComponent = GlassmorphicProposal;
       break;
-    
+
     // Add more templates as needed
     // case 'simple-invoice':
     //   TemplateComponent = SimpleInvoice;
     //   break;
-    
+
     default:
       throw new Error(`Unknown template: ${templateName}`);
   }
-  
+
   // Render the template with data
   const element = React.createElement(TemplateComponent, { data });
   const pdfBuffer = await renderToBuffer(element);
-  
+
   return pdfBuffer;
 }
 
@@ -49,7 +49,7 @@ async function generatePDFFromTemplate(templateName, data) {
  */
 function validateTemplateData(templateName, data) {
   const errors = [];
-  
+
   switch (templateName) {
     case 'glassmorphic-proposal':
       // Validate required fields for proposal
@@ -61,11 +61,11 @@ function validateTemplateData(templateName, data) {
       }
       // Other fields have defaults in the template
       break;
-    
+
     default:
       errors.push(`Unknown template: ${templateName}`);
   }
-  
+
   return {
     valid: errors.length === 0,
     errors
@@ -88,7 +88,7 @@ function getTemplateMetadata(templateName) {
     }
     // Add more templates here
   };
-  
+
   return templates[templateName] || null;
 }
 

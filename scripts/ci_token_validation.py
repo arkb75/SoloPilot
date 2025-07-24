@@ -94,7 +94,7 @@ class AuthenticationService:
     Comprehensive authentication service supporting multiple auth methods.
     Handles OAuth2, JWT tokens, session management, and security policies.
     """
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = logging.getLogger(__name__)
@@ -103,16 +103,16 @@ class AuthenticationService:
         self.security_policy = SecurityPolicy(config.get('security_config'))
         self.user_repository = UserRepository(config.get('database_url'))
         self.failed_attempts = {}
-    
+
     def authenticate_user(self, username: str, password: str, ip_address: str = None) -> Optional[Dict[str, Any]]:
         """
         Authenticate user with username and password.
-        
+
         Args:
             username: User's username
-            password: User's password  
+            password: User's password
             ip_address: Client IP address for security tracking
-            
+
         Returns:
             Authentication result with user info and session token
         """
@@ -121,22 +121,22 @@ class AuthenticationService:
             if not self._check_rate_limit(username, ip_address):
                 self.logger.warning(f"Rate limit exceeded for user: {username}")
                 return None
-            
+
             # Validate credentials
             user = self._validate_credentials(username, password)
             if not user:
                 self._record_failed_attempt(username, ip_address)
                 return None
-            
+
             # Check security policies
             if not self.security_policy.validate_user_access(user, ip_address):
                 self.logger.warning(f"Security policy violation for user: {username}")
                 return None
-            
+
             # Create session
             session = self._create_user_session(user, ip_address)
             self.logger.info(f"Successful authentication for user: {username}")
-            
+
             return {
                 'user': user,
                 'session': session,
@@ -144,20 +144,20 @@ class AuthenticationService:
                 'expires_at': session.expires_at,
                 'permissions': self._get_user_permissions(user)
             }
-            
+
         except Exception as e:
             self.logger.error(f"Authentication error for {username}: {e}")
             return None
-    
+
     def oauth_authenticate(self, oauth_token: str, provider: str, ip_address: str = None) -> Optional[Dict[str, Any]]:
         """
         Authenticate user using OAuth2 token.
-        
+
         Args:
             oauth_token: OAuth2 access token
             provider: OAuth provider name (google, github, etc.)
             ip_address: Client IP address
-            
+
         Returns:
             Authentication result with user info and session
         """
@@ -167,19 +167,19 @@ class AuthenticationService:
             if not user_info:
                 self.logger.warning(f"Invalid OAuth token for provider: {provider}")
                 return None
-            
+
             # Get or create user from OAuth info
             user = self._get_or_create_oauth_user(user_info, provider)
-            
+
             # Security policy check
             if not self.security_policy.validate_user_access(user, ip_address):
                 self.logger.warning(f"OAuth security policy violation for user: {user.username}")
                 return None
-            
+
             # Create session
             session = self._create_user_session(user, ip_address)
             self.logger.info(f"Successful OAuth authentication for user: {user.username}")
-            
+
             return {
                 'user': user,
                 'session': session,
@@ -187,14 +187,14 @@ class AuthenticationService:
                 'oauth_info': user_info,
                 'provider': provider
             }
-            
+
         except Exception as e:
             self.logger.error(f"OAuth authentication error: {e}")
             return None
 
 class OAuthClient:
     """OAuth2 client for external authentication providers."""
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.providers = {
@@ -202,54 +202,54 @@ class OAuthClient:
             'github': GitHubOAuthProvider(config.get('github')),
             'microsoft': MicrosoftOAuthProvider(config.get('microsoft'))
         }
-    
+
     def verify_token(self, token: str, provider: str) -> Optional[Dict[str, Any]]:
         """Verify OAuth token with specific provider."""
         if provider not in self.providers:
             raise ValueError(f"Unsupported OAuth provider: {provider}")
-        
+
         return self.providers[provider].verify_token(token)
 
 class SecurityPolicy:
     """Security policy enforcement for authentication."""
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.max_failed_attempts = config.get('max_failed_attempts', 5)
         self.lockout_duration = config.get('lockout_duration', 900)  # 15 minutes
-        
+
     def validate_user_access(self, user: User, ip_address: str = None) -> bool:
         """Validate user meets security access requirements."""
         # Check if user account is locked
         if self._is_account_locked(user.username):
             return False
-        
+
         # Check IP-based restrictions
         if ip_address and not self._is_ip_allowed(ip_address):
             return False
-        
+
         # Check user roles and permissions
         if not self._validate_user_roles(user):
             return False
-        
+
         return True
 
 class SessionStore:
     """Session storage and management."""
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.sessions = {}  # In-memory store (use Redis in production)
-    
+
     def save(self, session: 'Session') -> bool:
         """Save session to store."""
         self.sessions[session.session_id] = session
         return True
-    
+
     def get(self, session_id: str) -> Optional['Session']:
         """Get session by ID."""
         return self.sessions.get(session_id)
-    
+
     def delete(self, session_id: str) -> bool:
         """Delete session."""
         if session_id in self.sessions:
@@ -277,7 +277,7 @@ def login():
         data.get('password'),
         request.remote_addr
     )
-    
+
     if result:
         return jsonify(result)
     else:
@@ -291,7 +291,7 @@ def oauth_login():
         data.get('provider'),
         request.remote_addr
     )
-    
+
     if result:
         return jsonify(result)
     else:

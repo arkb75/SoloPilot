@@ -240,7 +240,7 @@ class ProjectSetup {
     constructor() {
         // TODO: Initialize project configuration
     }
-    
+
     async setupDatabase() {
         // TODO: Configure PostgreSQL connection
     }
@@ -252,7 +252,7 @@ describe('ProjectSetup', () => {
         const setup = new ProjectSetup();
         expect(setup).toBeDefined();
     });
-    
+
     test('should setup database', async () => {
         const setup = new ProjectSetup();
         // TODO: Test database setup

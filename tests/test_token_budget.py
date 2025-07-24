@@ -222,11 +222,11 @@ class TestTokenBudgetIntegration(unittest.TestCase):
             """
 class AuthManager:
     '''Authentication manager'''
-    
+
     def authenticate(self, username, password):
         '''Authenticate user'''
         return self.validate_credentials(username, password)
-    
+
     def validate_credentials(self, username, password):
         '''Validate credentials'''
         return username == "test"
@@ -390,7 +390,7 @@ class TestBalancedModeOptimization(unittest.TestCase):
 class UserAPI:
     def get_user(self, user_id):
         return {"id": user_id, "name": "Test User"}
-    
+
     def create_user(self, user_data):
         return {"id": 123, **user_data}
 """
@@ -408,17 +408,17 @@ from datetime import datetime
 class AuthService:
     def __init__(self):
         self.sessions = {}
-    
+
     def login(self, username, password):
         if self.validate_credentials(username, password):
             session_id = self.create_session(username)
             return {"session_id": session_id, "username": username}
         return None
-    
+
     def validate_credentials(self, username, password):
         # Simple validation
         return len(username) > 0 and len(password) > 6
-    
+
     def create_session(self, username):
         session_id = hashlib.md5(f"{username}{datetime.now()}".encode()).hexdigest()
         self.sessions[session_id] = {

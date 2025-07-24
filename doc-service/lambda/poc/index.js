@@ -82,10 +82,10 @@ const parseMarkdown = (markdown) => {
   if (!markdown || typeof markdown !== 'string') {
     throw new Error('Invalid markdown input: must be a non-empty string');
   }
-  
+
   const lines = markdown.split('\n');
   const elements = [];
-  
+
   lines.forEach((line, index) => {
     if (line.startsWith('# ')) {
       elements.push({
@@ -107,7 +107,7 @@ const parseMarkdown = (markdown) => {
       });
     }
   });
-  
+
   return elements;
 };
 
@@ -115,21 +115,21 @@ const parseMarkdown = (markdown) => {
 exports.handler = async (event) => {
   const startTime = Date.now();
   const memoryStart = process.memoryUsage().heapUsed;
-  
+
   try {
     // Extract markdown from event body
     const body = event.body ? JSON.parse(event.body) : event;
     const markdown = body.markdown || '# Default Document\n\nNo content provided.';
-    
+
     console.log('Processing markdown:', typeof markdown === 'string' ? markdown.substring(0, 100) + '...' : 'Invalid input type');
-    
+
     let doc;
     let isError = false;
-    
+
     try {
       // Parse markdown
       const elements = parseMarkdown(markdown);
-      
+
       // Create PDF document using React.createElement
       const textElements = elements.map(element => {
         switch (element.type) {
@@ -143,7 +143,7 @@ exports.handler = async (event) => {
             return null;
         }
       }).filter(el => el !== null);
-      
+
       doc = React.createElement(
         Document,
         {},
@@ -160,23 +160,23 @@ exports.handler = async (event) => {
     } catch (parseError) {
       // Log the actual error for debugging
       console.error('Markdown parsing error:', parseError.message, parseError.stack);
-      
+
       // Generate fallback error PDF
       doc = createErrorPDF();
       isError = true;
     }
-    
+
     // Generate PDF buffer
     const pdfBuffer = await renderToBuffer(doc);
-    
+
     // Calculate metrics
     const processingTime = Date.now() - startTime;
     const memoryUsed = (process.memoryUsage().heapUsed - memoryStart) / 1024 / 1024;
-    
+
     console.log(`PDF generated: ${pdfBuffer.length} bytes`);
     console.log(`Processing time: ${processingTime}ms`);
     console.log(`Memory used: ${memoryUsed.toFixed(2)}MB`);
-    
+
     return {
       statusCode: 200,
       headers: {
@@ -196,7 +196,7 @@ exports.handler = async (event) => {
     };
   } catch (error) {
     console.error('Error generating PDF:', error);
-    
+
     return {
       statusCode: 500,
       headers: {

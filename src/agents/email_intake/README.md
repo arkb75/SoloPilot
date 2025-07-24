@@ -60,7 +60,7 @@ VITE_API_KEY=your-api-key
    ./deploy.sh
    ```
 
-2. **Setup API Gateway**: 
+2. **Setup API Gateway**:
    - Use `api/api_gateway_config.yaml` as reference
    - Configure CORS and API key authentication
 

@@ -15,6 +15,11 @@ def validate_imports(root_dir):
     # Add project root to path
     sys.path.insert(0, root_dir)
 
+    # Also add src to the path for direct imports
+    src_path = os.path.join(root_dir, "src")
+    if os.path.exists(src_path):
+        sys.path.insert(0, src_path)
+
     for root, dirs, files in os.walk(root_dir):
         # Skip virtual environments and caches
         dirs[:] = [

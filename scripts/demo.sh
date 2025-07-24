@@ -128,7 +128,7 @@ source .venv/bin/activate
 # Check if dependencies are installed in venv
 if ! python -c "import src.agents.analyser" 2>/dev/null; then
     echo "📦 Installing Python dependencies in virtual environment..."
-    
+
     # Check if tesseract is installed (required for OCR)
     if ! command -v tesseract &> /dev/null; then
         echo "⚠️  Tesseract OCR not found. Installing via Homebrew..."
@@ -141,11 +141,11 @@ if ! python -c "import src.agents.analyser" 2>/dev/null; then
             exit 1
         fi
     fi
-    
+
     # Install Python packages in venv
     pip install --upgrade pip
     pip install -r requirements.txt
-    
+
     # If FAISS installation failed on macOS, suggest alternatives
     if ! python -c "import faiss" 2>/dev/null && ! python -c "import sklearn" 2>/dev/null; then
         echo "⚠️  Vector similarity search library not available."

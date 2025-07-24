@@ -4,16 +4,16 @@ Full-featured Lambda function that converts Markdown to PDF, stores in S3, and o
 
 ## Features
 
-✅ **Markdown to PDF conversion** using React-PDF  
-✅ **S3 integration** with automatic upload and versioning  
-✅ **Signed URL generation** (24-hour expiry)  
-✅ **Stripe invoice creation** with PDF attachments  
-✅ **Customer management** (create or reuse existing)  
-✅ **Line item parsing** from markdown content  
-✅ **Input validation** with 100KB markdown limit  
-✅ **Filename sanitization** to prevent path traversal  
-✅ **CloudWatch logging** with clientId context  
-✅ **Error handling** with fallback PDF generation  
+✅ **Markdown to PDF conversion** using React-PDF
+✅ **S3 integration** with automatic upload and versioning
+✅ **Signed URL generation** (24-hour expiry)
+✅ **Stripe invoice creation** with PDF attachments
+✅ **Customer management** (create or reuse existing)
+✅ **Line item parsing** from markdown content
+✅ **Input validation** with 100KB markdown limit
+✅ **Filename sanitization** to prevent path traversal
+✅ **CloudWatch logging** with clientId context
+✅ **Error handling** with fallback PDF generation
 ✅ **Unit tests** with mocked AWS SDK and Stripe
 
 ## API
@@ -26,7 +26,7 @@ Full-featured Lambda function that converts Markdown to PDF, stores in S3, and o
   "docType": "invoice",
   "filename": "invoice-001.pdf",
   "markdown": "# Invoice\n\nContent here...",
-  
+
   // Optional Stripe fields
   "createInvoice": true,
   "customerEmail": "customer@example.com",

@@ -14,7 +14,7 @@ The Progressive Context system is a smart context management solution that addre
 - Context overflow problems
 - Poor cost efficiency
 
-**Requirements**: 
+**Requirements**:
 - Maintain quality for complex tasks requiring deep code understanding
 - Drastically reduce tokens for simple tasks
 - Automatic escalation based on task complexity
@@ -39,14 +39,14 @@ class ProgressiveContextBuilder:
     def __init__(self, max_tokens: int = 1800):
         self.max_tokens = max_tokens
         self.tier = ContextTier.STUB
-        
+
     def should_escalate(self, prompt: str, current_context: str = "") -> bool:
         """Determine if we need more context based on request complexity."""
-        
-    def add_context(self, content: str, tier: ContextTier, symbol_name: str, 
+
+    def add_context(self, content: str, tier: ContextTier, symbol_name: str,
                    context_type: str) -> bool:
         """Add context content with tier management."""
-        
+
     def build_final_context(self, prompt: str, milestone_name: str) -> str:
         """Build structured final context."""
 ```
@@ -57,7 +57,7 @@ class SymbolSelector:
     @staticmethod
     def identify_primary_targets(prompt: str, symbols: List[str]) -> List[str]:
         """Identify symbols that are primary targets of the request."""
-        
+
     @staticmethod
     def prioritize_symbols_by_relevance(prompt: str, symbols: List[str]) -> List[str]:
         """Prioritize symbols by relevance to the prompt."""
@@ -67,7 +67,7 @@ class SymbolSelector:
 The engine now uses progressive context building:
 - Always starts with T0 stubs
 - Automatic escalation detection
-- Smart symbol prioritization  
+- Smart symbol prioritization
 - Hard token limits enforcement
 
 ## Escalation Triggers
@@ -77,7 +77,7 @@ The engine now uses progressive context building:
 # Security/Authentication
 "oauth.*implement", "implement.*oauth", "security.*vuln"
 
-# Performance/Concurrency  
+# Performance/Concurrency
 "race condition", "deadlock", "performance.*bottleneck"
 
 # Architecture
@@ -106,28 +106,28 @@ The engine now uses progressive context building:
 def build_context(self, milestone_path: Path, prompt: str = "") -> Tuple[str, Dict[str, Any]]:
     # Initialize progressive builder
     builder = ProgressiveContextBuilder(max_tokens=1800)
-    
+
     # Step 1: Extract and prioritize symbols
     relevant_symbols = self._extract_relevant_symbols(milestone_path, prompt)
     prioritized_symbols = SymbolSelector.prioritize_symbols_by_relevance(prompt, relevant_symbols)
-    
+
     # Step 2: Always start with stubs (T0)
     for symbol in prioritized_symbols[:12]:
         stub_context = self._get_symbol_stub(symbol)
         if stub_context:
             builder.add_context(stub_context, ContextTier.STUB, symbol, "stub")
-    
+
     # Step 3: Check if we need to escalate
     if builder.should_escalate(prompt, builder.build_final_context()):
         # T1: Add full body of primary targets
         primary_symbols = SymbolSelector.identify_primary_targets(prompt, prioritized_symbols)
-        
+
         if builder.escalate_tier(ContextTier.LOCAL_BODY, "complex_task_detected"):
             for symbol in primary_symbols[:3]:
                 full_body = self._get_symbol_full_body(symbol)
                 if full_body:
                     builder.add_context(full_body, ContextTier.LOCAL_BODY, symbol, "full_body")
-        
+
         # T2: Add dependencies if still needed
         if builder.should_escalate(prompt, current_context):
             if builder.escalate_tier(ContextTier.DEPENDENCIES, "dependencies_needed"):
@@ -136,7 +136,7 @@ def build_context(self, milestone_path: Path, prompt: str = "") -> Tuple[str, Di
                     dep_body = self._get_symbol_full_body(dep)
                     if dep_body:
                         builder.add_context(dep_body, ContextTier.DEPENDENCIES, dep, "dependency")
-    
+
     return builder.build_final_context(prompt, milestone_path.name), builder.get_metadata()
 ```
 
@@ -145,13 +145,13 @@ def build_context(self, milestone_path: Path, prompt: str = "") -> Tuple[str, Di
 ```python
 def _get_symbol_stub(self, symbol: str) -> Optional[str]:
     """Get minimal stub context (signature + docstring + key lines)."""
-    
+
 def _get_symbol_full_body(self, symbol: str) -> Optional[str]:
     """Get complete symbol implementation."""
-    
+
 def _get_symbol_dependencies(self, symbol: str) -> List[str]:
     """Get direct dependencies for a symbol."""
-    
+
 def _get_full_file_context(self, symbol: str) -> Optional[str]:
     """Get complete file context where symbol is defined."""
 ```
@@ -186,13 +186,13 @@ progressive_context:
   default_tier: "STUB"
   auto_escalate: true
   enable_on_demand: true
-  
+
   tier_budgets:
     STUB: 400
-    LOCAL_BODY: 800  
+    LOCAL_BODY: 800
     DEPENDENCIES: 1200
     FULL: 1800
-    
+
   symbol_selection:
     max_symbols_per_tier: 12
     max_primary_targets: 3
@@ -219,11 +219,11 @@ SERENA_ENABLE_ON_DEMAND=true
 # Tier: STUB
 ```
 
-### Complex Refactor (T1 - LOCAL_BODY)  
+### Complex Refactor (T1 - LOCAL_BODY)
 ```python
 # Input: "Refactor authentication to use OAuth2"
 # Expected: Full implementation of auth symbols
-# Token usage: ~800 tokens  
+# Token usage: ~800 tokens
 # Tier: LOCAL_BODY
 ```
 
@@ -251,7 +251,7 @@ The AI can request additional context during generation:
 def fetch_more_context(self, symbol: str, tier: str = "body") -> str:
     """
     Tool for AI to request additional context on demand.
-    
+
     Available tiers: 'stub', 'body', 'dependencies', 'file'
     """
 ```
@@ -275,7 +275,7 @@ python scripts/demo_progressive_context.py
 
 ### Test Scenarios
 - **Simple Tasks**: ≤500 tokens, STUB tier
-- **Complex Tasks**: ≤1500 tokens, LOCAL_BODY/DEPENDENCIES tier  
+- **Complex Tasks**: ≤1500 tokens, LOCAL_BODY/DEPENDENCIES tier
 - **Token Limits**: Never exceed 1800 tokens (hard limit)
 - **Quality**: Complex tasks maintain generation quality
 
@@ -286,7 +286,7 @@ python scripts/demo_progressive_context.py
 - **67% reduction** in overall token usage
 - **Smart escalation** only when needed
 
-### 💰 **Cost Reduction**  
+### 💰 **Cost Reduction**
 - Simple tasks use minimal tokens (80%+ reduction)
 - Complex tasks optimized but quality preserved
 - Automatic budget management
