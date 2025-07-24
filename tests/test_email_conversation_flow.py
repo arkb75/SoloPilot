@@ -5,17 +5,17 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-from src.agents.email_intake.conversation_state_v2 import ConversationStateManagerV2
-from src.agents.email_intake.lambda_function_v2 import lambda_handler
+from src.agents.email_intake.conversation_state import ConversationStateManager
+from src.agents.email_intake.lambda_function import lambda_handler
 
 
 class TestMultiEmailConversationFlow:
     """End-to-end tests for multi-turn email conversations."""
 
-    @patch("src.agents.email_intake.lambda_function_v2.s3_client")
-    @patch("src.agents.email_intake.lambda_function_v2.ses_client")
-    @patch("src.agents.email_intake.lambda_function_v2.sqs_client")
-    @patch("src.agents.email_intake.lambda_function_v2.boto3.resource")
+    @patch("src.agents.email_intake.lambda_function.s3_client")
+    @patch("src.agents.email_intake.lambda_function.ses_client")
+    @patch("src.agents.email_intake.lambda_function.sqs_client")
+    @patch("src.agents.email_intake.lambda_function.boto3.resource")
     def test_three_email_conversation_flow(self, mock_dynamo, mock_sqs, mock_ses, mock_s3):
         """Test complete 3-email conversation: initial → follow-up → completion."""
         # Setup environment
@@ -336,7 +336,7 @@ Answers to questions...""",
         mock_table = MagicMock()
         mock_boto.return_value.Table.return_value = mock_table
 
-        manager = ConversationStateManagerV2()
+        manager = ConversationStateManager()
 
         # Create conversation that should expire
         old_timestamp = datetime.now(timezone.utc) - timedelta(days=31)
