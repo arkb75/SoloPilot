@@ -19,8 +19,8 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import after path modification
-from agents.dev.context7_bridge import Context7Bridge  # noqa: E402
-from agents.dev.dev_agent import DevAgent  # noqa: E402
+from src.agents.dev.context7_bridge import Context7Bridge  # noqa: E402
+from src.agents.dev.dev_agent import DevAgent  # noqa: E402
 
 
 @pytest.fixture

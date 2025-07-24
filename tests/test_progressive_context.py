@@ -11,12 +11,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agents.dev.context_engine.progressive_context import (
+from src.agents.dev.context_engine.progressive_context import (
     ContextTier,
     ProgressiveContextBuilder,
     SymbolSelector,
 )
-from agents.dev.context_engine.serena_engine import SerenaContextEngine
+from src.agents.dev.context_engine.serena_engine import SerenaContextEngine
 
 
 class TestProgressiveContextBuilder(unittest.TestCase):

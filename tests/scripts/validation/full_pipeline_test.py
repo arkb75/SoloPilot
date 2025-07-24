@@ -18,7 +18,7 @@ from typing import Any, Dict, List
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from agents.dev.dev_agent import DevAgent
+from src.agents.dev.dev_agent import DevAgent
 from tests.regression.complex_projects.large_ecommerce_platform import (
     create_large_ecommerce_project,
 )

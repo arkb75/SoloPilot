@@ -10,7 +10,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from agents.dev.context_engine.serena_engine import SerenaContextEngine
+from src.agents.dev.context_engine.serena_engine import SerenaContextEngine
 
 
 def test_real_serena():

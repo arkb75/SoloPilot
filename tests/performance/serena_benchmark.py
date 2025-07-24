@@ -14,8 +14,8 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from agents.dev.context_engine import LegacyContextEngine
-from agents.dev.context_engine.serena_engine import SerenaContextEngine
+from src.agents.dev.context_engine import LegacyContextEngine
+from src.agents.dev.context_engine.serena_engine import SerenaContextEngine
 
 
 class SerenaPerformanceBenchmark(unittest.TestCase):

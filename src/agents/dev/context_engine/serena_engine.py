@@ -19,8 +19,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from agents.dev.context_engine import BaseContextEngine
-from agents.dev.context_engine.progressive_context import (
+from src.agents.dev.context_engine import BaseContextEngine
+from src.agents.dev.context_engine.progressive_context import (
     ContextTier,
     ProgressiveContextBuilder,
     SymbolSelector,
@@ -1051,7 +1051,7 @@ class SerenaContextEngine(BaseContextEngine):
     def _fallback_to_legacy(self, milestone_path: Path, prompt: str) -> Tuple[str, Dict[str, Any]]:
         """Fallback to legacy context engine when Serena fails, but still enforce token budgets."""
         try:
-            from agents.dev.context_engine import LegacyContextEngine
+            from src.agents.dev.context_engine import LegacyContextEngine
 
             legacy_engine = LegacyContextEngine()
             context, metadata = legacy_engine.build_context(milestone_path, prompt)

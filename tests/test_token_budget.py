@@ -12,8 +12,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agents.dev.context_engine.progressive_context import ContextTier, ProgressiveContextBuilder
-from agents.dev.context_engine.serena_engine import SerenaContextEngine
+from src.agents.dev.context_engine.progressive_context import ContextTier, ProgressiveContextBuilder
+from src.agents.dev.context_engine.serena_engine import SerenaContextEngine
 
 
 class TestTokenBudgetEnforcement(unittest.TestCase):

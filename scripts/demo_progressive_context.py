@@ -14,7 +14,7 @@ from pathlib import Path
 # Add project root to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agents.dev.context_engine.progressive_context import (
+from src.agents.dev.context_engine.progressive_context import (
     ContextTier,
     ProgressiveContextBuilder,
     SymbolSelector,

@@ -17,7 +17,7 @@ from typing import Any, Dict, List
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from agents.dev.dev_agent import DevAgent
+from src.agents.dev.dev_agent import DevAgent
 
 
 class PerformanceBenchmark:

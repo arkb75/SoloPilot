@@ -545,7 +545,7 @@ Please generate high-quality code that:
         """
         # Import and use the original context_packer as fallback
         try:
-            from agents.dev.context_packer import build_context
+            from src.agents.dev.context_packer import build_context
 
             context = build_context(milestone_path)
 

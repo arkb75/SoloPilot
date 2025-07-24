@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agents.dev.context_engine.serena_engine import SerenaContextEngine
+from src.agents.dev.context_engine.serena_engine import SerenaContextEngine
 
 
 class TestSerenaContextEngine(unittest.TestCase):
@@ -258,7 +258,7 @@ class TestSerenaIntegration(unittest.TestCase):
 
     def test_context_engine_factory_serena_support(self):
         """Test that context engine factory supports Serena."""
-        from agents.dev.context_engine import get_context_engine
+        from src.agents.dev.context_engine import get_context_engine
 
         with patch.dict("os.environ", {"CONTEXT_ENGINE": "serena", "NO_NETWORK": ""}):
             with patch("agents.dev.context_engine.serena_engine.subprocess.run") as mock_run:
@@ -276,7 +276,7 @@ class TestSerenaIntegration(unittest.TestCase):
 
     def test_serena_fallback_in_factory(self):
         """Test Serena fallback to legacy in factory when unavailable."""
-        from agents.dev.context_engine import LegacyContextEngine, get_context_engine
+        from src.agents.dev.context_engine import LegacyContextEngine, get_context_engine
 
         with patch.dict("os.environ", {"CONTEXT_ENGINE": "serena"}):
             with patch(

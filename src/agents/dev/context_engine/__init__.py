@@ -45,7 +45,7 @@ class LegacyContextEngine(BaseContextEngine):
 
     def build_context(self, milestone_path: Path, prompt: str = "") -> Tuple[str, Dict[str, Any]]:
         """Build context using legacy context_packer."""
-        from agents.dev.context_packer import build_context
+        from src.agents.dev.context_packer import build_context
 
         context = build_context(milestone_path)
         # Add prompt if provided
@@ -84,7 +84,7 @@ class LangChainChromaEngine(BaseContextEngine):
         """Lazy-load the experimental context engine."""
         if self._engine is None:
             try:
-                from agents.dev.context_engine.experimental import ContextEngine
+                from src.agents.dev.context_engine.experimental import ContextEngine
 
                 self._engine = ContextEngine(persist_directory=self._persist_directory)
             except ImportError as e:
@@ -140,7 +140,7 @@ def get_context_engine(engine_type: str = None, **kwargs) -> BaseContextEngine:
     # Create appropriate engine
     if engine_type == "serena":
         try:
-            from agents.dev.context_engine.serena_engine import SerenaContextEngine
+            from src.agents.dev.context_engine.serena_engine import SerenaContextEngine
 
             return SerenaContextEngine(**kwargs)
         except Exception as e:

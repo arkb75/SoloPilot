@@ -10,7 +10,7 @@ This script demonstrates:
 
 import os
 
-from agents.dev.dev_agent import DevAgent
+from src.agents.dev.dev_agent import DevAgent
 from src.utils.linter_integration import LinterManager
 from src.utils.sonarcloud_integration import SonarCloudClient
 
