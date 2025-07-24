@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from agents.ai_providers.base import (
+from src.providers.base import (
     BaseProvider,
     ProviderError,
     ProviderTimeoutError,
@@ -22,7 +22,7 @@ from src.common.bedrock_client import (
     create_bedrock_client,
     get_standardized_error_message,
 )
-from agents.dev.context_packer import build_context
+from src.agents.dev.context_packer import build_context
 
 
 class BedrockProvider(BaseProvider):

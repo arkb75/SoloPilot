@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from agents.ai_providers.base import BaseProvider, log_call
+from src.providers.base import BaseProvider, log_call
 
 
 class FakeProvider(BaseProvider):

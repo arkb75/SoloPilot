@@ -8,8 +8,8 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
-    from agents.ai_providers import get_provider
-    from agents.ai_providers.base import log_call
+    from src.providers import get_provider
+    from src.providers.base import log_call
 
     USE_AI_PROVIDER = True
 except ImportError:

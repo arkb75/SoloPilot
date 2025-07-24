@@ -17,9 +17,9 @@ import pytest
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from agents.ai_providers.base import ProviderError, ProviderUnavailableError
-from agents.ai_providers.factory import ProviderFactory, create_ai_provider
-from agents.ai_providers.fake import FakeProvider
+from src.providers.base import ProviderError, ProviderUnavailableError
+from src.providers.factory import ProviderFactory, create_ai_provider
+from src.providers.fake import FakeProvider
 
 
 class TestFakeProvider:

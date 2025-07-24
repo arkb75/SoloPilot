@@ -15,8 +15,8 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from agents.ai_providers import get_provider
-from agents.ai_providers.base import BaseProvider, ProviderError
+from src.providers import get_provider
+from src.providers.base import BaseProvider, ProviderError
 from src.utils.sonarcloud_integration import SonarCloudClient
 
 

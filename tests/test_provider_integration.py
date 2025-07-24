@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Quick test of provider integration"""
 
-from agents.ai_providers import get_provider
-from agents.dev.dev_agent import DevAgent
+from src.providers import get_provider
+from src.agents.dev.dev_agent import DevAgent
 
 print("=== Testing Provider Integration ===")
 

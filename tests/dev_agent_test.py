@@ -133,7 +133,7 @@ class TestDevAgent:
 
     def test_init(self, temp_config_file, mock_provider):
         """Test DevAgent initialization."""
-        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+        with patch("src.providers.get_provider") as mock_get_provider:
             mock_get_provider.return_value = mock_provider
             agent = DevAgent(config_path=temp_config_file)
 
@@ -143,7 +143,7 @@ class TestDevAgent:
 
     def test_load_config(self, temp_config_file, mock_provider):
         """Test configuration loading."""
-        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+        with patch("src.providers.get_provider") as mock_get_provider:
             mock_get_provider.return_value = mock_provider
             agent = DevAgent(config_path=temp_config_file)
 
@@ -153,7 +153,7 @@ class TestDevAgent:
 
     def test_infer_language(self, temp_config_file, mock_provider):
         """Test language inference from tech stack."""
-        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+        with patch("src.providers.get_provider") as mock_get_provider:
             mock_get_provider.return_value = mock_provider
             agent = DevAgent(config_path=temp_config_file)
 
@@ -173,7 +173,7 @@ class TestDevAgent:
 
     def test_get_file_extension(self, temp_config_file, mock_provider):
         """Test file extension mapping."""
-        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+        with patch("src.providers.get_provider") as mock_get_provider:
             mock_get_provider.return_value = mock_provider
             agent = DevAgent(config_path=temp_config_file)
 
@@ -186,7 +186,7 @@ class TestDevAgent:
 
     def test_generate_stub_code(self, temp_config_file, mock_provider):
         """Test stub code generation."""
-        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+        with patch("src.providers.get_provider") as mock_get_provider:
             mock_get_provider.return_value = mock_provider
             agent = DevAgent(config_path=temp_config_file)
 
@@ -199,7 +199,7 @@ class TestDevAgent:
 
     def test_parse_llm_response(self, temp_config_file, mock_provider):
         """Test LLM response parsing."""
-        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+        with patch("src.providers.get_provider") as mock_get_provider:
             mock_get_provider.return_value = mock_provider
             agent = DevAgent(config_path=temp_config_file)
 
@@ -344,7 +344,7 @@ describe('ProjectSetup', () => {
 
                 # Should raise exception, not return stub code
                 # BedrockError is wrapped in ProviderError by the provider layer
-                from agents.ai_providers.base import ProviderError
+                from src.providers.base import ProviderError
 
                 with pytest.raises(ProviderError, match="Bedrock access denied"):
                     agent._call_llm("Test prompt")
@@ -353,7 +353,7 @@ describe('ProjectSetup', () => {
         """Test credential validation when neither env vars nor profile exist."""
         with patch.dict(os.environ, {}, clear=True):  # Clear all env vars
             with patch("os.path.exists", return_value=False):  # No AWS profile
-                from agents.ai_providers.base import ProviderUnavailableError
+                from src.providers.base import ProviderUnavailableError
 
                 # The DevAgent will catch credential errors and wrap them in ProviderUnavailableError
                 with pytest.raises(
@@ -675,7 +675,7 @@ llm:
             with patch.dict(
                 os.environ, {"NO_NETWORK": "", "AI_PROVIDER": "bedrock"}, clear=False
             ), patch(
-                "agents.ai_providers.bedrock.BedrockProvider.generate_code"
+                "src.providers.bedrock.BedrockProvider.generate_code"
             ) as mock_generate_code:
                 # Mock the generate_code method to return test response
                 mock_generate_code.return_value = "console.log('test response');"
@@ -716,7 +716,7 @@ llm:
             with patch.dict(
                 os.environ, {"NO_NETWORK": "", "AI_PROVIDER": "bedrock"}, clear=False
             ), patch(
-                "agents.ai_providers.bedrock.BedrockProvider.generate_code"
+                "src.providers.bedrock.BedrockProvider.generate_code"
             ) as mock_generate_code:
                 # Mock the generate_code method to return test response
                 mock_generate_code.return_value = "test response"

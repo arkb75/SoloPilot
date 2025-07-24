@@ -9,9 +9,9 @@ Supports switching between providers via AI_PROVIDER environment variable.
 import os
 from typing import Any, Dict, Optional
 
-from agents.ai_providers.base import BaseProvider, ProviderError, ProviderUnavailableError
-from agents.ai_providers.bedrock import BedrockProvider
-from agents.ai_providers.fake import FakeProvider
+from src.providers.base import BaseProvider, ProviderError, ProviderUnavailableError
+from src.providers.bedrock import BedrockProvider
+from src.providers.fake import FakeProvider
 
 
 class ProviderFactory:
@@ -92,7 +92,7 @@ class ProviderFactory:
         """Create CodeWhisperer provider instance (PoC placeholder)."""
         # Import here to avoid dependency issues if not installed
         try:
-            from agents.ai_providers.codewhisperer import CodeWhispererProvider
+            from src.providers.codewhisperer import CodeWhispererProvider
 
             return CodeWhispererProvider(config)
         except ImportError:
@@ -126,7 +126,7 @@ class ProviderFactory:
 
         # Check CodeWhisperer availability
         try:
-            from agents.ai_providers.codewhisperer import CodeWhispererProvider
+            from src.providers.codewhisperer import CodeWhispererProvider
 
             providers["codewhisperer"] = True
         except ImportError:
