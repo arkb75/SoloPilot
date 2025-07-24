@@ -208,7 +208,7 @@ curl -H "Authorization: Bearer $VERCEL_TOKEN" \
 
 # Check deployment status
 python -c "
-from agents.email_intake.deployment_tracker import DeploymentTracker
+from src.agents.email_intake.deployment_tracker import DeploymentTracker
 tracker = DeploymentTracker()
 print(tracker.get_deployment('conv-abc123'))
 "

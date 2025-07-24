@@ -5,17 +5,17 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-from agents.email_intake.conversation_state_v2 import ConversationStateManagerV2
-from agents.email_intake.lambda_function_v2 import lambda_handler
+from src.agents.email_intake.conversation_state_v2 import ConversationStateManagerV2
+from src.agents.email_intake.lambda_function_v2 import lambda_handler
 
 
 class TestMultiEmailConversationFlow:
     """End-to-end tests for multi-turn email conversations."""
 
-    @patch("agents.email_intake.lambda_function_v2.s3_client")
-    @patch("agents.email_intake.lambda_function_v2.ses_client")
-    @patch("agents.email_intake.lambda_function_v2.sqs_client")
-    @patch("agents.email_intake.lambda_function_v2.boto3.resource")
+    @patch("src.agents.email_intake.lambda_function_v2.s3_client")
+    @patch("src.agents.email_intake.lambda_function_v2.ses_client")
+    @patch("src.agents.email_intake.lambda_function_v2.sqs_client")
+    @patch("src.agents.email_intake.lambda_function_v2.boto3.resource")
     def test_three_email_conversation_flow(self, mock_dynamo, mock_sqs, mock_ses, mock_s3):
         """Test complete 3-email conversation: initial → follow-up → completion."""
         # Setup environment
@@ -215,8 +215,8 @@ John
         assert conversation_state["last_seq"] == 2
         assert conversation_state["requirements_version"] == 2
 
-    @patch("agents.email_intake.lambda_function_v2.s3_client")
-    @patch("agents.email_intake.lambda_function_v2.boto3.resource")
+    @patch("src.agents.email_intake.lambda_function_v2.s3_client")
+    @patch("src.agents.email_intake.lambda_function_v2.boto3.resource")
     def test_conversation_with_concurrent_emails(self, mock_dynamo, mock_s3):
         """Test handling concurrent emails in same conversation."""
         # Mock DynamoDB table
@@ -280,7 +280,7 @@ I have some additional requirements...
 
     def test_email_threading_validation(self):
         """Test email threading follows RFC 5322 correctly."""
-        from agents.email_intake.email_parser import EmailParser
+        from src.agents.email_intake.email_parser import EmailParser
 
         parser = EmailParser()
 
@@ -330,7 +330,7 @@ Answers to questions...""",
         # Verify references chain
         assert parsed_emails[2]["references"] == "<msg1@example.com> <msg2@solopilot.ai>"
 
-    @patch("agents.email_intake.conversation_state_v2.boto3.resource")
+    @patch("src.agents.email_intake.conversation_state_v2.boto3.resource")
     def test_ttl_expiry_behavior(self, mock_boto):
         """Test TTL-based conversation expiry."""
         mock_table = MagicMock()

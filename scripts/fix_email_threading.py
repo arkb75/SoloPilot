@@ -7,7 +7,7 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from agents.email_intake.lambda_function_v2 import *
+from src.agents.email_intake.lambda_function_v2 import *
 
 # Create the fixed version with proper email threading
 FIXED_FOLLOWUP_FUNCTION = '''def _send_followup_email_v2(

@@ -18,8 +18,8 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from vercel_project_manager import VercelProjectManager
 
-from agents.email_intake.conversation_state_v2 import ConversationStateManagerV2
-from agents.email_intake.deployment_tracker import DeploymentTracker
+from src.agents.email_intake.conversation_state_v2 import ConversationStateManagerV2
+from src.agents.email_intake.deployment_tracker import DeploymentTracker
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

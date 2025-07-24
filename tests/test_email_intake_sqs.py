@@ -4,17 +4,17 @@ import json
 import os
 from unittest.mock import MagicMock, patch
 
-from agents.email_intake import lambda_handler
+from src.agents.email_intake import lambda_handler
 
 
 class TestSQSIntegration:
     """Test SQS message sending in email intake."""
 
-    @patch("agents.email_intake.email_agent.s3_client")
-    @patch("agents.email_intake.email_agent.ses_client")
-    @patch("agents.email_intake.email_agent.sqs_client")
-    @patch("agents.email_intake.email_agent.ConversationStateManager")
-    @patch("agents.email_intake.email_agent.RequirementExtractor")
+    @patch("src.agents.email_intake.email_agent.s3_client")
+    @patch("src.agents.email_intake.email_agent.ses_client")
+    @patch("src.agents.email_intake.email_agent.sqs_client")
+    @patch("src.agents.email_intake.email_agent.ConversationStateManager")
+    @patch("src.agents.email_intake.email_agent.RequirementExtractor")
     def test_sqs_send_on_new_conversation(
         self, mock_extractor_class, mock_state_class, mock_sqs, mock_ses, mock_s3
     ):
@@ -110,11 +110,11 @@ I need a website for my startup. We're in the fintech space.
         # Verify follow-up email was sent
         mock_ses.send_email.assert_called_once()
 
-    @patch("agents.email_intake.email_agent.s3_client")
-    @patch("agents.email_intake.email_agent.ses_client")
-    @patch("agents.email_intake.email_agent.sqs_client")
-    @patch("agents.email_intake.email_agent.ConversationStateManager")
-    @patch("agents.email_intake.email_agent.RequirementExtractor")
+    @patch("src.agents.email_intake.email_agent.s3_client")
+    @patch("src.agents.email_intake.email_agent.ses_client")
+    @patch("src.agents.email_intake.email_agent.sqs_client")
+    @patch("src.agents.email_intake.email_agent.ConversationStateManager")
+    @patch("src.agents.email_intake.email_agent.RequirementExtractor")
     def test_sqs_send_failure_raises_exception(
         self, mock_extractor_class, mock_state_class, mock_sqs, mock_ses, mock_s3
     ):

@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import ClientError
 
-from agents.email_intake.conversation_state_v2 import ConversationStateManagerV2
-from agents.email_intake.lambda_function_v2 import lambda_handler
-from agents.email_intake.utils import EmailThreadingUtils
+from src.agents.email_intake.conversation_state_v2 import ConversationStateManagerV2
+from src.agents.email_intake.lambda_function_v2 import lambda_handler
+from src.agents.email_intake.utils import EmailThreadingUtils
 
 
 class TestEmailThreadingUtils:
@@ -144,7 +144,7 @@ Thanks!
 class TestConversationStateV2:
     """Test thread-safe conversation state management."""
 
-    @patch("agents.email_intake.conversation_state_v2.boto3.resource")
+    @patch("src.agents.email_intake.conversation_state_v2.boto3.resource")
     def test_fetch_or_create_new_conversation(self, mock_boto):
         """Test creating new conversation atomically."""
         mock_table = MagicMock()
@@ -179,7 +179,7 @@ class TestConversationStateV2:
         assert item["last_seq"] == Decimal(0)
         assert "ttl" in item
 
-    @patch("agents.email_intake.conversation_state_v2.boto3.resource")
+    @patch("src.agents.email_intake.conversation_state_v2.boto3.resource")
     def test_concurrent_conversation_creation(self, mock_boto):
         """Test handling concurrent conversation creation."""
         mock_table = MagicMock()
@@ -206,7 +206,7 @@ class TestConversationStateV2:
         assert mock_table.get_item.call_count == 2
         assert result["conversation_id"] == "conv123"
 
-    @patch("agents.email_intake.conversation_state_v2.boto3.resource")
+    @patch("src.agents.email_intake.conversation_state_v2.boto3.resource")
     def test_append_email_with_optimistic_lock_success(self, mock_boto):
         """Test successful email append with optimistic locking."""
         mock_table = MagicMock()
@@ -241,7 +241,7 @@ class TestConversationStateV2:
 
         assert result["last_seq"] == 6
 
-    @patch("agents.email_intake.conversation_state_v2.boto3.resource")
+    @patch("src.agents.email_intake.conversation_state_v2.boto3.resource")
     def test_append_email_with_retry_on_conflict(self, mock_boto):
         """Test email append with retry on optimistic lock conflict."""
         mock_table = MagicMock()
@@ -279,7 +279,7 @@ class TestConversationStateV2:
         assert mock_table.update_item.call_count == 2
         assert result["last_seq"] == 7
 
-    @patch("agents.email_intake.conversation_state_v2.boto3.resource")
+    @patch("src.agents.email_intake.conversation_state_v2.boto3.resource")
     def test_update_requirements_with_version_control(self, mock_boto):
         """Test requirements update with version control."""
         mock_table = MagicMock()
@@ -334,7 +334,7 @@ class TestConversationStateV2:
 class TestRaceConditionScenarios:
     """Test specific race condition scenarios."""
 
-    @patch("agents.email_intake.conversation_state_v2.boto3.resource")
+    @patch("src.agents.email_intake.conversation_state_v2.boto3.resource")
     def test_concurrent_email_appends(self, mock_boto):
         """Test handling of concurrent email appends from multiple Lambdas."""
         mock_table = MagicMock()
@@ -406,7 +406,7 @@ class TestRaceConditionScenarios:
         assert len(errors) == 0
         assert len(results) == 3
 
-    @patch("agents.email_intake.conversation_state_v2.boto3.resource")
+    @patch("src.agents.email_intake.conversation_state_v2.boto3.resource")
     def test_requirements_update_race_condition(self, mock_boto):
         """Test concurrent requirements updates."""
         mock_table = MagicMock()
@@ -442,11 +442,11 @@ class TestRaceConditionScenarios:
 class TestLambdaHandlerV2Integration:
     """Integration tests for enhanced Lambda handler."""
 
-    @patch("agents.email_intake.lambda_function_v2.s3_client")
-    @patch("agents.email_intake.lambda_function_v2.ses_client")
-    @patch("agents.email_intake.lambda_function_v2.sqs_client")
-    @patch("agents.email_intake.lambda_function_v2.ConversationStateManagerV2")
-    @patch("agents.email_intake.lambda_function_v2.RequirementExtractor")
+    @patch("src.agents.email_intake.lambda_function_v2.s3_client")
+    @patch("src.agents.email_intake.lambda_function_v2.ses_client")
+    @patch("src.agents.email_intake.lambda_function_v2.sqs_client")
+    @patch("src.agents.email_intake.lambda_function_v2.ConversationStateManagerV2")
+    @patch("src.agents.email_intake.lambda_function_v2.RequirementExtractor")
     def test_lambda_handles_new_conversation(
         self, mock_extractor_class, mock_state_class, mock_sqs, mock_ses, mock_s3
     ):
@@ -539,8 +539,8 @@ Sarah
         assert len(call_args[0]) == 16  # Hashed conversation ID
         assert call_args[1] == "initial123@startup.com"  # Original message ID
 
-    @patch("agents.email_intake.lambda_function_v2.s3_client")
-    @patch("agents.email_intake.lambda_function_v2.ConversationStateManagerV2")
+    @patch("src.agents.email_intake.lambda_function_v2.s3_client")
+    @patch("src.agents.email_intake.lambda_function_v2.ConversationStateManagerV2")
     def test_lambda_handles_automated_response(self, mock_state_class, mock_s3):
         """Test Lambda ignores automated responses."""
         # Mock S3 with auto-reply

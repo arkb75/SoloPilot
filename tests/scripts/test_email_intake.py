@@ -8,7 +8,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agents.email_intake import EmailParser, RequirementExtractor
+from src.agents.email_intake import EmailParser, RequirementExtractor
 
 # Mock Apollo.io reply email
 MOCK_APOLLO_EMAIL = """From: "Michael Chen" <michael@ecommerce-solutions.com>
