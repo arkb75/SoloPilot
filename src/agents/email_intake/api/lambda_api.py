@@ -8,7 +8,6 @@ approving/rejecting replies, and viewing conversation history.
 import json
 import logging
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, List
@@ -17,10 +16,10 @@ import boto3
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from conversation_state import ConversationStateManager  # Needed to append sent email to history
-from email_sender import (
+from src.agents.email_intake.conversation_state import (  # Needed to append sent email to history
+    ConversationStateManager,
+)
+from src.agents.email_intake.email_sender import (
     extract_email_metadata,
     format_proposal_email_body,
     send_proposal_email,
@@ -351,7 +350,7 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         if email_meta.get("should_send_pdf") and email_meta.get("phase") == "proposal_draft":
             # Generate PDF proposal
             try:
-                from pdf_generator import ProposalPDFGenerator
+                from src.agents.email_intake.pdf_generator import ProposalPDFGenerator
 
                 # Get PDF Lambda ARN from environment
                 pdf_lambda_arn = os.environ.get("PDF_LAMBDA_ARN", "")
@@ -490,8 +489,7 @@ Conversation ID: {conversation_id}"""
         if ses_message_id:
             try:
                 # Import canonicalization function
-                sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                from utils import EmailThreadingUtils
+                from src.agents.email_intake.utils import EmailThreadingUtils
 
                 message_map_table = dynamodb.Table("email_message_map")
                 # Store the SES Message-ID in the format email clients will use

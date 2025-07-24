@@ -19,8 +19,8 @@ import pytest
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.agents.review.reviewer_agent import ReviewerAgent
 from scripts.check_review_status import extract_status_from_report
+from src.agents.review.reviewer_agent import ReviewerAgent
 from src.utils.github_review import GitHubReviewer
 
 
@@ -596,7 +596,7 @@ Overall code structure is well organized.
     def test_end_to_end_workflow_simulation(self, good_code_milestone):
         """Test complete end-to-end workflow simulation."""
         # Step 1: Run review (mocked)
-        with patch("agents.review.reviewer_agent.get_provider") as mock_provider_getter:
+        with patch("src.agents.review.reviewer_agent.get_provider") as mock_provider_getter:
             mock_provider = MagicMock()
             mock_provider.generate_code.return_value = """{
                 "summary": "Code review completed successfully",

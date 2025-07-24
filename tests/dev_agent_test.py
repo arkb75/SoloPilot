@@ -226,7 +226,7 @@ describe('TestImplementation', () => {
         assert "describe(" in test
         assert "should work" in test
 
-    @patch("agents.dev.dev_agent.DevAgent._call_llm")
+    @patch("src.agents.dev.dev_agent.DevAgent._call_llm")
     def test_process_planning_output(
         self, mock_llm_call, temp_config_file, temp_planning_file, temp_output_dir
     ):
@@ -375,7 +375,7 @@ describe('ProjectSetup', () => {
         with patch.dict(os.environ, {}, clear=True):  # Clear env vars
             with patch("os.path.exists", return_value=True):  # AWS profile exists
                 with patch(
-                    "agents.common.bedrock_client.StandardizedBedrockClient"
+                    "src.agents.common.bedrock_client.StandardizedBedrockClient"
                 ) as mock_client_class:
                     mock_client = MagicMock()
                     mock_client_class.return_value = mock_client
@@ -389,7 +389,7 @@ describe('ProjectSetup', () => {
             os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
         ):
             with patch(
-                "agents.common.bedrock_client.StandardizedBedrockClient"
+                "src.agents.common.bedrock_client.StandardizedBedrockClient"
             ) as mock_client_class:
                 mock_client = MagicMock()
                 mock_client_class.return_value = mock_client
@@ -409,7 +409,7 @@ describe('ProjectSetup', () => {
             os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
         ):
             with patch(
-                "agents.common.bedrock_client.StandardizedBedrockClient"
+                "src.agents.common.bedrock_client.StandardizedBedrockClient"
             ) as mock_client_class:
                 mock_client = MagicMock()
                 mock_client.simple_invoke_with_metadata.return_value = ("Modern response", {})
@@ -427,7 +427,7 @@ describe('ProjectSetup', () => {
             os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
         ):
             with patch(
-                "agents.common.bedrock_client.StandardizedBedrockClient"
+                "src.agents.common.bedrock_client.StandardizedBedrockClient"
             ) as mock_client_class:
                 mock_client = MagicMock()
                 mock_client.simple_invoke_with_metadata.return_value = ("Legacy response", {})
@@ -453,7 +453,7 @@ describe('ProjectSetup', () => {
             os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
         ):
             with patch(
-                "agents.common.bedrock_client.StandardizedBedrockClient"
+                "src.agents.common.bedrock_client.StandardizedBedrockClient"
             ) as mock_client_class:
                 mock_client = MagicMock()
                 mock_client.simple_invoke_with_metadata.return_value = ("Test response", {})
@@ -599,7 +599,7 @@ class TestContext7Bridge:
 class TestIntegration:
     """Integration tests to verify end-to-end functionality."""
 
-    @patch("agents.dev.dev_agent.DevAgent._call_llm")
+    @patch("src.agents.dev.dev_agent.DevAgent._call_llm")
     def test_smoke_test_dev_agent(
         self, mock_llm_call, temp_config_file, temp_planning_file, temp_output_dir
     ):
@@ -674,9 +674,7 @@ llm:
             # Also patch environment to avoid NO_NETWORK interference
             with patch.dict(
                 os.environ, {"NO_NETWORK": "", "AI_PROVIDER": "bedrock"}, clear=False
-            ), patch(
-                "src.providers.bedrock.BedrockProvider.generate_code"
-            ) as mock_generate_code:
+            ), patch("src.providers.bedrock.BedrockProvider.generate_code") as mock_generate_code:
                 # Mock the generate_code method to return test response
                 mock_generate_code.return_value = "console.log('test response');"
 
@@ -715,9 +713,7 @@ llm:
 
             with patch.dict(
                 os.environ, {"NO_NETWORK": "", "AI_PROVIDER": "bedrock"}, clear=False
-            ), patch(
-                "src.providers.bedrock.BedrockProvider.generate_code"
-            ) as mock_generate_code:
+            ), patch("src.providers.bedrock.BedrockProvider.generate_code") as mock_generate_code:
                 # Mock the generate_code method to return test response
                 mock_generate_code.return_value = "test response"
 

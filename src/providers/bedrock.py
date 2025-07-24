@@ -10,6 +10,12 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from src.agents.dev.context_packer import build_context
+from src.common.bedrock_client import (
+    BedrockError,
+    create_bedrock_client,
+    get_standardized_error_message,
+)
 from src.providers.base import (
     BaseProvider,
     ProviderError,
@@ -17,12 +23,6 @@ from src.providers.base import (
     ProviderUnavailableError,
     log_call,
 )
-from src.common.bedrock_client import (
-    BedrockError,
-    create_bedrock_client,
-    get_standardized_error_message,
-)
-from src.agents.dev.context_packer import build_context
 
 
 class BedrockProvider(BaseProvider):

@@ -308,7 +308,7 @@ class UtilityClass{i}:
             # Test with Serena engine (mock available)
             serena_start = time.time()
             with unittest.mock.patch(
-                "agents.dev.context_engine.serena_engine.subprocess.run"
+                "src.agents.dev.context_engine.serena_engine.subprocess.run"
             ) as mock_run:
                 mock_run.return_value.returncode = 0
                 mock_run.return_value.stdout = "available"
@@ -370,7 +370,7 @@ class UtilityClass{i}:
             # Serena engine
             start = time.time()
             with unittest.mock.patch(
-                "agents.dev.context_engine.serena_engine.subprocess.run"
+                "src.agents.dev.context_engine.serena_engine.subprocess.run"
             ) as mock_run:
                 mock_run.return_value.returncode = 0
                 mock_run.return_value.stdout = "available"
@@ -405,7 +405,7 @@ class UtilityClass{i}:
         milestone_path, prompt = self.milestones[0]  # Use authentication milestone
 
         with unittest.mock.patch(
-            "agents.dev.context_engine.serena_engine.subprocess.run"
+            "src.agents.dev.context_engine.serena_engine.subprocess.run"
         ) as mock_run:
             mock_run.return_value.returncode = 0
             mock_run.return_value.stdout = "available"
@@ -489,7 +489,7 @@ class UtilityClass{i}:
 
         serena_start = time.time()
         with unittest.mock.patch(
-            "agents.dev.context_engine.serena_engine.subprocess.run"
+            "src.agents.dev.context_engine.serena_engine.subprocess.run"
         ) as mock_run:
             mock_run.return_value.returncode = 0
             mock_run.return_value.stdout = "available"

@@ -424,7 +424,7 @@ class TestSonarCloudIntegration:
         # Set up environment
         os.environ["SONAR_TOKEN"] = "valid-token"
 
-        with patch("utils.sonarcloud_integration.requests.Session"):
+        with patch("src.utils.sonarcloud_integration.requests.Session"):
             client = SonarCloudClient()
 
             # Mock validate_configuration to return valid

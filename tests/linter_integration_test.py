@@ -301,8 +301,8 @@ class TestLinterIntegrationWithDevAgent(unittest.TestCase):
             }
         }
 
-    @patch("agents.dev.dev_agent.get_provider")
-    @patch("agents.dev.dev_agent.get_context_engine")
+    @patch("src.agents.dev.dev_agent.get_provider")
+    @patch("src.agents.dev.dev_agent.get_context_engine")
     def test_dev_agent_with_linting(self, mock_context_engine, mock_provider):
         """Test Dev Agent with linting enabled."""
         # Mock the provider and context engine

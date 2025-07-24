@@ -21,7 +21,6 @@ from src.agents.email_intake.conversation_state import ConversationStateManager
 from src.agents.email_intake.conversational_responder import ConversationalResponder
 from src.agents.email_intake.email_parser import EmailParser
 from src.agents.email_intake.requirement_extractor import RequirementExtractor
-
 from src.agents.email_intake.utils import EmailThreadingUtils
 
 logger = logging.getLogger()
@@ -351,7 +350,7 @@ def _send_followup_email_v2(
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
-    from email_sender import format_followup_email_body
+    from src.agents.email_intake.email_sender import format_followup_email_body
 
     # Use the formatted email body that includes conversation ID
     body = format_followup_email_body(questions, conversation_id)

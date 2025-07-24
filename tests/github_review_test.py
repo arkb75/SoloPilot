@@ -34,7 +34,7 @@ def sample_review_result():
                 "message": "Consider adding type hints for better code clarity",
             },
             {
-                "file": "utils.py",
+                "file": "src.utils.py",
                 "line": 25,
                 "severity": "low",
                 "message": "This function could be simplified",

@@ -15,8 +15,8 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from src.providers import ProviderError, get_provider
 from src.agents.dev.context_engine import get_context_engine
+from src.providers import ProviderError, get_provider
 from src.utils.linter_integration import LinterManager
 
 

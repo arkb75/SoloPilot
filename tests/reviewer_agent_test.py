@@ -227,7 +227,7 @@ class TestReviewerAgent:
 
     def test_init_with_default_config(self):
         """Test ReviewerAgent initialization with default config."""
-        with patch("agents.review.reviewer_agent.get_provider") as mock_get_provider:
+        with patch("src.agents.review.reviewer_agent.get_provider") as mock_get_provider:
             mock_get_provider.return_value = MagicMock()
 
             reviewer = ReviewerAgent()
@@ -250,7 +250,7 @@ reviewer:
 """
         )
 
-        with patch("agents.review.reviewer_agent.get_provider") as mock_get_provider:
+        with patch("src.agents.review.reviewer_agent.get_provider") as mock_get_provider:
             mock_get_provider.return_value = MagicMock()
 
             reviewer = ReviewerAgent(str(config_file))
@@ -261,7 +261,7 @@ reviewer:
 
     def test_review_nonexistent_directory(self):
         """Test review of non-existent directory."""
-        with patch("agents.review.reviewer_agent.get_provider") as mock_get_provider:
+        with patch("src.agents.review.reviewer_agent.get_provider") as mock_get_provider:
             mock_get_provider.return_value = MagicMock()
 
             reviewer = ReviewerAgent()
@@ -271,7 +271,7 @@ reviewer:
             assert "not found" in result["summary"]
             assert len(result["comments"]) == 0
 
-    @patch("src.agents.review.reviewer_agent.get_provider")
+    @patch("src.src.agents.review.reviewer_agent.get_provider")
     def test_review_good_code_passes(self, mock_get_provider, good_code_milestone, mock_provider):
         """Test that good quality code passes review."""
         mock_get_provider.return_value = mock_provider
@@ -319,7 +319,7 @@ reviewer:
             report_file = good_code_milestone / "review-report.md"
             assert report_file.exists()
 
-    @patch("src.agents.review.reviewer_agent.get_provider")
+    @patch("src.src.agents.review.reviewer_agent.get_provider")
     def test_review_bad_code_fails(self, mock_get_provider, bad_code_milestone):
         """Test that poor quality code fails review."""
         # Mock provider to return critical issues
@@ -387,7 +387,7 @@ reviewer:
             high_severity_comments = [c for c in result["comments"] if c.get("severity") == "high"]
             assert len(high_severity_comments) > 0
 
-    @patch("src.agents.review.reviewer_agent.get_provider")
+    @patch("src.src.agents.review.reviewer_agent.get_provider")
     def test_review_empty_milestone(self, mock_get_provider, empty_milestone, mock_provider):
         """Test review of empty milestone directory."""
         mock_get_provider.return_value = mock_provider
@@ -401,7 +401,7 @@ reviewer:
 
     def test_static_analysis_tools_not_available(self, good_code_milestone):
         """Test behavior when static analysis tools are not available."""
-        with patch("agents.review.reviewer_agent.get_provider") as mock_get_provider:
+        with patch("src.agents.review.reviewer_agent.get_provider") as mock_get_provider:
             mock_get_provider.return_value = MagicMock()
 
             # Mock subprocess to raise FileNotFoundError (tool not found)
@@ -421,7 +421,7 @@ reviewer:
 
     def test_ai_provider_failure(self, good_code_milestone):
         """Test behavior when AI provider fails."""
-        with patch("agents.review.reviewer_agent.get_provider") as mock_get_provider:
+        with patch("src.agents.review.reviewer_agent.get_provider") as mock_get_provider:
             # Mock provider that raises exception
             mock_provider = MagicMock()
             mock_provider.generate_code.side_effect = Exception("AI service unavailable")
@@ -436,7 +436,7 @@ reviewer:
 
     def test_file_stats_analysis(self, good_code_milestone):
         """Test file statistics analysis."""
-        with patch("agents.review.reviewer_agent.get_provider") as mock_get_provider:
+        with patch("src.agents.review.reviewer_agent.get_provider") as mock_get_provider:
             mock_get_provider.return_value = MagicMock()
 
             reviewer = ReviewerAgent()
@@ -451,7 +451,7 @@ reviewer:
 
     def test_determine_status_logic(self, good_code_milestone):
         """Test status determination logic."""
-        with patch("agents.review.reviewer_agent.get_provider") as mock_get_provider:
+        with patch("src.agents.review.reviewer_agent.get_provider") as mock_get_provider:
             mock_get_provider.return_value = MagicMock()
 
             reviewer = ReviewerAgent()
@@ -490,7 +490,7 @@ reviewer:
     def test_offline_mode_compatibility(self, good_code_milestone):
         """Test that reviewer works in offline mode."""
         with patch.dict(os.environ, {"NO_NETWORK": "1", "AI_PROVIDER": "fake"}):
-            with patch("agents.review.reviewer_agent.get_provider") as mock_get_provider:
+            with patch("src.agents.review.reviewer_agent.get_provider") as mock_get_provider:
                 # Mock fake provider
                 fake_provider = MagicMock()
                 fake_provider.generate_code.return_value = """{
@@ -510,7 +510,7 @@ reviewer:
 class TestReviewerAgentIntegration:
     """Integration tests for ReviewerAgent."""
 
-    @patch("src.agents.review.reviewer_agent.get_provider")
+    @patch("src.src.agents.review.reviewer_agent.get_provider")
     def test_end_to_end_review_workflow(
         self, mock_get_provider, good_code_milestone, mock_provider
     ):

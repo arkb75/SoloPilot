@@ -18,7 +18,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from vercel_project_manager import VercelProjectManager
 
-from src.agents.email_intake.conversation_state_v2 import ConversationStateManagerV2
+from src.agents.email_intake.conversation_state import ConversationStateManager
 from src.agents.email_intake.deployment_tracker import DeploymentTracker
 
 logging.basicConfig(level=logging.INFO)
@@ -52,7 +52,7 @@ class ClientDeploymentOrchestrator:
             raise ValueError("Vercel token is required")
 
         # Initialize managers
-        self.conversation_manager = ConversationStateManagerV2(conversations_table)
+        self.conversation_manager = ConversationStateManager(conversations_table)
         self.deployment_tracker = DeploymentTracker(deployments_table)
         self.vercel_manager = VercelProjectManager(self.vercel_token)
 

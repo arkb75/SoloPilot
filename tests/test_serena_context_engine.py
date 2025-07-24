@@ -68,13 +68,13 @@ class Token:
 
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch("agents.dev.context_engine.serena_engine.subprocess.run")
+    @patch("src.agents.dev.context_engine.serena_engine.subprocess.run")
     def test_serena_unavailable_fallback(self, mock_run):
         """Test fallback to legacy engine when Serena is unavailable."""
         # Mock Serena as unavailable
         mock_run.return_value.returncode = 1
 
-        with patch("agents.dev.context_engine.LegacyContextEngine") as mock_legacy:
+        with patch("src.agents.dev.context_engine.LegacyContextEngine") as mock_legacy:
             mock_legacy.return_value.build_context.return_value = (
                 "legacy context",
                 {"engine": "legacy"},
@@ -87,7 +87,7 @@ class Token:
             self.assertIn("Progressive Context", context)
             self.assertIn("fallback", metadata["engine"])
 
-    @patch("agents.dev.context_engine.serena_engine.subprocess.run")
+    @patch("src.agents.dev.context_engine.serena_engine.subprocess.run")
     def test_serena_available_basic_context(self, mock_run):
         """Test basic context building when Serena is available."""
         # Mock Serena as available
@@ -111,7 +111,7 @@ class Token:
         self.assertIn("tokens_estimated", metadata)
         self.assertIn("tokens_saved", metadata)
 
-    @patch("agents.dev.context_engine.serena_engine.subprocess.run")
+    @patch("src.agents.dev.context_engine.serena_engine.subprocess.run")
     def test_symbol_extraction_from_milestone(self, mock_run):
         """Test symbol extraction from milestone JSON."""
         mock_run.return_value.returncode = 0
@@ -134,7 +134,7 @@ class Token:
         # Should contain at least some of the expected symbols
         self.assertTrue(expected_symbols.intersection(actual_symbols))
 
-    @patch("agents.dev.context_engine.serena_engine.subprocess.run")
+    @patch("src.agents.dev.context_engine.serena_engine.subprocess.run")
     def test_symbol_context_search(self, mock_run):
         """Test symbol context search in project files."""
         mock_run.return_value.returncode = 0
@@ -153,7 +153,7 @@ class Token:
         self.assertIsNotNone(context)
         self.assertIn("def authenticate", context)
 
-    @patch("agents.dev.context_engine.serena_engine.subprocess.run")
+    @patch("src.agents.dev.context_engine.serena_engine.subprocess.run")
     def test_engine_info_collection(self, mock_run):
         """Test engine information and statistics collection."""
         mock_run.return_value.returncode = 0
@@ -179,7 +179,7 @@ class Token:
         self.assertIn("tokens_saved", stats)
         self.assertIn("avg_response_time_ms", stats)
 
-    @patch("agents.dev.context_engine.serena_engine.subprocess.run")
+    @patch("src.agents.dev.context_engine.serena_engine.subprocess.run")
     def test_token_optimization_calculation(self, mock_run):
         """Test token optimization calculation for performance metrics."""
         mock_run.return_value.returncode = 0
@@ -197,7 +197,7 @@ class Token:
         self.assertIn("response_time_ms", metadata)
         self.assertGreater(metadata["response_time_ms"], 0)
 
-    @patch("agents.dev.context_engine.serena_engine.subprocess.run")
+    @patch("src.agents.dev.context_engine.serena_engine.subprocess.run")
     def test_language_detection(self, mock_run):
         """Test project language detection."""
         mock_run.return_value.returncode = 0
@@ -211,7 +211,7 @@ class Token:
 
     def test_workspace_initialization(self):
         """Test Serena workspace initialization."""
-        with patch("agents.dev.context_engine.serena_engine.subprocess.run") as mock_run:
+        with patch("src.agents.dev.context_engine.serena_engine.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
             mock_run.return_value.stdout = "available"
 
@@ -226,7 +226,7 @@ class Token:
 
     def test_error_handling_and_fallback(self):
         """Test error handling and fallback mechanisms."""
-        with patch("agents.dev.context_engine.serena_engine.subprocess.run") as mock_run:
+        with patch("src.agents.dev.context_engine.serena_engine.subprocess.run") as mock_run:
             # Mock Serena as unavailable
             mock_run.side_effect = FileNotFoundError("Serena not found")
 
@@ -241,7 +241,7 @@ class Token:
     def test_invalid_balanced_target_env_var(self):
         """Test graceful handling of invalid SERENA_BALANCED_TARGET."""
         with patch.dict(os.environ, {"SERENA_BALANCED_TARGET": "invalid"}):
-            with patch("agents.dev.context_engine.serena_engine.subprocess.run") as mock_run:
+            with patch("src.agents.dev.context_engine.serena_engine.subprocess.run") as mock_run:
                 # Mock Serena as available
                 mock_run.return_value.returncode = 0
                 mock_run.return_value.stdout = "available"
@@ -261,7 +261,7 @@ class TestSerenaIntegration(unittest.TestCase):
         from src.agents.dev.context_engine import get_context_engine
 
         with patch.dict("os.environ", {"CONTEXT_ENGINE": "serena", "NO_NETWORK": ""}):
-            with patch("agents.dev.context_engine.serena_engine.subprocess.run") as mock_run:
+            with patch("src.agents.dev.context_engine.serena_engine.subprocess.run") as mock_run:
                 mock_run.return_value.returncode = 0
                 mock_run.return_value.stdout = "available"
 
@@ -280,7 +280,7 @@ class TestSerenaIntegration(unittest.TestCase):
 
         with patch.dict("os.environ", {"CONTEXT_ENGINE": "serena"}):
             with patch(
-                "agents.dev.context_engine.serena_engine.SerenaContextEngine"
+                "src.agents.dev.context_engine.serena_engine.SerenaContextEngine"
             ) as mock_serena:
                 mock_serena.side_effect = Exception("Serena failed")
 

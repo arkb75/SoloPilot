@@ -217,7 +217,7 @@ class UserManager:
 
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch("agents.dev.context_engine.serena_engine.SerenaContextEngine._start_serena_server")
+    @patch("src.agents.dev.context_engine.serena_engine.SerenaContextEngine._start_serena_server")
     def test_progressive_context_building(self, mock_start_server):
         """Test progressive context building in SerenaContextEngine."""
         # Mock Serena as unavailable to test fallback

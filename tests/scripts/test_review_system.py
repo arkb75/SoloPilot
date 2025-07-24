@@ -35,7 +35,7 @@ def run_review_on_bad_code():
     print("\n🤖 Running AI Reviewer Agent...")
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "agents.review.reviewer_agent", str(test_dir)],
+            [sys.executable, "-m", "src.agents.review.reviewer_agent", str(test_dir)],
             capture_output=True,
             text=True,
             timeout=120,
