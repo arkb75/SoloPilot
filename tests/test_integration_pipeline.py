@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
-from agents.analyser.parser import SpecBuilder, TextParser
+from src.agents.analyser.parser import SpecBuilder, TextParser
 from src.agents.dev.dev_agent import DevAgent
 from agents.planning.planner import ProjectPlanner
 

@@ -38,7 +38,7 @@ ENV PYTHONPATH=/app
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import agents.analyser; print('OK')" || exit 1
+    CMD python -c "import src.agents.analyser; print('OK')" || exit 1
 
 # Default command
 CMD ["python", "scripts/run_analyser.py", "--help"]

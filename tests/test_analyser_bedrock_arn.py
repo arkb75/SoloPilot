@@ -37,14 +37,14 @@ def test_analyser_uses_bedrock_arn():
 
     try:
         # Mock standardized client to verify it gets initialized with correct config
-        with patch("agents.analyser.parser.create_bedrock_client") as mock_create_client:
+        with patch("src.agents.analyser.parser.create_bedrock_client") as mock_create_client:
             mock_client = MagicMock()
             mock_create_client.return_value = mock_client
 
             # Clear NO_NETWORK to allow Bedrock initialization
             with patch.dict(os.environ, {"NO_NETWORK": "0"}, clear=False):
                 # Import and initialize TextParser
-                from agents.analyser.parser import TextParser
+                from src.agents.analyser.parser import TextParser
 
                 parser = TextParser(config_path=config_path)
 
@@ -81,10 +81,10 @@ def test_analyser_respects_no_network():
 
     try:
         # Mock ChatBedrock to ensure it's never called
-        with patch("agents.analyser.parser.ChatBedrock") as mock_chatbedrock:
+        with patch("src.agents.analyser.parser.ChatBedrock") as mock_chatbedrock:
             with patch.dict(os.environ, {"NO_NETWORK": "1"}):
                 # Import and initialize TextParser
-                from agents.analyser.parser import TextParser
+                from src.agents.analyser.parser import TextParser
 
                 parser = TextParser(config_path=config_path)
 
@@ -102,14 +102,14 @@ def test_analyser_respects_no_network():
 def test_analyser_fallback_config():
     """Test that analyser uses fallback config when no config file exists."""
     # Use a non-existent config path
-    with patch("agents.analyser.parser.create_bedrock_client") as mock_create_client:
+    with patch("src.agents.analyser.parser.create_bedrock_client") as mock_create_client:
         mock_client = MagicMock()
         mock_create_client.return_value = mock_client
 
         # Clear NO_NETWORK to allow Bedrock initialization
         with patch.dict(os.environ, {"NO_NETWORK": "0"}, clear=False):
             # Import and initialize TextParser with non-existent config
-            from agents.analyser.parser import TextParser
+            from src.agents.analyser.parser import TextParser
 
             TextParser(config_path="non_existent_config.yaml")
 
@@ -140,7 +140,7 @@ def test_analyser_env_var_substitution():
         config_path = f.name
 
     try:
-        with patch("agents.analyser.parser.create_bedrock_client") as mock_create_client:
+        with patch("src.agents.analyser.parser.create_bedrock_client") as mock_create_client:
             mock_client = MagicMock()
             mock_create_client.return_value = mock_client
 
@@ -150,7 +150,7 @@ def test_analyser_env_var_substitution():
                 os.environ,
                 {"BEDROCK_IP_ARN": test_arn, "BEDROCK_REGION": "us-west-2", "NO_NETWORK": "0"},
             ):
-                from agents.analyser.parser import TextParser
+                from src.agents.analyser.parser import TextParser
 
                 TextParser(config_path=config_path)
 
