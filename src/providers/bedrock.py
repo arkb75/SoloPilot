@@ -190,11 +190,11 @@ class BedrockProvider(BaseProvider):
                             context_parts.append(context)
                     else:
                         # For regular files, include content directly
-                        with open(file_path, "r", encoding="utf-8") as f:
+                        with open(file_path, encoding="utf-8") as f:
                             content = f.read()
                         if content.strip():
                             context_parts.append(f"## File: {file_path}\n```\n{content}\n```\n")
-                except (IOError, UnicodeDecodeError) as e:
+                except (OSError, UnicodeDecodeError) as e:
                     context_parts.append(f"## File: {file_path}\n(Error reading file: {e})\n")
 
         # Combine context with prompt

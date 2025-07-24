@@ -151,7 +151,7 @@ class FullPipelineValidator:
             if not planning_file.exists():
                 raise ValueError("Planning file not generated")
 
-            with open(planning_file, "r") as f:
+            with open(planning_file) as f:
                 planning_data = json.load(f)
 
             file_count = len(list(project_dir.rglob("*")))
@@ -278,7 +278,7 @@ class FullPipelineValidator:
             linting_evidence = []
 
             if performance_log.exists():
-                with open(performance_log, "r") as f:
+                with open(performance_log) as f:
                     for line in f:
                         try:
                             log_entry = json.loads(line.strip())
@@ -297,7 +297,7 @@ class FullPipelineValidator:
             linting_comments_found = 0
             for file_path in output_dir.rglob("*.js"):
                 try:
-                    with open(file_path, "r") as f:
+                    with open(file_path) as f:
                         content = f.read()
                         if "eslint" in content.lower() or "lint" in content.lower():
                             linting_comments_found += 1
@@ -460,7 +460,7 @@ class FullPipelineValidator:
                 log_path = logs_dir / log_file
                 if log_path.exists():
                     try:
-                        with open(log_path, "r") as f:
+                        with open(log_path) as f:
                             lines = f.readlines()
                             performance_evidence[log_file] = {
                                 "exists": True,
@@ -516,7 +516,7 @@ class FullPipelineValidator:
 
         for file_path in files:
             try:
-                with open(file_path, "r") as f:
+                with open(file_path) as f:
                     content = f.read()
 
                 score = 0.0
@@ -572,7 +572,7 @@ class FullPipelineValidator:
                 response_times = []
                 errors = 0
 
-                with open(performance_log, "r") as f:
+                with open(performance_log) as f:
                     for line in f:
                         try:
                             entry = json.loads(line.strip())

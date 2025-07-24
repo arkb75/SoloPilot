@@ -43,7 +43,7 @@ def extract_status_from_report(report_path: Path) -> str:
 
         return "unknown"
 
-    except (IOError, UnicodeDecodeError):
+    except (OSError, UnicodeDecodeError):
         return "unknown"
 
 

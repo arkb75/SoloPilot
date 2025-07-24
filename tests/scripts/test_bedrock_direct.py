@@ -26,7 +26,7 @@ def load_config():
         print(f"❌ Config file not found: {config_path}")
         sys.exit(1)
 
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         content = f.read()
 
     # Substitute environment variables in format ${VAR:-default}
@@ -193,7 +193,7 @@ def test_bedrock_aws_cli(arn, region):
         assert result.returncode == 0, f"AWS CLI failed: {result.stderr.strip()}"
 
         # Read response
-        with open(output_file_path, "r") as f:
+        with open(output_file_path) as f:
             response_data = json.load(f)
 
         tokens_used = response_data.get("usage", {})

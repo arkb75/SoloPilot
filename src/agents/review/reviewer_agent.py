@@ -37,7 +37,7 @@ class ReviewerAgent:
     def _load_config(self, config_path: Optional[str] = None) -> Dict[str, Any]:
         """Load configuration from file or use defaults."""
         if config_path and Path(config_path).exists():
-            with open(config_path, "r") as f:
+            with open(config_path) as f:
                 return yaml.safe_load(f)
 
         # Default configuration
@@ -293,7 +293,7 @@ class ReviewerAgent:
 
         for file_path in python_files:
             try:
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, encoding="utf-8") as f:
                     lines = len(f.readlines())
                     total_lines += lines
 
@@ -301,7 +301,7 @@ class ReviewerAgent:
                         large_files.append(
                             {"file": str(file_path.relative_to(milestone_dir)), "lines": lines}
                         )
-            except (IOError, UnicodeDecodeError):
+            except (OSError, UnicodeDecodeError):
                 continue
 
         stats.update(
@@ -323,7 +323,7 @@ class ReviewerAgent:
 
         for py_file in milestone_dir.rglob("*.py"):
             try:
-                with open(py_file, "r", encoding="utf-8") as f:
+                with open(py_file, encoding="utf-8") as f:
                     content = f.read()
 
                 # Skip very large files
@@ -338,7 +338,7 @@ class ReviewerAgent:
                     }
                 )
 
-            except (IOError, UnicodeDecodeError):
+            except (OSError, UnicodeDecodeError):
                 continue
 
         return code_files

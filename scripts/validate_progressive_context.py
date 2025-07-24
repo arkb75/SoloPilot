@@ -27,7 +27,7 @@ class ProgressiveContextValidator:
     def __init__(self, config_path: str = None):
         """Initialize validator with configuration."""
         if config_path:
-            with open(config_path, "r") as f:
+            with open(config_path) as f:
                 self.config = yaml.safe_load(f)
         else:
             # Default configuration

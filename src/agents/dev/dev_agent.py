@@ -63,7 +63,7 @@ class DevAgent:
 
     def _load_config(self, config_path: str) -> Dict[str, Any]:
         """Load configuration from YAML file with environment variable substitution."""
-        with open(config_path, "r") as f:
+        with open(config_path) as f:
             content = f.read()
 
         # Substitute environment variables in format ${VAR:-default}
@@ -380,7 +380,7 @@ Focus on creating a solid foundation that a developer can build upon."""
     ) -> Dict[str, Any]:
         """Process planning output and generate milestone-based code structure."""
         # Load planning data
-        with open(planning_file, "r") as f:
+        with open(planning_file) as f:
             planning_data = json.load(f)
 
         # Create output directory

@@ -303,7 +303,7 @@ Additional Requirements:
             impl_file = milestone_dir / milestone_info["files"]["implementation"]
 
             # Read implementation file and check it's not just stub
-            with open(impl_file, "r") as f:
+            with open(impl_file) as f:
                 content = f.read()
 
             self.assertNotIn(

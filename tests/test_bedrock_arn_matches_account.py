@@ -17,7 +17,7 @@ def test_arn_account_matches_sts():
     # Get ARN from environment or config
     arn = os.getenv("BEDROCK_IP_ARN")
     if not arn:
-        with open("config/model_config.yaml", "r") as f:
+        with open("config/model_config.yaml") as f:
             content = f.read()
 
         # Handle environment variable substitution

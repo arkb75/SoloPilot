@@ -43,7 +43,7 @@ def build_context(milestone_path: Path) -> str:
     milestone_json_path = milestone_path / "milestone.json"
     if milestone_json_path.exists():
         try:
-            with open(milestone_json_path, "r") as f:
+            with open(milestone_json_path) as f:
                 milestone_data = json.load(f)
             context_parts.append(
                 f"## Milestone Context\n```json\n{json.dumps(milestone_data, indent=2)}\n```\n"
@@ -146,7 +146,7 @@ def _collect_design_guidelines(guidelines_dir: Path) -> List[str]:
     try:
         for md_file in sorted(guidelines_dir.glob("*.md")):
             try:
-                with open(md_file, "r", encoding="utf-8") as f:
+                with open(md_file, encoding="utf-8") as f:
                     content = f.read().strip()
                 if content:
                     guidelines.append(f"### {md_file.stem.replace('_', ' ').title()}\n{content}\n")
@@ -181,7 +181,7 @@ def _collect_package_manifests(milestone_path: Path) -> List[str]:
         manifest_path = milestone_path / manifest_name
         if manifest_path.exists() and manifest_path.is_file():
             try:
-                with open(manifest_path, "r", encoding="utf-8") as f:
+                with open(manifest_path, encoding="utf-8") as f:
                     content = f.read().strip()
                 if content:
                     manifests.append(f"### {manifest_name}\n```\n{content}\n```\n")
@@ -199,7 +199,7 @@ def _collect_project_structure(milestone_path: Path) -> Optional[str]:
         structure_path = milestone_path / structure_file
         if structure_path.exists() and structure_path.is_file():
             try:
-                with open(structure_path, "r", encoding="utf-8") as f:
+                with open(structure_path, encoding="utf-8") as f:
                     content = f.read().strip()
                 if content and len(content) < 5000:  # Limit size to avoid overwhelming prompt
                     return f"```markdown\n{content}\n```\n"

@@ -58,7 +58,7 @@ class ProjectPlanner:
     def _load_config(self, config_path: Optional[str]) -> Dict[str, Any]:
         """Load model configuration."""
         if config_path and os.path.exists(config_path):
-            with open(config_path, "r") as f:
+            with open(config_path) as f:
                 return yaml.safe_load(f)
         return {
             "llm": {
@@ -109,7 +109,7 @@ class ProjectPlanner:
 
     def load_specification(self, spec_path: str) -> Dict[str, Any]:
         """Load specification JSON from file."""
-        with open(spec_path, "r") as f:
+        with open(spec_path) as f:
             return json.load(f)
 
     def _call_llm_with_retry(self, llm, prompt: str, max_retries: int = 3):

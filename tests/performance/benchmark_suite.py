@@ -230,11 +230,11 @@ class PerformanceBenchmark:
 
             # Count log entries
             if performance_log.exists():
-                with open(performance_log, "r") as f:
+                with open(performance_log) as f:
                     results["performance_log_entries"] = len(f.readlines())
 
             if llm_calls_log.exists():
-                with open(llm_calls_log, "r") as f:
+                with open(llm_calls_log) as f:
                     results["llm_calls_entries"] = len(f.readlines())
 
             print(f"  ✓ Performance log entries: {results['performance_log_entries']}")

@@ -301,7 +301,7 @@ describe('ProjectSetup', () => {
         assert manifest_file.exists()
 
         # Verify manifest content
-        with open(manifest_file, "r") as f:
+        with open(manifest_file) as f:
             saved_manifest = json.load(f)
         assert saved_manifest["project_title"] == "Test E-Commerce Platform"
 

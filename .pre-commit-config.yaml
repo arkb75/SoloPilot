@@ -15,7 +15,7 @@ repos:
       - id: check-json
         exclude: 'tsconfig.*\.json$'  # TypeScript config files allow comments
       - id: check-added-large-files
-        args: ['--maxkb=500']
+        args: ['--maxkb=1000']  # Increased to allow poetry.lock
       - id: check-case-conflict
       - id: check-merge-conflict
       - id: check-toml

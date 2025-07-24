@@ -132,7 +132,7 @@ Examples:
         # Enhance with Context7 insights if enabled
         if context7_bridge.is_enabled():
             print("🔍 Generating Context7 insights...")
-            with open(planning_file, "r") as f:
+            with open(planning_file) as f:
                 planning_data = json.load(f)
 
             for i, milestone in enumerate(planning_data["milestones"], 1):
@@ -146,7 +146,7 @@ Examples:
                     readme_file = milestone_dir / "README.md"
 
                     if readme_file.exists():
-                        with open(readme_file, "r") as f:
+                        with open(readme_file) as f:
                             readme_content = f.read()
 
                         insights_section = context7_bridge.format_insights_for_readme(insights)

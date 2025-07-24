@@ -57,7 +57,7 @@ class TestLogCallDecorator:
                 assert log_file.exists()
 
                 # Read and parse log entry
-                with open(log_file, "r") as f:
+                with open(log_file) as f:
                     log_line = f.read().strip()
 
                 log_entry = json.loads(log_line)
@@ -104,7 +104,7 @@ class TestLogCallDecorator:
                 log_file = Path("logs/llm_calls.log")
                 assert log_file.exists()
 
-                with open(log_file, "r") as f:
+                with open(log_file) as f:
                     log_line = f.read().strip()
 
                 log_entry = json.loads(log_line)
@@ -135,7 +135,7 @@ class TestLogCallDecorator:
 
                 # Check all calls were logged
                 log_file = Path("logs/llm_calls.log")
-                with open(log_file, "r") as f:
+                with open(log_file) as f:
                     lines = f.read().strip().split("\n")
 
                 assert len(lines) == 3

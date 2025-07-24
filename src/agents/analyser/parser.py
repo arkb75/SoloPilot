@@ -79,7 +79,7 @@ class TextParser:
         config_file = config_path or "config/model_config.yaml"
 
         if os.path.exists(config_file):
-            with open(config_file, "r") as f:
+            with open(config_file) as f:
                 content = f.read()
 
             # Substitute environment variables in format ${VAR:-default}
@@ -172,12 +172,12 @@ class TextParser:
 
     def _parse_markdown(self, path: Path) -> str:
         """Parse markdown files."""
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return f.read()
 
     def _parse_text(self, path: Path) -> str:
         """Parse plain text files."""
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return f.read()
 
     def _parse_docx(self, path: Path) -> str:

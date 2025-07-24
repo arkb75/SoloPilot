@@ -200,10 +200,10 @@ class ContextEngine:
         milestone_json = milestone_path / "milestone.json"
         if milestone_json.exists():
             try:
-                with open(milestone_json, "r") as f:
+                with open(milestone_json) as f:
                     milestone_data = json.load(f)
                 context_data["milestone"] = json.dumps(milestone_data, indent=2)
-            except (json.JSONDecodeError, IOError) as e:
+            except (OSError, json.JSONDecodeError) as e:
                 context_data["milestone"] = f"Error loading milestone.json: {e}"
 
         # Collect package manifests
@@ -224,11 +224,11 @@ class ContextEngine:
             manifest_path = milestone_path / manifest_name
             if manifest_path.exists():
                 try:
-                    with open(manifest_path, "r") as f:
+                    with open(manifest_path) as f:
                         content = f.read().strip()
                     if content:
                         manifests.append(f"### {manifest_name}\n```\n{content}\n```")
-                except IOError:
+                except OSError:
                     manifests.append(f"### {manifest_name}\n(Error reading file)")
 
         if manifests:
@@ -240,12 +240,12 @@ class ContextEngine:
             doc_path = milestone_path / doc_file
             if doc_path.exists():
                 try:
-                    with open(doc_path, "r") as f:
+                    with open(doc_path) as f:
                         content = f.read().strip()
                     if content and len(content) < 3000:  # Limit doc size
                         context_data["documentation"] = content
                         break
-                except IOError:
+                except OSError:
                     continue
 
         return context_data

@@ -35,7 +35,7 @@ def validate_imports(root_dir):
                 checked += 1
 
                 try:
-                    with open(filepath, "r") as f:
+                    with open(filepath) as f:
                         content = f.read()
 
                     # Parse the AST

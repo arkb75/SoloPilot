@@ -24,7 +24,7 @@ def load_config():
         print(f"❌ Config file not found: {config_path}")
         sys.exit(1)
 
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         content = f.read()
 
     # Substitute environment variables in format ${VAR:-default}

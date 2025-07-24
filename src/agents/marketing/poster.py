@@ -96,7 +96,7 @@ class MarketingPoster:
         manifest_file = milestone_dir / "manifest.json"
         if manifest_file.exists():
             try:
-                with open(manifest_file, "r") as f:
+                with open(manifest_file) as f:
                     manifest = json.load(f)
 
                 info.update(
@@ -110,14 +110,14 @@ class MarketingPoster:
                     }
                 )
 
-            except (json.JSONDecodeError, IOError):
+            except (OSError, json.JSONDecodeError):
                 pass
 
         # Check for milestone.json (from planner)
         milestone_file = milestone_dir / "milestone.json"
         if milestone_file.exists():
             try:
-                with open(milestone_file, "r") as f:
+                with open(milestone_file) as f:
                     milestone = json.load(f)
 
                 if "name" in milestone:
@@ -125,7 +125,7 @@ class MarketingPoster:
                 if "description" in milestone:
                     info["summary"] = milestone["description"][:100]
 
-            except (json.JSONDecodeError, IOError):
+            except (OSError, json.JSONDecodeError):
                 pass
 
         # Analyze directory contents

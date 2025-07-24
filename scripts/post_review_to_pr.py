@@ -112,7 +112,7 @@ def parse_review_report(report_path: Path) -> dict:
             "ai_insights": ai_insights,
         }
 
-    except (IOError, UnicodeDecodeError) as e:
+    except (OSError, UnicodeDecodeError) as e:
         return {
             "status": "error",
             "summary": f"Failed to parse review report: {e}",
