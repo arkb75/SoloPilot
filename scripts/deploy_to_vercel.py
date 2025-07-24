@@ -6,7 +6,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import click
 import requests
@@ -55,9 +55,7 @@ class VercelDeployer:
         url = f"{VERCEL_API_BASE}/{VERCEL_API_VERSION}/deployments"
         params = {"teamId": self.org_id} if self.org_id else {}
 
-        response = requests.post(
-            url, headers=self.headers, json=deployment_config, params=params
-        )
+        response = requests.post(url, headers=self.headers, json=deployment_config, params=params)
 
         if response.status_code != 200:
             click.echo(f"❌ Deployment failed: {response.status_code}")
@@ -141,9 +139,7 @@ class VercelDeployer:
 
         return env_vars
 
-    def _get_build_config(
-        self, project_root: Optional[Path]
-    ) -> Optional[Dict[str, Any]]:
+    def _get_build_config(self, project_root: Optional[Path]) -> Optional[Dict[str, Any]]:
         """Get build configuration based on project type."""
         if not project_root:
             return None
@@ -187,9 +183,7 @@ class VercelDeployer:
 
         return domains
 
-    def _wait_for_deployment(
-        self, deployment_id: str, timeout: int = 600
-    ) -> Dict[str, Any]:
+    def _wait_for_deployment(self, deployment_id: str, timeout: int = 600) -> Dict[str, Any]:
         """Wait for deployment to complete."""
         click.echo("⏳ Waiting for deployment to complete...")
 
@@ -201,9 +195,7 @@ class VercelDeployer:
             response = requests.get(url, headers=self.headers, params=params)
 
             if response.status_code != 200:
-                click.echo(
-                    f"❌ Failed to check deployment status: {response.status_code}"
-                )
+                click.echo(f"❌ Failed to check deployment status: {response.status_code}")
                 sys.exit(1)
 
             deployment = response.json()
@@ -294,9 +286,7 @@ class VercelDeployer:
 
         # Check API health endpoint if exists
         try:
-            health_response = requests.get(
-                f"https://{deployment_url}/api/health", timeout=10
-            )
+            health_response = requests.get(f"https://{deployment_url}/api/health", timeout=10)
             if health_response.status_code == 200:
                 click.echo("   ✅ API health check passed")
         except:
@@ -309,9 +299,7 @@ class VercelDeployer:
 @click.command()
 @click.option("--token", required=True, help="Vercel API token")
 @click.option("--org-id", help="Vercel organization ID")
-@click.option(
-    "--project-id", help="Vercel project ID (required unless --create-project is used)"
-)
+@click.option("--project-id", help="Vercel project ID (required unless --create-project is used)")
 @click.option(
     "--environment",
     type=click.Choice(["production", "preview"]),
@@ -327,9 +315,7 @@ class VercelDeployer:
     help="Project root directory",
 )
 @click.option("--skip-validation", is_flag=True, help="Skip post-deployment validation")
-@click.option(
-    "--create-project", is_flag=True, help="Create project if it doesn't exist"
-)
+@click.option("--create-project", is_flag=True, help="Create project if it doesn't exist")
 @click.option("--client-name", help="Client name for project creation")
 @click.option("--project-type", default="site", help="Project type (site, app, api)")
 def deploy(

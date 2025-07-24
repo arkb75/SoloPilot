@@ -20,7 +20,7 @@ from typing import Any, Dict, List
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agents.analyser import ImageParser, SpecBuilder, TextParser
+from src.agents.analyser import ImageParser, SpecBuilder, TextParser
 
 
 def extract_zip(zip_path: str, extract_to: str) -> str:

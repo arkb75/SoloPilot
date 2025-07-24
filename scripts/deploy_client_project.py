@@ -18,8 +18,8 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from vercel_project_manager import VercelProjectManager
 
-from agents.email_intake.conversation_state_v2 import ConversationStateManagerV2
-from agents.email_intake.deployment_tracker import DeploymentTracker
+from src.agents.email_intake.conversation_state import ConversationStateManager
+from src.agents.email_intake.deployment_tracker import DeploymentTracker
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ class ClientDeploymentOrchestrator:
             raise ValueError("Vercel token is required")
 
         # Initialize managers
-        self.conversation_manager = ConversationStateManagerV2(conversations_table)
+        self.conversation_manager = ConversationStateManager(conversations_table)
         self.deployment_tracker = DeploymentTracker(deployments_table)
         self.vercel_manager = VercelProjectManager(self.vercel_token)
 
@@ -94,9 +94,7 @@ class ClientDeploymentOrchestrator:
             repo_url = self._ensure_github_repo(client_info, deployment)
 
             # 5. Create Vercel project
-            vercel_project_id, project_name = self._ensure_vercel_project(
-                client_info, deployment
-            )
+            vercel_project_id, project_name = self._ensure_vercel_project(client_info, deployment)
 
             # 6. Trigger deployment
             deployment_result = self._trigger_deployment(
@@ -118,9 +116,7 @@ class ClientDeploymentOrchestrator:
 
         except Exception as e:
             logger.error(f"Deployment failed: {str(e)}")
-            self.deployment_tracker.update_deployment_status(
-                conversation_id, "failed", str(e)
-            )
+            self.deployment_tracker.update_deployment_status(conversation_id, "failed", str(e))
             raise
 
     def deploy_from_requirements(self, requirements_json: str) -> Dict[str, Any]:
@@ -235,9 +231,7 @@ class ClientDeploymentOrchestrator:
 
         return deployment
 
-    def _ensure_github_repo(
-        self, client_info: Dict[str, str], deployment: Dict[str, Any]
-    ) -> str:
+    def _ensure_github_repo(self, client_info: Dict[str, str], deployment: Dict[str, Any]) -> str:
         """Ensure GitHub repository exists.
 
         Returns:
@@ -259,9 +253,7 @@ class ClientDeploymentOrchestrator:
             repo_url = self._create_github_repo(repo_name, client_info)
 
         # Update deployment record
-        self.deployment_tracker.update_github_repo(
-            client_info["id"], repo_url, repo_name
-        )
+        self.deployment_tracker.update_github_repo(client_info["id"], repo_url, repo_name)
 
         return repo_url
 
@@ -314,9 +306,7 @@ class ClientDeploymentOrchestrator:
 
             return repo["html_url"]
         else:
-            raise Exception(
-                f"Failed to create repo: {response.status_code} - {response.text}"
-            )
+            raise Exception(f"Failed to create repo: {response.status_code} - {response.text}")
 
     def _setup_branch_protection(self, repo_full_name: str) -> None:
         """Set up branch protection rules."""
@@ -336,9 +326,7 @@ class ClientDeploymentOrchestrator:
         }
 
         try:
-            response = requests.put(
-                url, headers=self.github_headers, json=protection_rules
-            )
+            response = requests.put(url, headers=self.github_headers, json=protection_rules)
             if response.status_code in [200, 201]:
                 logger.info("Branch protection enabled for main branch")
         except Exception as e:
@@ -354,9 +342,7 @@ class ClientDeploymentOrchestrator:
         """
         # Check if project already exists in deployment record
         if deployment.get("vercel_project_id"):
-            logger.info(
-                f"Using existing Vercel project: {deployment['vercel_project_id']}"
-            )
+            logger.info(f"Using existing Vercel project: {deployment['vercel_project_id']}")
             return deployment["vercel_project_id"], deployment.get("metadata", {}).get(
                 "vercel_project_name", ""
             )
@@ -367,9 +353,7 @@ class ClientDeploymentOrchestrator:
         )
 
         # Update deployment record
-        self.deployment_tracker.update_vercel_project(
-            client_info["id"], project_id, project_name
-        )
+        self.deployment_tracker.update_vercel_project(client_info["id"], project_id, project_name)
 
         return project_id, project_name
 
@@ -468,9 +452,7 @@ class ClientDeploymentOrchestrator:
             repo_url = self._ensure_github_repo(client_info, deployment)
 
             # Ensure Vercel project
-            vercel_project_id, project_name = self._ensure_vercel_project(
-                client_info, deployment
-            )
+            vercel_project_id, project_name = self._ensure_vercel_project(client_info, deployment)
 
             # Trigger deployment
             deployment_result = self._trigger_deployment(
@@ -492,9 +474,7 @@ class ClientDeploymentOrchestrator:
 
         except Exception as e:
             logger.error(f"Deployment failed: {str(e)}")
-            self.deployment_tracker.update_deployment_status(
-                client_info["id"], "failed", str(e)
-            )
+            self.deployment_tracker.update_deployment_status(client_info["id"], "failed", str(e))
             raise
 
     def _sanitize_name(self, name: str) -> str:
@@ -524,9 +504,7 @@ def cli():
 
 
 @cli.command()
-@click.option(
-    "--conversation-id", required=True, help="Conversation ID with requirements"
-)
+@click.option("--conversation-id", required=True, help="Conversation ID with requirements")
 @click.option("--github-token", help="GitHub personal access token")
 @click.option("--vercel-token", help="Vercel API token")
 def deploy_conversation(

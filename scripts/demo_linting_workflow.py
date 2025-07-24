@@ -10,9 +10,9 @@ This script demonstrates:
 
 import os
 
-from agents.dev.dev_agent import DevAgent
-from utils.linter_integration import LinterManager
-from utils.sonarcloud_integration import SonarCloudClient
+from src.agents.dev.dev_agent import DevAgent
+from src.utils.linter_integration import LinterManager
+from src.utils.sonarcloud_integration import SonarCloudClient
 
 
 def demo_linting_workflow():

@@ -95,7 +95,7 @@ jobs:
         
         # Run reviewer agent
         source .venv/bin/activate
-        python -m agents.review.reviewer_agent temp_review/milestone-pr
+        python -m src.agents.review.reviewer_agent temp_review/milestone-pr
         
         # Save review status for later steps
         REVIEW_STATUS=$(python scripts/check_review_status.py temp_review/milestone-pr/review-report.md)
@@ -211,7 +211,7 @@ jobs:
         NO_NETWORK: 1
         AI_PROVIDER: fake
       run: |
-        python -m pytest --cov=agents --cov=utils --cov-report=xml --cov-report=term-missing
+        python -m pytest --cov=src.agents --cov=src.utils --cov=src.common --cov=src.providers --cov-report=xml --cov-report=term-missing
 
     - name: SonarCloud Scan
       uses: SonarSource/sonarcloud-github-action@master

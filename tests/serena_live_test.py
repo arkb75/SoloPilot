@@ -62,7 +62,7 @@ class TestSerenaLiveIntegration:
 
     def test_real_symbol_lookup(self):
         """Test real symbol lookup through Serena LSP."""
-        from agents.dev.context_engine.serena_engine import SerenaContextEngine
+        from src.agents.dev.context_engine.serena_engine import SerenaContextEngine
 
         # Create engine with test project
         test_project = Path(__file__).parent.parent  # SoloPilot root
@@ -85,7 +85,7 @@ class TestSerenaLiveIntegration:
 
     def test_real_json_rpc_communication(self):
         """Test actual JSON-RPC communication with Serena server."""
-        from agents.dev.context_engine.serena_engine import SerenaContextEngine
+        from src.agents.dev.context_engine.serena_engine import SerenaContextEngine
 
         test_project = Path(__file__).parent.parent
         engine = SerenaContextEngine(project_root=test_project)
@@ -110,8 +110,8 @@ class TestSerenaLiveIntegration:
 
     def test_benchmark_produces_real_metrics(self):
         """Test that benchmarks produce real, not estimated metrics."""
-        from agents.dev.context_engine import LegacyContextEngine
-        from agents.dev.context_engine.serena_engine import SerenaContextEngine
+        from src.agents.dev.context_engine import LegacyContextEngine
+        from src.agents.dev.context_engine.serena_engine import SerenaContextEngine
 
         test_project = Path(__file__).parent.parent
         test_milestone = test_project / "milestones" / "milestone-001"

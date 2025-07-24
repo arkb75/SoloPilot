@@ -12,8 +12,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agents.dev.context_engine.progressive_context import ContextTier, ProgressiveContextBuilder
-from agents.dev.context_engine.serena_engine import SerenaContextEngine
+from src.agents.dev.context_engine.progressive_context import ContextTier, ProgressiveContextBuilder
+from src.agents.dev.context_engine.serena_engine import SerenaContextEngine
 
 
 class TestTokenBudgetEnforcement(unittest.TestCase):
@@ -250,7 +250,7 @@ class AuthManager:
 
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch("agents.dev.context_engine.serena_engine.SerenaContextEngine._start_serena_server")
+    @patch("src.agents.dev.context_engine.serena_engine.SerenaContextEngine._start_serena_server")
     def test_balanced_mode_token_limits(self, mock_start_server):
         """Test that BALANCED mode respects 1500 token limit."""
         mock_start_server.return_value = False  # Use fallback
@@ -268,7 +268,7 @@ class AuthManager:
         self.assertEqual(metadata["context_mode"], "BALANCED")
         self.assertEqual(metadata["max_tokens"], 1500)
 
-    @patch("agents.dev.context_engine.serena_engine.SerenaContextEngine._start_serena_server")
+    @patch("src.agents.dev.context_engine.serena_engine.SerenaContextEngine._start_serena_server")
     def test_minimal_mode_token_limits(self, mock_start_server):
         """Test that MINIMAL mode respects 800 token limit."""
         mock_start_server.return_value = False  # Use fallback
@@ -286,7 +286,7 @@ class AuthManager:
         self.assertEqual(metadata["context_mode"], "MINIMAL")
         self.assertEqual(metadata["max_tokens"], 800)
 
-    @patch("agents.dev.context_engine.serena_engine.SerenaContextEngine._start_serena_server")
+    @patch("src.agents.dev.context_engine.serena_engine.SerenaContextEngine._start_serena_server")
     def test_comprehensive_mode_no_limits(self, mock_start_server):
         """Test that COMPREHENSIVE mode has no token limits."""
         mock_start_server.return_value = False  # Use fallback
@@ -301,7 +301,7 @@ class AuthManager:
         self.assertEqual(metadata["context_mode"], "COMPREHENSIVE")
         self.assertEqual(metadata["max_tokens"], float("inf"))
 
-    @patch("agents.dev.context_engine.serena_engine.SerenaContextEngine._start_serena_server")
+    @patch("src.agents.dev.context_engine.serena_engine.SerenaContextEngine._start_serena_server")
     def test_warnings_displayed(self, mock_start_server):
         """Test that warnings are displayed when context is truncated."""
         mock_start_server.return_value = False  # Use fallback
@@ -448,7 +448,7 @@ class AuthService:
         for project_root in self.sample_projects:
             shutil.rmtree(project_root, ignore_errors=True)
 
-    @patch("agents.dev.context_engine.serena_engine.SerenaContextEngine._start_serena_server")
+    @patch("src.agents.dev.context_engine.serena_engine.SerenaContextEngine._start_serena_server")
     def test_balanced_mode_token_average(self, mock_start_server):
         """Test that BALANCED mode averages 1000-1500 tokens on sample projects."""
         mock_start_server.return_value = False  # Use fallback

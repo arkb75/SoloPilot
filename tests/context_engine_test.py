@@ -21,7 +21,7 @@ class TestContextEngineFactory:
 
     def test_get_context_engine_default_legacy(self):
         """Test that default context engine is legacy."""
-        from agents.dev.context_engine import get_context_engine
+        from src.agents.dev.context_engine import get_context_engine
 
         engine = get_context_engine()
         info = engine.get_engine_info()
@@ -30,7 +30,7 @@ class TestContextEngineFactory:
 
     def test_get_context_engine_explicit_legacy(self):
         """Test explicitly requesting legacy engine."""
-        from agents.dev.context_engine import get_context_engine
+        from src.agents.dev.context_engine import get_context_engine
 
         engine = get_context_engine("legacy")
         info = engine.get_engine_info()
@@ -38,7 +38,7 @@ class TestContextEngineFactory:
 
     def test_get_context_engine_no_network_forces_legacy(self):
         """Test that NO_NETWORK=1 forces legacy engine."""
-        from agents.dev.context_engine import get_context_engine
+        from src.agents.dev.context_engine import get_context_engine
 
         with patch.dict(os.environ, {"NO_NETWORK": "1", "CONTEXT_ENGINE": "lc_chroma"}):
             engine = get_context_engine()
@@ -47,7 +47,7 @@ class TestContextEngineFactory:
 
     def test_get_context_engine_langchain_chroma(self):
         """Test LangChain + Chroma engine initialization."""
-        from agents.dev.context_engine import get_context_engine
+        from src.agents.dev.context_engine import get_context_engine
 
         # Clear NO_NETWORK to allow LangChain engine
         with patch.dict(os.environ, {"NO_NETWORK": ""}, clear=False):
@@ -62,7 +62,7 @@ class TestContextEngineFactory:
 
     def test_context_engine_build_context_compatibility(self):
         """Test that build_context function works for backward compatibility."""
-        from agents.dev.context_engine import build_context
+        from src.agents.dev.context_engine import build_context
 
         with tempfile.TemporaryDirectory() as temp_dir:
             milestone_path = Path(temp_dir) / "test_milestone"
@@ -81,7 +81,7 @@ class TestLegacyContextEngine:
 
     def test_legacy_context_engine_build_context(self):
         """Test legacy context engine builds context correctly."""
-        from agents.dev.context_engine import LegacyContextEngine
+        from src.agents.dev.context_engine import LegacyContextEngine
 
         engine = LegacyContextEngine()
 
@@ -102,7 +102,7 @@ class TestLegacyContextEngine:
 
     def test_legacy_context_engine_get_info(self):
         """Test legacy context engine info."""
-        from agents.dev.context_engine import LegacyContextEngine
+        from src.agents.dev.context_engine import LegacyContextEngine
 
         engine = LegacyContextEngine()
         info = engine.get_engine_info()
@@ -118,7 +118,7 @@ class TestLangChainChromaEngine:
     def test_langchain_chroma_engine_availability(self):
         """Test LangChain + Chroma engine availability."""
         try:
-            from agents.dev.context_engine import LangChainChromaEngine
+            from src.agents.dev.context_engine import LangChainChromaEngine
 
             engine = LangChainChromaEngine()
             info = engine.get_engine_info()
@@ -133,7 +133,7 @@ class TestLangChainChromaEngine:
     def test_langchain_chroma_engine_build_context(self):
         """Test LangChain + Chroma engine builds enhanced context."""
         try:
-            from agents.dev.context_engine import LangChainChromaEngine
+            from src.agents.dev.context_engine import LangChainChromaEngine
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 engine = LangChainChromaEngine(persist_directory=temp_dir + "/test_chroma")
@@ -172,7 +172,7 @@ class TestContextEngineIntegration:
 
     def test_dev_agent_uses_context_engine(self):
         """Test that dev agent properly uses context engine."""
-        from agents.dev.dev_agent import DevAgent
+        from src.agents.dev.dev_agent import DevAgent
 
         with tempfile.TemporaryDirectory() as temp_dir:
             # Create test config
@@ -198,7 +198,7 @@ llm:
 
     def test_dev_agent_context_engine_environment_control(self):
         """Test that dev agent respects CONTEXT_ENGINE environment variable."""
-        from agents.dev.dev_agent import DevAgent
+        from src.agents.dev.dev_agent import DevAgent
 
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "config.yaml"
@@ -232,7 +232,7 @@ class TestContextEnginePerformance:
         """Test that context engine performance is measurable."""
         import time
 
-        from agents.dev.context_engine import get_context_engine
+        from src.agents.dev.context_engine import get_context_engine
 
         with tempfile.TemporaryDirectory() as temp_dir:
             milestone_path = Path(temp_dir) / "test_milestone"
@@ -255,7 +255,7 @@ class TestContextEnginePerformance:
         try:
             import time
 
-            from agents.dev.context_engine import LangChainChromaEngine
+            from src.agents.dev.context_engine import LangChainChromaEngine
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 persist_dir = temp_dir + "/chroma_cache"
@@ -291,7 +291,7 @@ class TestContextEngineBackwardCompatibility:
 
     def test_context_packer_still_works(self):
         """Test that existing context_packer still works."""
-        from agents.dev.context_packer import build_context
+        from src.agents.dev.context_packer import build_context
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
@@ -314,7 +314,7 @@ class TestContextEngineBackwardCompatibility:
 
     def test_convenience_build_context_function(self):
         """Test that the convenience build_context function works."""
-        from agents.dev.context_engine import build_context
+        from src.agents.dev.context_engine import build_context
 
         with tempfile.TemporaryDirectory() as temp_dir:
             milestone_path = Path(temp_dir) / "test_milestone"

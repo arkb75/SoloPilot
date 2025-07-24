@@ -17,7 +17,7 @@ import pytest
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from utils.github_review import GitHubReviewer
+from src.utils.github_review import GitHubReviewer
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ def sample_review_result():
                 "message": "Consider adding type hints for better code clarity",
             },
             {
-                "file": "utils.py",
+                "file": "src.utils.py",
                 "line": 25,
                 "severity": "low",
                 "message": "This function could be simplified",

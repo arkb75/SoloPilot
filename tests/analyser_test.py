@@ -15,7 +15,7 @@ import pytest
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agents.analyser.parser import ImageParser, SpecBuilder, TextParser
+from src.agents.analyser.parser import ImageParser, SpecBuilder, TextParser
 
 
 class TestTextParser:

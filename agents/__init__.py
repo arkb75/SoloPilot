@@ -1,1 +1,0 @@
-"""SoloPilot agents package."""

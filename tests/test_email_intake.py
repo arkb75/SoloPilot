@@ -5,7 +5,7 @@ import os
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-from agents.email_intake import (
+from src.agents.email_intake import (
     ConversationStateManager,
     EmailParser,
     RequirementExtractor,
@@ -84,7 +84,7 @@ Sent from my iPhone
 class TestRequirementExtractor:
     """Test requirement extraction from emails."""
 
-    @patch("agents.email_intake.requirement_extractor.get_provider")
+    @patch("src.agents.email_intake.requirement_extractor.get_provider")
     def test_extract_requirements(self, mock_get_provider):
         """Test extracting requirements from email conversation."""
         # Mock provider response
@@ -169,7 +169,7 @@ class TestRequirementExtractor:
 class TestConversationStateManager:
     """Test DynamoDB conversation state management."""
 
-    @patch("agents.email_intake.conversation_state.boto3.resource")
+    @patch("src.agents.email_intake.conversation_state.boto3.resource")
     def test_get_or_create_conversation(self, mock_boto):
         """Test getting or creating conversation."""
         # Mock DynamoDB table
@@ -187,7 +187,7 @@ class TestConversationStateManager:
         assert result["conversation_id"] == "test-thread-123"
         assert result["status"] == "active"
 
-    @patch("agents.email_intake.conversation_state.boto3.resource")
+    @patch("src.agents.email_intake.conversation_state.boto3.resource")
     def test_add_email(self, mock_boto):
         """Test adding email to conversation."""
         mock_table = MagicMock()
@@ -213,11 +213,11 @@ class TestConversationStateManager:
 class TestLambdaHandler:
     """Test Lambda handler integration."""
 
-    @patch("agents.email_intake.email_agent.s3_client")
-    @patch("agents.email_intake.email_agent.ses_client")
-    @patch("agents.email_intake.email_agent.sqs_client")
-    @patch("agents.email_intake.email_agent.ConversationStateManager")
-    @patch("agents.email_intake.email_agent.RequirementExtractor")
+    @patch("src.agents.email_intake.email_agent.s3_client")
+    @patch("src.agents.email_intake.email_agent.ses_client")
+    @patch("src.agents.email_intake.email_agent.sqs_client")
+    @patch("src.agents.email_intake.email_agent.ConversationStateManager")
+    @patch("src.agents.email_intake.email_agent.RequirementExtractor")
     def test_lambda_handler_complete_requirements(
         self, mock_extractor_class, mock_state_class, mock_sqs, mock_ses, mock_s3
     ):
@@ -257,7 +257,7 @@ I need a website for my bakery.
                     {"name": "Contact", "desc": "Contact form"},
                     {"name": "Gallery", "desc": "Photo gallery"},
                 ],
-            }
+            },
         }
         mock_state_class.return_value = mock_state
 
@@ -279,7 +279,7 @@ I need a website for my bakery.
         # Mock SQS response
         mock_sqs.send_message.return_value = {
             "MessageId": "test-message-id",
-            "ResponseMetadata": {"HTTPStatusCode": 200}
+            "ResponseMetadata": {"HTTPStatusCode": 200},
         }
 
         # Lambda event
@@ -306,11 +306,11 @@ I need a website for my bakery.
         ses_call = mock_ses.send_email.call_args[1]
         assert "Project Scope Confirmed" in ses_call["Message"]["Subject"]["Data"]
 
-    @patch("agents.email_intake.email_agent.s3_client")
-    @patch("agents.email_intake.email_agent.ses_client")
-    @patch("agents.email_intake.email_agent.sqs_client")
-    @patch("agents.email_intake.email_agent.ConversationStateManager")
-    @patch("agents.email_intake.email_agent.RequirementExtractor")
+    @patch("src.agents.email_intake.email_agent.s3_client")
+    @patch("src.agents.email_intake.email_agent.ses_client")
+    @patch("src.agents.email_intake.email_agent.sqs_client")
+    @patch("src.agents.email_intake.email_agent.ConversationStateManager")
+    @patch("src.agents.email_intake.email_agent.RequirementExtractor")
     def test_lambda_handler_incomplete_requirements(
         self, mock_extractor_class, mock_state_class, mock_sqs, mock_ses, mock_s3
     ):
@@ -330,11 +330,14 @@ I need help with a project.
         # Mock conversation state
         mock_state = MagicMock()
         mock_state.get_or_create.return_value = {"conversation_id": "test-456", "email_history": []}
-        mock_state.add_email.return_value = {"conversation_id": "test-456", "email_history": [{"from": "test@example.com"}]}
+        mock_state.add_email.return_value = {
+            "conversation_id": "test-456",
+            "email_history": [{"from": "test@example.com"}],
+        }
         mock_state.update_requirements.return_value = {
             "conversation_id": "test-456",
             "email_history": [{"from": "test@example.com"}],
-            "requirements": {"title": "Some Project"}
+            "requirements": {"title": "Some Project"},
         }
         mock_state_class.return_value = mock_state
 
@@ -348,7 +351,7 @@ I need help with a project.
         # Mock SQS response
         mock_sqs.send_message.return_value = {
             "MessageId": "test-message-id-456",
-            "ResponseMetadata": {"HTTPStatusCode": 200}
+            "ResponseMetadata": {"HTTPStatusCode": 200},
         }
 
         event = {

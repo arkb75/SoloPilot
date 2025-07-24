@@ -126,7 +126,7 @@ echo "🔧 Activating virtual environment..."
 source .venv/bin/activate
 
 # Check if dependencies are installed in venv
-if ! python -c "import agents.analyser" 2>/dev/null; then
+if ! python -c "import src.agents.analyser" 2>/dev/null; then
     echo "📦 Installing Python dependencies in virtual environment..."
     
     # Check if tesseract is installed (required for OCR)

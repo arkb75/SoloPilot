@@ -199,7 +199,7 @@ jobs:
         NO_NETWORK: 1
         AI_PROVIDER: fake
       run: |
-        python -m pytest --cov=agents --cov=utils --cov-report=xml --cov-report=term-missing
+        python -m pytest --cov=src --cov-report=xml --cov-report=term-missing
 
     - name: SonarCloud Scan
       uses: SonarSource/sonarcloud-github-action@master
@@ -235,11 +235,10 @@ jobs:
       run: |
         # Create a temporary milestone directory for review
         mkdir -p temp_review/milestone-test
-        cp -r agents/ temp_review/milestone-test/
-        cp -r utils/ temp_review/milestone-test/ || true
+        cp -r src/ temp_review/milestone-test/
         
         # Run reviewer agent
-        python -m agents.review.reviewer_agent temp_review/milestone-test
+        python -m src.agents.review.reviewer_agent temp_review/milestone-test
         
         # Post review to PR if GitHub token is available
         if [ -n "$GITHUB_TOKEN" ] && [ "$NO_NETWORK" != "1" ]; then
@@ -278,12 +277,11 @@ jobs:
       run: |
         # Create milestone directory with latest code
         mkdir -p promotion_review/milestone-main
-        cp -r agents/ promotion_review/milestone-main/
-        cp -r utils/ promotion_review/milestone-main/ || true
+        cp -r src/ promotion_review/milestone-main/
         cp -r scripts/ promotion_review/milestone-main/ || true
         
         # Run review
-        python -m agents.review.reviewer_agent promotion_review/milestone-main
+        python -m src.agents.review.reviewer_agent promotion_review/milestone-main
         
         # Check review status
         echo "REVIEW_STATUS=$(python scripts/check_review_status.py promotion_review/milestone-main/review-report.md)" >> $GITHUB_ENV

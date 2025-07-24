@@ -17,7 +17,7 @@ import pytest
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from agents.marketing.poster import MarketingPoster
+from src.agents.marketing.poster import MarketingPoster
 
 
 @pytest.fixture

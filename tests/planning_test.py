@@ -14,8 +14,8 @@ import pytest
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agents.planning.models import Milestone, PlanningOutput, Task
-from agents.planning.planner import ProjectPlanner
+from src.agents.planning.models import Milestone, PlanningOutput, Task
+from src.agents.planning.planner import ProjectPlanner
 
 
 class TestProjectPlanner:
@@ -121,7 +121,7 @@ class TestProjectPlanner:
         assert saved_plan["tech_stack"] == ["React", "Node.js"]
 
     @pytest.mark.skipif(os.getenv("NO_NETWORK") == "1", reason="offline CI")
-    @patch("agents.planning.planner.ChatBedrock")
+    @patch("src.agents.planning.planner.ChatBedrock")
     def test_llm_integration(self, mock_bedrock):
         """Test LLM integration for plan generation."""
         # Mock LLM response

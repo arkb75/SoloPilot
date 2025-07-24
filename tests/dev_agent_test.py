@@ -19,8 +19,8 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import after path modification
-from agents.dev.context7_bridge import Context7Bridge  # noqa: E402
-from agents.dev.dev_agent import DevAgent  # noqa: E402
+from src.agents.dev.context7_bridge import Context7Bridge  # noqa: E402
+from src.agents.dev.dev_agent import DevAgent  # noqa: E402
 
 
 @pytest.fixture
@@ -133,7 +133,7 @@ class TestDevAgent:
 
     def test_init(self, temp_config_file, mock_provider):
         """Test DevAgent initialization."""
-        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+        with patch("src.providers.get_provider") as mock_get_provider:
             mock_get_provider.return_value = mock_provider
             agent = DevAgent(config_path=temp_config_file)
 
@@ -143,7 +143,7 @@ class TestDevAgent:
 
     def test_load_config(self, temp_config_file, mock_provider):
         """Test configuration loading."""
-        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+        with patch("src.providers.get_provider") as mock_get_provider:
             mock_get_provider.return_value = mock_provider
             agent = DevAgent(config_path=temp_config_file)
 
@@ -153,7 +153,7 @@ class TestDevAgent:
 
     def test_infer_language(self, temp_config_file, mock_provider):
         """Test language inference from tech stack."""
-        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+        with patch("src.providers.get_provider") as mock_get_provider:
             mock_get_provider.return_value = mock_provider
             agent = DevAgent(config_path=temp_config_file)
 
@@ -173,7 +173,7 @@ class TestDevAgent:
 
     def test_get_file_extension(self, temp_config_file, mock_provider):
         """Test file extension mapping."""
-        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+        with patch("src.providers.get_provider") as mock_get_provider:
             mock_get_provider.return_value = mock_provider
             agent = DevAgent(config_path=temp_config_file)
 
@@ -186,7 +186,7 @@ class TestDevAgent:
 
     def test_generate_stub_code(self, temp_config_file, mock_provider):
         """Test stub code generation."""
-        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+        with patch("src.providers.get_provider") as mock_get_provider:
             mock_get_provider.return_value = mock_provider
             agent = DevAgent(config_path=temp_config_file)
 
@@ -199,7 +199,7 @@ class TestDevAgent:
 
     def test_parse_llm_response(self, temp_config_file, mock_provider):
         """Test LLM response parsing."""
-        with patch("agents.ai_providers.get_provider") as mock_get_provider:
+        with patch("src.providers.get_provider") as mock_get_provider:
             mock_get_provider.return_value = mock_provider
             agent = DevAgent(config_path=temp_config_file)
 
@@ -226,7 +226,7 @@ describe('TestImplementation', () => {
         assert "describe(" in test
         assert "should work" in test
 
-    @patch("agents.dev.dev_agent.DevAgent._call_llm")
+    @patch("src.agents.dev.dev_agent.DevAgent._call_llm")
     def test_process_planning_output(
         self, mock_llm_call, temp_config_file, temp_planning_file, temp_output_dir
     ):
@@ -322,8 +322,8 @@ describe('ProjectSetup', () => {
     def test_bedrock_failure_raises_exception(self, temp_config_file):
         """Test that Bedrock failures raise exceptions instead of returning stubs."""
         # Mock standardized client to fail
-        with patch("agents.common.bedrock_client.StandardizedBedrockClient") as mock_client_class:
-            from agents.common.bedrock_client import BedrockError
+        with patch("src.common.bedrock_client.StandardizedBedrockClient") as mock_client_class:
+            from src.common.bedrock_client import BedrockError
 
             mock_client = MagicMock()
             mock_client.simple_invoke_with_metadata.side_effect = BedrockError(
@@ -344,7 +344,7 @@ describe('ProjectSetup', () => {
 
                 # Should raise exception, not return stub code
                 # BedrockError is wrapped in ProviderError by the provider layer
-                from agents.ai_providers.base import ProviderError
+                from src.providers.base import ProviderError
 
                 with pytest.raises(ProviderError, match="Bedrock access denied"):
                     agent._call_llm("Test prompt")
@@ -353,7 +353,7 @@ describe('ProjectSetup', () => {
         """Test credential validation when neither env vars nor profile exist."""
         with patch.dict(os.environ, {}, clear=True):  # Clear all env vars
             with patch("os.path.exists", return_value=False):  # No AWS profile
-                from agents.ai_providers.base import ProviderUnavailableError
+                from src.providers.base import ProviderUnavailableError
 
                 # The DevAgent will catch credential errors and wrap them in ProviderUnavailableError
                 with pytest.raises(
@@ -375,7 +375,7 @@ describe('ProjectSetup', () => {
         with patch.dict(os.environ, {}, clear=True):  # Clear env vars
             with patch("os.path.exists", return_value=True):  # AWS profile exists
                 with patch(
-                    "agents.common.bedrock_client.StandardizedBedrockClient"
+                    "src.agents.common.bedrock_client.StandardizedBedrockClient"
                 ) as mock_client_class:
                     mock_client = MagicMock()
                     mock_client_class.return_value = mock_client
@@ -389,7 +389,7 @@ describe('ProjectSetup', () => {
             os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
         ):
             with patch(
-                "agents.common.bedrock_client.StandardizedBedrockClient"
+                "src.agents.common.bedrock_client.StandardizedBedrockClient"
             ) as mock_client_class:
                 mock_client = MagicMock()
                 mock_client_class.return_value = mock_client
@@ -409,7 +409,7 @@ describe('ProjectSetup', () => {
             os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
         ):
             with patch(
-                "agents.common.bedrock_client.StandardizedBedrockClient"
+                "src.agents.common.bedrock_client.StandardizedBedrockClient"
             ) as mock_client_class:
                 mock_client = MagicMock()
                 mock_client.simple_invoke_with_metadata.return_value = ("Modern response", {})
@@ -427,7 +427,7 @@ describe('ProjectSetup', () => {
             os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
         ):
             with patch(
-                "agents.common.bedrock_client.StandardizedBedrockClient"
+                "src.agents.common.bedrock_client.StandardizedBedrockClient"
             ) as mock_client_class:
                 mock_client = MagicMock()
                 mock_client.simple_invoke_with_metadata.return_value = ("Legacy response", {})
@@ -453,7 +453,7 @@ describe('ProjectSetup', () => {
             os.environ, {"AWS_ACCESS_KEY_ID": "dummy", "AWS_SECRET_ACCESS_KEY": "dummy"}
         ):
             with patch(
-                "agents.common.bedrock_client.StandardizedBedrockClient"
+                "src.agents.common.bedrock_client.StandardizedBedrockClient"
             ) as mock_client_class:
                 mock_client = MagicMock()
                 mock_client.simple_invoke_with_metadata.return_value = ("Test response", {})
@@ -599,7 +599,7 @@ class TestContext7Bridge:
 class TestIntegration:
     """Integration tests to verify end-to-end functionality."""
 
-    @patch("agents.dev.dev_agent.DevAgent._call_llm")
+    @patch("src.agents.dev.dev_agent.DevAgent._call_llm")
     def test_smoke_test_dev_agent(
         self, mock_llm_call, temp_config_file, temp_planning_file, temp_output_dir
     ):
@@ -674,9 +674,7 @@ llm:
             # Also patch environment to avoid NO_NETWORK interference
             with patch.dict(
                 os.environ, {"NO_NETWORK": "", "AI_PROVIDER": "bedrock"}, clear=False
-            ), patch(
-                "agents.ai_providers.bedrock.BedrockProvider.generate_code"
-            ) as mock_generate_code:
+            ), patch("src.providers.bedrock.BedrockProvider.generate_code") as mock_generate_code:
                 # Mock the generate_code method to return test response
                 mock_generate_code.return_value = "console.log('test response');"
 
@@ -715,9 +713,7 @@ llm:
 
             with patch.dict(
                 os.environ, {"NO_NETWORK": "", "AI_PROVIDER": "bedrock"}, clear=False
-            ), patch(
-                "agents.ai_providers.bedrock.BedrockProvider.generate_code"
-            ) as mock_generate_code:
+            ), patch("src.providers.bedrock.BedrockProvider.generate_code") as mock_generate_code:
                 # Mock the generate_code method to return test response
                 mock_generate_code.return_value = "test response"
 

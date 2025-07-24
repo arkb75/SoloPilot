@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Tuple
 # Add project root to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agents.dev.context_engine.serena_engine import SerenaContextEngine
+from src.agents.dev.context_engine.serena_engine import SerenaContextEngine
 
 
 class CITokenValidator:

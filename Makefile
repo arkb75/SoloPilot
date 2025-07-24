@@ -254,7 +254,7 @@ announce:
 		LATEST_MILESTONE="temp_announce/milestone-current"; \
 	fi; \
 	echo "📢 Announcing milestone: $$LATEST_MILESTONE"; \
-	. .venv/bin/activate && python -m agents.marketing.poster "$$LATEST_MILESTONE"
+	. .venv/bin/activate && python -m src.agents.marketing.poster "$$LATEST_MILESTONE"
 
 # Run complex project validation with real providers
 validate:

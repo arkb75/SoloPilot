@@ -74,7 +74,7 @@ CONTEXT_ENGINE=legacy|lc_chroma|serena  # New: serena support
 NO_NETWORK=1                            # Forces legacy fallback
 
 # Factory Usage
-from agents.dev.context_engine import get_context_engine
+from src.agents.dev.context_engine import get_context_engine
 engine = get_context_engine("serena")
 context, metadata = engine.build_context(milestone_path, prompt)
 ```
@@ -163,7 +163,7 @@ CONTEXT_ENGINE=serena python scripts/run_dev_agent.py
 
 ### Programmatic Usage
 ```python
-from agents.dev.context_engine.serena_engine import SerenaContextEngine
+from src.agents.dev.context_engine.serena_engine import SerenaContextEngine
 
 # Initialize with project root
 engine = SerenaContextEngine(project_root=Path("/path/to/project"))

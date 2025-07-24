@@ -15,7 +15,7 @@ import pytest
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from agents.ai_providers.base import BaseProvider, log_call
+from src.providers.base import BaseProvider, log_call
 
 
 class MockProvider(BaseProvider):

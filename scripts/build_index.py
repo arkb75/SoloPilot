@@ -20,7 +20,7 @@ from typing import List
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from agents.dev.context_engine import get_context_engine
+from src.agents.dev.context_engine import get_context_engine
 
 
 def find_milestone_directories() -> List[Path]:

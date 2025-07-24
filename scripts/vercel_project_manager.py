@@ -133,9 +133,7 @@ class VercelProjectManager:
         # Create new project
         return self.create_project(client_name, project_type, **kwargs)
 
-    def list_client_projects(
-        self, filter_prefix: str = "client-"
-    ) -> List[Dict[str, Any]]:
+    def list_client_projects(self, filter_prefix: str = "client-") -> List[Dict[str, Any]]:
         """List all client projects.
 
         Args:
@@ -154,9 +152,7 @@ class VercelProjectManager:
             if response.status_code == 200:
                 projects = response.json().get("projects", [])
                 # Filter client projects
-                client_projects = [
-                    p for p in projects if p["name"].startswith(filter_prefix)
-                ]
+                client_projects = [p for p in projects if p["name"].startswith(filter_prefix)]
                 logger.info(f"Found {len(client_projects)} client projects")
                 return client_projects
             else:
@@ -179,9 +175,7 @@ class VercelProjectManager:
         url = f"{VERCEL_API_BASE}/{VERCEL_API_VERSION}/projects/{project_id}"
 
         try:
-            response = requests.delete(
-                url, headers=self.headers, params=self.api_params
-            )
+            response = requests.delete(url, headers=self.headers, params=self.api_params)
 
             if response.status_code == 204:
                 logger.info(f"Successfully deleted project: {project_id}")
@@ -368,9 +362,7 @@ def create(client_name: str, project_type: str, framework: Optional[str]):
     manager = VercelProjectManager()
 
     try:
-        project_id, project_name = manager.create_project(
-            client_name, project_type, framework
-        )
+        project_id, project_name = manager.create_project(client_name, project_type, framework)
         click.echo(f"✅ Created project: {project_name}")
         click.echo(f"   ID: {project_id}")
     except Exception as e:
