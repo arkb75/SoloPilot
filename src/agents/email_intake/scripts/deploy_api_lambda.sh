@@ -8,25 +8,33 @@ REGION="${AWS_REGION:-us-east-2}"
 
 echo "🚀 Deploying API Lambda function..."
 
-# Change to email_intake directory
-cd "$(dirname "$0")/.."
+# Get the repository root (go up from scripts dir)
+REPO_ROOT="$(cd "$(dirname "$0")/../../../../" && pwd)"
+EMAIL_INTAKE_DIR="$REPO_ROOT/src/agents/email_intake"
 
-# Create deployment package
+# Create deployment package with proper directory structure
 echo "📦 Creating deployment package..."
-mkdir -p /tmp/api_lambda_deploy
+rm -rf /tmp/api_lambda_deploy
+mkdir -p /tmp/api_lambda_deploy/src/agents/email_intake
 
-# Copy API files
-cp -r api/*.py /tmp/api_lambda_deploy/
+# Copy the main handler file to root
+cp "$EMAIL_INTAKE_DIR/api/lambda_api.py" /tmp/api_lambda_deploy/
 
-# Copy shared modules that API needs
-cp email_sender.py /tmp/api_lambda_deploy/
-# Include conversation state manager so API Lambda can modify conversation records
-cp conversation_state.py /tmp/api_lambda_deploy/
-cp utils.py /tmp/api_lambda_deploy/
+# Copy all required modules to preserve src structure
+cp "$EMAIL_INTAKE_DIR/email_sender.py" /tmp/api_lambda_deploy/src/agents/email_intake/
+cp "$EMAIL_INTAKE_DIR/conversation_state.py" /tmp/api_lambda_deploy/src/agents/email_intake/
+cp "$EMAIL_INTAKE_DIR/utils.py" /tmp/api_lambda_deploy/src/agents/email_intake/
+cp "$EMAIL_INTAKE_DIR/pdf_generator.py" /tmp/api_lambda_deploy/src/agents/email_intake/
+
+# Also copy email_sender and other deps to root for backward compatibility
+cp "$EMAIL_INTAKE_DIR/email_sender.py" /tmp/api_lambda_deploy/
+cp "$EMAIL_INTAKE_DIR/conversation_state.py" /tmp/api_lambda_deploy/
+cp "$EMAIL_INTAKE_DIR/utils.py" /tmp/api_lambda_deploy/
+cp "$EMAIL_INTAKE_DIR/pdf_generator.py" /tmp/api_lambda_deploy/
 
 # Create zip file
 cd /tmp/api_lambda_deploy
-zip -r function.zip ./*.py
+zip -r function.zip .
 
 # Update Lambda function code
 echo "📤 Updating Lambda function code..."

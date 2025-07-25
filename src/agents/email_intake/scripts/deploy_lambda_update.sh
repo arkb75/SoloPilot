@@ -8,17 +8,24 @@ REGION="${AWS_REGION:-us-east-2}"
 
 echo "🚀 Deploying Lambda function update..."
 
-# Change to email_intake directory
-cd "$(dirname "$0")/.."
+# Get the repository root (go up from scripts dir)
+REPO_ROOT="$(cd "$(dirname "$0")/../../../../" && pwd)"
+EMAIL_INTAKE_DIR="$REPO_ROOT/src/agents/email_intake"
 
-# Create deployment package
+# Create deployment package with proper directory structure
 echo "📦 Creating deployment package..."
-mkdir -p /tmp/lambda_deploy
-cp *.py /tmp/lambda_deploy/
+rm -rf /tmp/lambda_deploy
+mkdir -p /tmp/lambda_deploy/src/agents/email_intake
+
+# Copy all Python files to preserve src structure
+cp "$EMAIL_INTAKE_DIR"/*.py /tmp/lambda_deploy/src/agents/email_intake/
+
+# Also copy the main handler to root for Lambda entry point
+cp "$EMAIL_INTAKE_DIR/lambda_function.py" /tmp/lambda_deploy/
 
 # Create zip file
 cd /tmp/lambda_deploy
-zip -r function.zip ./*.py
+zip -r function.zip .
 
 # Update Lambda function code
 echo "📤 Updating Lambda function code..."
