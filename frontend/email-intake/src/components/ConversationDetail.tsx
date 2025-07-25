@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { Conversation, PendingReply } from '../types';
 import api from '../api/client';
 import ReplyEditor from './ReplyEditor';
+import ProposalViewer from './ProposalViewer';
 
 interface ConversationDetailProps {
   conversationId: string;
@@ -187,7 +188,7 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
       )}
 
       {/* Email History */}
-      <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+      <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
         <div className="px-4 py-5 sm:px-6">
           <h3 className="text-lg leading-6 font-medium text-gray-900">Email History</h3>
         </div>
@@ -216,6 +217,18 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
           </ul>
         </div>
       </div>
+
+      {/* Proposals Section */}
+      {['proposal_draft', 'proposal_sent', 'proposal_feedback', 'closed'].includes(conversation.phase) && (
+        <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
+          <div className="px-4 py-5 sm:px-6">
+            <h3 className="text-lg leading-6 font-medium text-gray-900">Proposals</h3>
+          </div>
+          <div className="border-t border-gray-200">
+            <ProposalViewer conversationId={conversationId} />
+          </div>
+        </div>
+      )}
 
       {/* LLM Prompt Modal */}
       {showPrompt && (

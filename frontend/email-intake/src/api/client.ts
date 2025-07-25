@@ -101,6 +101,33 @@ export const api = {
     }>(`/attachments/${attachmentId}`);
     return response.data;
   },
+
+  // Proposal endpoints
+  listProposals: async (conversationId: string) => {
+    const response = await client.get<{
+      conversation_id: string;
+      proposals: Array<{
+        version: number;
+        created_at: string;
+        file_size: number;
+        budget?: string;
+        has_revisions: boolean;
+      }>;
+      count: number;
+    }>(`/conversations/${conversationId}/proposals`);
+    return response.data;
+  },
+
+  getProposalUrl: async (conversationId: string, version: number) => {
+    const response = await client.get<{
+      conversation_id: string;
+      version: number;
+      url: string;
+      expires_in: number;
+      metadata?: any;
+    }>(`/conversations/${conversationId}/proposals/${version}`);
+    return response.data;
+  },
 };
 
 export default api;

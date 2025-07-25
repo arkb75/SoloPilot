@@ -8,6 +8,7 @@ document generation Lambda for creating proposal PDFs.
 import base64
 import json
 import logging
+import os
 from datetime import datetime
 from typing import Dict, Optional, Tuple
 
@@ -18,18 +19,40 @@ logger = logging.getLogger()
 # Initialize Lambda client
 lambda_client = boto3.client("lambda")
 
+# Import storage modules if available
+try:
+    from src.storage import S3ProposalStore
+
+    STORAGE_AVAILABLE = True
+except ImportError:
+    # Running in Lambda without storage module
+    STORAGE_AVAILABLE = False
+    logger.info("Storage module not available, S3 storage disabled")
+
 
 class ProposalPDFGenerator:
     """Handles proposal PDF generation for the email intake agent."""
 
-    def __init__(self, pdf_lambda_arn: str):
+    def __init__(self, pdf_lambda_arn: str, s3_bucket: Optional[str] = None):
         """
         Initialize the PDF generator.
 
         Args:
             pdf_lambda_arn: ARN of the document generation Lambda
+            s3_bucket: S3 bucket name for storing proposals (optional)
         """
         self.pdf_lambda_arn = pdf_lambda_arn
+        self.s3_bucket = s3_bucket or os.environ.get("ATTACHMENTS_BUCKET")
+
+        # Initialize S3 store if available and bucket is configured
+        self.s3_store = None
+        if STORAGE_AVAILABLE and self.s3_bucket:
+            try:
+                self.s3_store = S3ProposalStore(self.s3_bucket)
+                logger.info(f"S3 storage enabled for bucket: {self.s3_bucket}")
+            except Exception as e:
+                logger.warning(f"Failed to initialize S3 store: {str(e)}")
+                self.s3_store = None
 
     def extract_proposal_data(self, conversation: Dict) -> Dict:
         """
@@ -52,7 +75,7 @@ class ProposalPDFGenerator:
             effective_requirements.update(revised_requirements)
 
         # Get client info from conversation
-        client_email = conversation.get("client_email", "")
+        # client_email = conversation.get("client_email", "")  # Currently unused
 
         # Extract client name from email history
         client_name = "Client"
@@ -279,7 +302,7 @@ class ProposalPDFGenerator:
                 if total_price > max_budget:
                     # Scale down prices to fit budget
                     base_multiplier = max_budget / total_price * 0.9  # 90% of budget
-            except:
+            except (ValueError, KeyError, TypeError):
                 pass
 
         # Add pricing items
@@ -413,7 +436,7 @@ class ProposalPDFGenerator:
                         else:
                             # If PDF not in response, might be in S3
                             s3_key = body_json.get("s3Key")
-                            document_url = body_json.get("documentUrl")
+                            # document_url = body_json.get("documentUrl")  # Currently unused
                             if s3_key:
                                 logger.info(f"PDF stored in S3: {s3_key}")
                                 # For now, we need the PDF bytes, so this is considered an error
@@ -452,6 +475,70 @@ class ProposalPDFGenerator:
         except Exception as e:
             logger.error(f"Exception generating PDF: {str(e)}")
             return None, f"Failed to generate PDF: {str(e)}"
+
+    def generate_and_store_proposal_pdf(
+        self, conversation: Dict, timeout: int = 5
+    ) -> Tuple[Optional[bytes], Optional[str], Optional[Dict]]:
+        """
+        Generate a proposal PDF and optionally store it in S3.
+
+        Args:
+            conversation: Full conversation history with metadata
+            timeout: Lambda invocation timeout in seconds
+
+        Returns:
+            Tuple of (pdf_bytes, error_message, storage_info)
+            storage_info contains version and s3_key if stored
+        """
+        # First generate the PDF
+        pdf_bytes, error = self.generate_proposal_pdf(conversation, timeout)
+
+        if not pdf_bytes or error:
+            return pdf_bytes, error, None
+
+        # If S3 storage is not available, just return the PDF
+        if not self.s3_store:
+            return pdf_bytes, error, None
+
+        try:
+            # Extract data for storage
+            proposal_data = self.extract_proposal_data(conversation)
+            requirements = conversation.get("requirements", {})
+            revised_requirements = conversation.get("revised_requirements")
+            conversation_id = conversation.get("conversation_id")
+
+            if not conversation_id:
+                logger.warning("No conversation_id found, skipping S3 storage")
+                return pdf_bytes, error, None
+
+            # Store in S3
+            proposal_version, s3_key = self.s3_store.store_proposal(
+                conversation_id=conversation_id,
+                pdf_bytes=pdf_bytes,
+                proposal_data=proposal_data,
+                requirements=requirements,
+                revised_requirements=revised_requirements,
+                generated_by=conversation.get("phase", "proposal_draft"),
+            )
+
+            storage_info = {
+                "version": proposal_version.version,
+                "s3_key": s3_key,
+                "stored_at": proposal_version.created_at.isoformat(),
+                "file_size": len(pdf_bytes),
+            }
+
+            logger.info(
+                f"Stored proposal version {proposal_version.version} "
+                f"for conversation {conversation_id}"
+            )
+
+            return pdf_bytes, error, storage_info
+
+        except Exception as e:
+            # Log but don't fail if storage fails
+            logger.error(f"Failed to store proposal in S3: {str(e)}")
+            return pdf_bytes, error, None
 
     def create_proposal_with_fallback(self, conversation: Dict) -> Dict:
         """

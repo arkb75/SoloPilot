@@ -105,6 +105,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         elif path.startswith("/attachments/") and http_method == "GET":
             attachment_id = path_params.get("id")
             response = get_attachment_url(attachment_id)
+        elif (
+            path.startswith("/conversations/")
+            and path.endswith("/proposals")
+            and http_method == "GET"
+        ):
+            conversation_id = path_params.get("id")
+            response = list_proposals(conversation_id)
+        elif path.startswith("/conversations/") and "/proposals/" in path and http_method == "GET":
+            # Extract conversation_id and version from path like /conversations/{id}/proposals/{version}
+            parts = path.split("/")
+            if len(parts) >= 5:
+                conversation_id = parts[2]
+                version = parts[4]
+                response = get_proposal_url(conversation_id, version)
+            else:
+                response = {"statusCode": 400, "body": json.dumps({"error": "Invalid path format"})}
         else:
             response = {"statusCode": 404, "body": json.dumps({"error": "Not found"})}
 
@@ -346,6 +362,7 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         # Check if we should send a PDF proposal
         if email_meta.get("should_send_pdf") and email_meta.get("phase") == "proposal_draft":
             # Generate PDF proposal
+            storage_info = None  # Initialize for tracking S3 storage
             try:
                 from src.agents.email_intake.pdf_generator import ProposalPDFGenerator
 
@@ -375,8 +392,10 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
                     # Initialize PDF generator
                     pdf_generator = ProposalPDFGenerator(pdf_lambda_arn)
 
-                    # Generate PDF
-                    pdf_bytes, pdf_error = pdf_generator.generate_proposal_pdf(conversation)
+                    # Generate PDF and store in S3
+                    pdf_bytes, pdf_error, storage_info = (
+                        pdf_generator.generate_and_store_proposal_pdf(conversation)
+                    )
 
                     if pdf_bytes:
                         # Extract client name and project title
@@ -478,6 +497,14 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         pending_replies[reply_index]["reviewed_by"] = body.get("reviewed_by", "admin")
         pending_replies[reply_index]["sent_at"] = now
         pending_replies[reply_index]["ses_message_id"] = ses_message_id
+
+        # Store S3 storage info if available
+        if storage_info:
+            pending_replies[reply_index]["proposal_version"] = storage_info.get("version")
+            pending_replies[reply_index]["s3_key"] = storage_info.get("s3_key")
+            logger.info(
+                f"Stored proposal version {storage_info.get('version')} info in pending reply"
+            )
 
         # Store message ID mapping for proper threading
         # SES uses the MessageId as the actual Message-ID in format: <MessageId@us-east-2.amazonses.com>
@@ -745,3 +772,121 @@ def _convert_decimals(obj: Any) -> Any:
     elif isinstance(obj, list):
         return [_convert_decimals(item) for item in obj]
     return obj
+
+
+def list_proposals(conversation_id: str) -> Dict[str, Any]:
+    """List all proposal versions for a conversation.
+
+    Args:
+        conversation_id: Conversation ID
+
+    Returns:
+        API response with list of proposals
+    """
+    try:
+        # Check if storage module is available
+        try:
+            from src.storage import ProposalVersionIndex
+
+            version_index = ProposalVersionIndex()
+            proposals = version_index.list_versions(conversation_id)
+
+            # Convert to API response format
+            proposal_list = []
+            for proposal in proposals:
+                proposal_list.append(
+                    {
+                        "version": proposal.version,
+                        "created_at": proposal.created_at,
+                        "file_size": proposal.file_size,
+                        "budget": proposal.budget,
+                        "has_revisions": proposal.has_revisions,
+                    }
+                )
+
+            return {
+                "statusCode": 200,
+                "body": json.dumps(
+                    {
+                        "conversation_id": conversation_id,
+                        "proposals": proposal_list,
+                        "count": len(proposal_list),
+                    }
+                ),
+            }
+
+        except ImportError:
+            logger.warning("Storage module not available")
+            return {
+                "statusCode": 501,
+                "body": json.dumps({"error": "Proposal storage not implemented"}),
+            }
+
+    except Exception as e:
+        logger.error(f"Error listing proposals: {str(e)}")
+        return {"statusCode": 500, "body": json.dumps({"error": "Failed to list proposals"})}
+
+
+def get_proposal_url(conversation_id: str, version: str) -> Dict[str, Any]:
+    """Get presigned URL for a specific proposal version.
+
+    Args:
+        conversation_id: Conversation ID
+        version: Version number as string
+
+    Returns:
+        API response with presigned URL
+    """
+    try:
+        # Validate version is a number
+        try:
+            version_num = int(version)
+        except ValueError:
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": "Invalid version number"}),
+            }
+
+        # Check if storage module is available
+        try:
+            from src.storage import S3ProposalStore
+
+            s3_store = S3ProposalStore(
+                bucket_name=os.environ.get("ATTACHMENTS_BUCKET", "solopilot-attachments")
+            )
+
+            # Generate presigned URL
+            url = s3_store.generate_presigned_url(conversation_id, version_num)
+
+            if not url:
+                return {
+                    "statusCode": 404,
+                    "body": json.dumps({"error": "Proposal not found"}),
+                }
+
+            # Get metadata if available
+            metadata = s3_store.get_proposal_metadata(conversation_id, version_num)
+
+            return {
+                "statusCode": 200,
+                "body": json.dumps(
+                    {
+                        "conversation_id": conversation_id,
+                        "version": version_num,
+                        "url": url,
+                        "expires_in": 3600,
+                        "metadata": metadata,
+                    }
+                ),
+            }
+
+        except ImportError:
+            logger.warning("Storage module not available")
+            return {
+                "statusCode": 501,
+                "body": json.dumps({"error": "Proposal storage not implemented"}),
+            }
+
+    except Exception as e:
+        logger.error(f"Error getting proposal URL: {str(e)}")
+        return {"statusCode": 500, "body": json.dumps({"error": "Failed to get proposal URL"})}
