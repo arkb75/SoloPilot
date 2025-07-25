@@ -181,12 +181,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "in_reply_to": parsed_email.get("message_id", ""),
                 "references": conversation.get("thread_references", []),
                 "should_send_pdf": response_metadata.get("should_send_proposal", False),
+                "email_body": response_text,  # ALWAYS store the email body
             }
 
-            # If we have structured email_body and proposal_content, include them
-            if "email_body" in response_metadata:
-                metadata_to_store["email_body"] = response_metadata["email_body"]
-            if "proposal_content" in response_metadata:
+            # For proposal_draft phase, also store the separate proposal_content
+            if (
+                response_metadata.get("phase") == "proposal_draft"
+                and "proposal_content" in response_metadata
+            ):
                 metadata_to_store["proposal_content"] = response_metadata["proposal_content"]
 
             # Extract client name from conversation for better personalization

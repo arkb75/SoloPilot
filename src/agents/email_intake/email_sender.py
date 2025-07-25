@@ -44,6 +44,15 @@ def send_reply_email(
     Returns:
         Tuple of (success, ses_message_id, error_message)
     """
+    # Guard clause: Prevent sending proposal emails without PDFs
+    # Check if the body indicates this should be a proposal with attachment
+    if (
+        "Please find the proposal attached" in body or "Please find attached" in body
+    ) and not attachments:
+        error_msg = f"Invariant violated: Attempted to send proposal email without PDF attachment for conversation {conversation_id}"
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
     try:
         # Create MIME message
         msg = MIMEMultipart()
@@ -234,12 +243,14 @@ def extract_email_metadata(pending_reply: Dict[str, Any]) -> Dict[str, Any]:
     """
     metadata = pending_reply.get("metadata", {})
 
-    # Check if we have a separate email_body in metadata (from new structured response)
-    # This would be present for proposal phase responses
-    email_body = metadata.get("email_body")
+    # Always use email_body from metadata - it should always be present
+    email_body = metadata.get("email_body", "")
+
+    # Log error if email_body is missing (this should never happen with standardized data model)
     if not email_body:
-        # Fallback to the raw LLM response for backward compatibility
-        email_body = pending_reply.get("llm_response", "")
+        logger.error(
+            f"Missing email_body in metadata for reply {pending_reply.get('reply_id', 'unknown')}"
+        )
 
     return {
         "recipient": metadata.get("recipient", ""),

@@ -337,14 +337,11 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
                 "body": json.dumps({"error": f"Reply is already {reply_data.get('status')}"}),
             }
 
-        # Update reply status
-        now = datetime.now(timezone.utc).isoformat()
-        pending_replies[reply_index]["status"] = "approved"
-        pending_replies[reply_index]["reviewed_at"] = now
-        pending_replies[reply_index]["reviewed_by"] = body.get("reviewed_by", "admin")
-
-        # Extract email metadata from the pending reply
+        # Extract email metadata from the pending reply BEFORE updating status
         email_meta = extract_email_metadata(reply_data)
+
+        # Store timestamp for later use
+        now = datetime.now(timezone.utc).isoformat()
 
         # Check if we should send a PDF proposal
         if email_meta.get("should_send_pdf") and email_meta.get("phase") == "proposal_draft":
@@ -355,30 +352,25 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
                 # Get PDF Lambda ARN from environment
                 pdf_lambda_arn = os.environ.get("PDF_LAMBDA_ARN", "")
                 if not pdf_lambda_arn:
-                    logger.error(
-                        f"PDF_LAMBDA_ARN not configured for conversation {conversation_id}. "
-                        f"Client: {email_meta['recipient']}. Falling back to text-only email."
-                    )
+                    # FAIL LOUDLY - no fallback email
+                    error_details = {
+                        "error": "PDF_LAMBDA_ARN not configured",
+                        "error_type": "ConfigurationError",
+                        "conversation_id": conversation_id,
+                        "client_email": email_meta["recipient"],
+                    }
+                    logger.error(f"PDF_GENERATION_FAILED: {json.dumps(error_details)}")
 
-                    # Use a proper fallback message instead of the detailed proposal
-                    fallback_body = f"""Hi {email_meta.get('client_name', 'there')},
-
-I've prepared your project proposal. Let me know what you think.
-
-Best,
-{email_meta.get('sender_name', 'The SoloPilot Team')}
-
---
-Conversation ID: {conversation_id}"""
-
-                    success, ses_message_id, error_msg = send_reply_email(
-                        to_email=email_meta["recipient"],
-                        subject=email_meta["subject"],
-                        body=fallback_body,
-                        conversation_id=conversation_id,
-                        in_reply_to=email_meta.get("in_reply_to"),
-                        references=email_meta.get("references", []),
-                    )
+                    return {
+                        "statusCode": 500,
+                        "body": json.dumps(
+                            {
+                                "error": "PDF generation service not configured",
+                                "details": error_details,
+                                "message": "Please configure PDF_LAMBDA_ARN environment variable",
+                            }
+                        ),
+                    }
                 else:
                     # Initialize PDF generator
                     pdf_generator = ProposalPDFGenerator(pdf_lambda_arn)
@@ -411,57 +403,51 @@ Conversation ID: {conversation_id}"""
                             references=email_meta.get("references", []),
                         )
                     else:
-                        # PDF generation failed, send text-only with proper fallback
-                        logger.error(
-                            f"PDF generation failed for conversation {conversation_id}. "
-                            f"Client: {email_meta['recipient']}. Error: {pdf_error}"
-                        )
+                        # PDF generation failed - FAIL LOUDLY
+                        error_details = {
+                            "error": "PDF generation failed",
+                            "error_type": "PdfGenerationError",
+                            "conversation_id": conversation_id,
+                            "client_email": email_meta["recipient"],
+                            "pdf_error": pdf_error,
+                        }
+                        logger.error(f"PDF_GENERATION_FAILED: {json.dumps(error_details)}")
 
-                        # Use a proper fallback message
-                        fallback_body = f"""Hi {email_meta.get('client_name', 'there')},
-
-I've prepared your project proposal. Let me know what you think.
-
-Best,
-{email_meta.get('sender_name', 'The SoloPilot Team')}
-
---
-Conversation ID: {conversation_id}"""
-
-                        success, ses_message_id, error_msg = send_reply_email(
-                            to_email=email_meta["recipient"],
-                            subject=email_meta["subject"],
-                            body=fallback_body,
-                            conversation_id=conversation_id,
-                            in_reply_to=email_meta.get("in_reply_to"),
-                            references=email_meta.get("references", []),
-                        )
+                        # DO NOT update conversation state
+                        # DO NOT send any emails
+                        return {
+                            "statusCode": 500,
+                            "body": json.dumps(
+                                {
+                                    "error": "Failed to generate PDF proposal",
+                                    "details": error_details,
+                                    "message": "Please check CloudWatch logs and fix the issue before retrying",
+                                }
+                            ),
+                        }
             except Exception as pdf_e:
-                logger.error(
-                    f"PDF generation exception for conversation {conversation_id}. "
-                    f"Client: {email_meta['recipient']}. Error: {str(pdf_e)}",
-                    exc_info=True,
-                )
+                # Any exception during PDF generation - FAIL LOUDLY
+                error_details = {
+                    "error": "PDF generation exception",
+                    "error_type": "PdfGenerationException",
+                    "conversation_id": conversation_id,
+                    "client_email": email_meta["recipient"],
+                    "exception": str(pdf_e),
+                }
+                logger.error(f"PDF_GENERATION_FAILED: {json.dumps(error_details)}", exc_info=True)
 
-                # Fallback to text-only email with proper message
-                fallback_body = f"""Hi {email_meta.get('client_name', 'there')},
-
-I've prepared your project proposal. Let me know what you think.
-
-Best,
-{email_meta.get('sender_name', 'The SoloPilot Team')}
-
---
-Conversation ID: {conversation_id}"""
-
-                success, ses_message_id, error_msg = send_reply_email(
-                    to_email=email_meta["recipient"],
-                    subject=email_meta["subject"],
-                    body=fallback_body,
-                    conversation_id=conversation_id,
-                    in_reply_to=email_meta.get("in_reply_to"),
-                    references=email_meta.get("references", []),
-                )
+                # DO NOT update conversation state
+                # DO NOT send any emails
+                return {
+                    "statusCode": 500,
+                    "body": json.dumps(
+                        {
+                            "error": "PDF generation service error",
+                            "details": error_details,
+                            "message": "An error occurred during PDF generation. Please check logs and retry.",
+                        }
+                    ),
+                }
         else:
             # Send regular text email
             success, ses_message_id, error_msg = send_reply_email(
@@ -480,7 +466,10 @@ Conversation ID: {conversation_id}"""
                 "body": json.dumps({"error": f"Failed to send email: {error_msg}"}),
             }
 
-        # Mark as sent with SES message ID
+        # Only NOW update the reply status after successful email sending
+        pending_replies[reply_index]["status"] = "approved"
+        pending_replies[reply_index]["reviewed_at"] = now
+        pending_replies[reply_index]["reviewed_by"] = body.get("reviewed_by", "admin")
         pending_replies[reply_index]["sent_at"] = now
         pending_replies[reply_index]["ses_message_id"] = ses_message_id
 

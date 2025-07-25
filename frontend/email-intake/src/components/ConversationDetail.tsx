@@ -44,8 +44,22 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
       setPendingReplies(prev => prev.filter(r => r.reply_id !== reply.reply_id));
       // Reload to get updated conversation
       loadConversationDetails();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to approve reply:', err);
+
+      // Extract error message from response
+      const errorMessage = err.response?.data?.error || 'Failed to send proposal';
+      const errorDetails = err.response?.data?.details;
+
+      // Show detailed error to user
+      if (errorDetails?.error_type === 'PdfGenerationError' || errorDetails?.error_type === 'ConfigurationError') {
+        alert(`PDF Generation Error:\n\n${errorMessage}\n\nThe reply remains pending. Please check the system configuration and try again.`);
+      } else {
+        alert(`Error: ${errorMessage}\n\nThe reply remains pending. Please try again or contact support if the issue persists.`);
+      }
+
+      // Keep the reply in pending state - do NOT remove it
+      // User can retry after fixing the underlying issue
     }
   };
 
