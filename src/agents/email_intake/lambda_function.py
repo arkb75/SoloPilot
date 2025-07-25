@@ -167,6 +167,25 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             conversation, parsed_email
         )
 
+        # Extract requirement updates if in proposal_feedback phase
+        if conversation.get("phase") == "proposal_feedback":
+            logger.info("Proposal feedback phase - checking for requirement updates")
+            requirement_updates = extractor.extract_requirement_updates(
+                parsed_email, conversation.get("requirements", {})
+            )
+
+            if requirement_updates:
+                logger.info(f"Found requirement updates: {requirement_updates}")
+                # Store revised requirements
+                try:
+                    state_manager.update_revised_requirements(conversation_id, requirement_updates)
+                    # Refresh conversation to get updated state
+                    conversation = state_manager.fetch_or_create_conversation(
+                        conversation_id, original_message_id, parsed_email
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to update revised requirements: {str(e)}")
+
         # Check reply mode (default to manual if not set)
         reply_mode = conversation.get("reply_mode", "manual")
 

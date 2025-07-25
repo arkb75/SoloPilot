@@ -599,6 +599,62 @@ class ConversationStateManager:
             logger.error(f"Error updating requirements for {conversation_id}: {str(e)}")
             raise
 
+    def update_revised_requirements(
+        self, conversation_id: str, requirement_updates: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Update revised requirements from proposal feedback.
+
+        Args:
+            conversation_id: Conversation ID
+            requirement_updates: Dictionary of requirement updates to apply
+
+        Returns:
+            Updated conversation state
+        """
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+
+            # Build update expression
+            update_expr_parts = [
+                "SET revised_requirements = :revised_req",
+                "updated_at = :updated",
+                "last_updated_at = :updated",
+                "last_seq = last_seq + :one",
+            ]
+
+            # If phase should change back to proposal_draft
+            if requirement_updates:
+                update_expr_parts.append("#phase = :phase")
+
+            update_expr = ", ".join(update_expr_parts)
+
+            expr_attrs = {
+                ":revised_req": requirement_updates,
+                ":updated": now,
+                ":one": Decimal(1),
+            }
+
+            expr_names = {}
+            if requirement_updates:
+                expr_attrs[":phase"] = "proposal_draft"
+                expr_names["#phase"] = "phase"
+
+            # Update with the revised requirements
+            update_response = self.table.update_item(
+                Key={"conversation_id": conversation_id},
+                UpdateExpression=update_expr,
+                ExpressionAttributeNames=expr_names if expr_names else None,
+                ExpressionAttributeValues=expr_attrs,
+                ReturnValues="ALL_NEW",
+            )
+
+            logger.info(f"Updated revised requirements for {conversation_id}")
+            return self._deserialize_item(update_response["Attributes"])
+
+        except Exception as e:
+            logger.error(f"Error updating revised requirements for {conversation_id}: {str(e)}")
+            raise
+
     def update_status(self, conversation_id: str, status: str) -> None:
         """Update conversation status."""
         # Legacy statuses kept for backward compatibility

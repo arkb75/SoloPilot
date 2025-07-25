@@ -384,18 +384,24 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
                         client_name = proposal_data.get("clientName", "Client")
                         project_title = proposal_data.get("projectTitle", "Your Project")
 
-                        # Use formatted proposal body that includes conversation ID
-                        formatted_body = format_proposal_email_body(
-                            client_name=client_name,
-                            project_title=project_title,
-                            conversation_id=conversation_id,
-                        )
+                        # Use the actual LLM-generated email body from metadata
+                        # This ensures what the user sees in frontend is what gets sent
+                        email_body_to_send = email_meta.get("body", "")
+
+                        # Fallback to formatted template only if no body exists (shouldn't happen)
+                        if not email_body_to_send:
+                            logger.warning("No email body in metadata, using template fallback")
+                            email_body_to_send = format_proposal_email_body(
+                                client_name=client_name,
+                                project_title=project_title,
+                                conversation_id=conversation_id,
+                            )
 
                         # Send email with PDF attachment
                         success, ses_message_id, error_msg = send_proposal_email(
                             to_email=email_meta["recipient"],
                             subject=email_meta["subject"],
-                            body=formatted_body,
+                            body=email_body_to_send,
                             conversation_id=conversation_id,
                             pdf_content=pdf_bytes,
                             pdf_filename=f"{client_name.replace(' ', '_')}_proposal.pdf",

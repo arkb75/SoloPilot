@@ -41,6 +41,16 @@ class ProposalPDFGenerator:
         Returns:
             Dict with extracted proposal data
         """
+        # Check for revised requirements first
+        revised_requirements = conversation.get("revised_requirements", {})
+        base_requirements = conversation.get("requirements", {})
+
+        # Merge revised requirements with base requirements
+        effective_requirements = base_requirements.copy()
+        if revised_requirements:
+            logger.info(f"Using revised requirements: {revised_requirements}")
+            effective_requirements.update(revised_requirements)
+
         # Get client info from conversation
         client_email = conversation.get("client_email", "")
 
@@ -66,13 +76,37 @@ class ProposalPDFGenerator:
                     ):
                         continue
 
+                    # Skip lines that end with colon (likely headers like "Nice-to-haves:")
+                    if line.endswith(":"):
+                        continue
+
+                    # Skip common section headers
+                    if any(
+                        header in line.lower()
+                        for header in [
+                            "nice-to-have",
+                            "requirements",
+                            "features",
+                            "notes",
+                            "additional",
+                        ]
+                    ):
+                        continue
+
                     # Look for name-like patterns (1-3 words, starts with capital)
                     words = line.split()
                     if 1 <= len(words) <= 3 and words[0][0].isupper():
                         # Prefer lines that look like names over titles
                         if not any(
                             title in line.lower()
-                            for title in ["ceo", "cto", "manager", "director", "president"]
+                            for title in [
+                                "ceo",
+                                "cto",
+                                "manager",
+                                "director",
+                                "president",
+                                "founder",
+                            ]
                         ):
                             client_name = line.split("(")[0].strip()
                             break
@@ -108,27 +142,49 @@ class ProposalPDFGenerator:
             "techStack": [],
         }
 
-        # Extract scope from email content for dashboard projects
+        # Extract scope from effective requirements
+        removed_features = revised_requirements.get("removed_features", [])
+
         if "dashboard" in project_type.lower():
-            # Parse dashboard requirements from email
+            # Check if Shopify was originally mentioned but not removed
+            has_shopify = False
             for email in conversation.get("email_history", []):
                 body = email.get("body", "").lower()
-                if "shopify" in body and "dashboard" in body:
-                    proposal_data["scope"] = [
-                        {
-                            "title": "Shopify Integration",
-                            "description": "Connect to your Shopify store for real-time sales data",
-                        },
-                        {
-                            "title": "Dashboard Development",
-                            "description": "Build responsive dashboard with sales, inventory, and feedback widgets",
-                        },
-                        {
-                            "title": "Google SSO Setup",
-                            "description": "Implement secure authentication with Google Workspace",
-                        },
-                    ]
+                if "shopify" in body and "shopify" not in removed_features:
+                    has_shopify = True
                     break
+
+            if has_shopify:
+                proposal_data["scope"] = [
+                    {
+                        "title": "Shopify Integration",
+                        "description": "Connect to your Shopify store for real-time sales data",
+                    },
+                    {
+                        "title": "Dashboard Development",
+                        "description": "Build responsive dashboard with sales, inventory, and feedback widgets",
+                    },
+                    {
+                        "title": "Google SSO Setup",
+                        "description": "Implement secure authentication with Google Workspace",
+                    },
+                ]
+            else:
+                # Generic dashboard scope without Shopify
+                proposal_data["scope"] = [
+                    {
+                        "title": "Dashboard Development",
+                        "description": "Build a custom internal dashboard for your business metrics",
+                    },
+                    {
+                        "title": "Data Integration",
+                        "description": "Connect to your existing data sources and APIs",
+                    },
+                    {
+                        "title": "User Authentication",
+                        "description": "Implement secure access control for your team",
+                    },
+                ]
         else:
             # Generic scope
             proposal_data["scope"] = [
@@ -159,21 +215,37 @@ class ProposalPDFGenerator:
                 {"phase": phase, "duration": f'{duration} week{"s" if duration > 1 else ""}'}
             )
 
-        # Check if user requested specific budget
+        # Use budget from effective requirements (includes any revisions)
         requested_budget = None
-        for email in conversation.get("email_history", []):
-            body = email.get("body", "").lower()
-            if "$500" in body or "cost down to $500" in body or "down to $500" in body:
-                requested_budget = 500
-                break
-            elif "$3-4" in body or "$3-4k" in body:
-                requested_budget = 3500
-                break
+        budget_info = effective_requirements.get("budget", {})
+        if budget_info.get("max_amount"):
+            requested_budget = budget_info["max_amount"]
+            logger.info(f"Using budget from requirements: ${requested_budget}")
+        else:
+            # Fallback to scanning email history only if no budget in requirements
+            for email in conversation.get("email_history", []):
+                body = email.get("body", "").lower()
+                if "$1k" in body or "$1,000" in body or "cost down to $1" in body:
+                    requested_budget = 1000
+                    break
+                elif "$500" in body or "cost down to $500" in body or "down to $500" in body:
+                    requested_budget = 500
+                    break
+                elif "$3-4" in body or "$3-4k" in body:
+                    requested_budget = 3500
+                    break
 
         # Generate realistic pricing based on project type
         if requested_budget == 500:
             # Ultra budget pricing - single line item
             pricing_items = [("Complete Dashboard Package", 500)]
+            base_multiplier = 1
+        elif requested_budget == 1000:
+            # $1k budget pricing - simplified breakdown
+            pricing_items = [
+                ("Dashboard Development", 800),
+                ("Setup & Deployment", 200),
+            ]
             base_multiplier = 1
         elif "dashboard" in project_type.lower() and requested_budget:
             # Dashboard with specific budget
@@ -232,10 +304,14 @@ class ProposalPDFGenerator:
     ) -> str:
         """Extract specific project description from conversation."""
 
+        # Check for removed features
+        revised_requirements = conversation.get("revised_requirements", {})
+        removed_features = revised_requirements.get("removed_features", [])
+
         # Check for specific mentions in email content
         for email in conversation.get("email_history", []):
             body = email.get("body", "").lower()
-            if "shopify" in body and "dashboard" in body:
+            if "shopify" in body and "dashboard" in body and "shopify" not in removed_features:
                 return "a Shopify dashboard for tracking sales and inventory"
             elif "dashboard" in body:
                 return "an internal dashboard solution"

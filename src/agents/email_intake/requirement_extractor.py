@@ -253,3 +253,101 @@ Return ONLY valid JSON, no additional text."""
                 merged[array_field] = unique
 
         return merged
+
+    def extract_requirement_updates(
+        self, latest_email: Dict[str, Any], existing_requirements: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Extract requirement updates from proposal feedback email.
+
+        Args:
+            latest_email: The latest feedback email
+            existing_requirements: Current requirements
+
+        Returns:
+            Dictionary of requirement updates to apply
+        """
+        email_body = latest_email.get("body", "").lower()
+        updates = {}
+
+        # Extract budget updates
+        import re
+
+        # Patterns for budget updates
+        budget_patterns = [
+            r"cost down to \$?([\d,]+)k?",
+            r"budget (?:is|of) \$?([\d,]+)k?",
+            r"reduce (?:the )?(?:cost|budget) to \$?([\d,]+)k?",
+            r"(?:can you|could you) (?:do|make) (?:it|this) (?:for )?\$?([\d,]+)k?",
+            r"\$?([\d,]+)k? (?:budget|max|maximum)",
+        ]
+
+        for pattern in budget_patterns:
+            match = re.search(pattern, email_body)
+            if match:
+                amount_str = match.group(1).replace(",", "")
+                amount = int(amount_str)
+                # Handle 'k' notation
+                if "k" in match.group(0).lower():
+                    amount *= 1000
+                updates["budget"] = {"max_amount": amount, "type": "fixed"}
+                logger.info(f"Extracted budget update: ${amount}")
+                break
+
+        # Extract feature removals/changes
+        removal_patterns = [
+            r"(?:we're )?not (?:on|using|with) ([\w\s]+)",
+            r"no ([\w\s]+)",
+            r"remove ([\w\s]+)",
+            r"don't (?:need|want|use) ([\w\s]+)",
+            r"without ([\w\s]+)",
+        ]
+
+        removed_features = []
+        for pattern in removal_patterns:
+            matches = re.findall(pattern, email_body)
+            for match in matches:
+                feature = match.strip().lower()
+                # Check if this is a significant feature
+                if feature in ["shopify", "wordpress", "woocommerce", "magento", "squarespace"]:
+                    removed_features.append(feature)
+                    logger.info(f"Detected feature removal: {feature}")
+
+        if removed_features:
+            updates["removed_features"] = removed_features
+
+            # Update features list if exists
+            if "features" in existing_requirements:
+                current_features = existing_requirements.get("features", [])
+                updated_features = []
+                for feature in current_features:
+                    feature_name = feature.get("name", "").lower()
+                    feature_desc = feature.get("desc", "").lower()
+                    # Skip features that mention removed items
+                    if not any(
+                        removed in feature_name or removed in feature_desc
+                        for removed in removed_features
+                    ):
+                        updated_features.append(feature)
+                updates["features"] = updated_features
+
+        # Extract timeline updates
+        timeline_patterns = [
+            r"(?:need|want) (?:it|this) (?:in|within) ([\d\w\s]+)",
+            r"timeline (?:is|of) ([\d\w\s]+)",
+            r"(?:by|before) (next \w+|end of \w+|\d+ \w+)",
+        ]
+
+        for pattern in timeline_patterns:
+            match = re.search(pattern, email_body)
+            if match:
+                timeline = match.group(1).strip()
+                updates["timeline"] = timeline
+                logger.info(f"Extracted timeline update: {timeline}")
+                break
+
+        # Extract any additional requirements
+        if "more" in email_body or "also" in email_body or "addition" in email_body:
+            # Mark that there might be additional requirements
+            updates["has_additional_requirements"] = True
+
+        return updates

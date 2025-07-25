@@ -564,13 +564,24 @@ CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, think
             ):
                 continue
 
+            # Skip lines that end with colon (likely headers like "Nice-to-haves:")
+            if line.endswith(":"):
+                continue
+
+            # Skip common section headers
+            if any(
+                header in line.lower()
+                for header in ["nice-to-have", "requirements", "features", "notes", "additional"]
+            ):
+                continue
+
             # Look for name-like patterns (1-3 words, starts with capital)
             words = line.split()
             if 1 <= len(words) <= 3 and words[0][0].isupper():
                 # Prefer lines that look like names over titles
                 if not any(
                     title in line.lower()
-                    for title in ["ceo", "cto", "manager", "director", "president"]
+                    for title in ["ceo", "cto", "manager", "director", "president", "founder"]
                 ):
                     client_name = line.split("(")[0].strip()
                     break
