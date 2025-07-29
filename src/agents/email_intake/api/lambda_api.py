@@ -55,7 +55,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         http_method = event.get("httpMethod", "")
         path = event.get("path", "")
         path_params = event.get("pathParameters", {})
-        query_params = event.get("queryStringParameters", {})
+        query_params = event.get("queryStringParameters", {}) or {}
         body = json.loads(event.get("body", "{}")) if event.get("body") else {}
 
         # If pathParameters is empty but we have a path, try to extract IDs manually
@@ -110,8 +110,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             and path.endswith("/proposals")
             and http_method == "GET"
         ):
-            conversation_id = path_params.get("id")
-            response = list_proposals(conversation_id)
+            # Extract conversation_id from path like /conversations/{id}/proposals
+            parts = path.split("/")
+            if len(parts) >= 3:
+                conversation_id = parts[2]
+                response = list_proposals(conversation_id)
+            else:
+                response = {"statusCode": 400, "body": json.dumps({"error": "Invalid path format"})}
         elif path.startswith("/conversations/") and "/proposals/" in path and http_method == "GET":
             # Extract conversation_id and version from path like /conversations/{id}/proposals/{version}
             parts = path.split("/")
@@ -359,10 +364,12 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         # Store timestamp for later use
         now = datetime.now(timezone.utc).isoformat()
 
+        # Initialize storage_info for all emails (will be populated for PDFs)
+        storage_info = None
+
         # Check if we should send a PDF proposal
         if email_meta.get("should_send_pdf") and email_meta.get("phase") == "proposal_draft":
             # Generate PDF proposal
-            storage_info = None  # Initialize for tracking S3 storage
             try:
                 from src.agents.email_intake.pdf_generator import ProposalPDFGenerator
 

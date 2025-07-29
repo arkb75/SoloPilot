@@ -101,10 +101,11 @@ CONTEXT_ENGINE=serena SERENA_CONTEXT_MODE=MINIMAL poetry run python scripts/run_
 ```
 
 ### Email Intake Management
-- Frontend: `http://localhost:5173` after `npm run dev`
+- Frontend: `http://localhost:5173` after `npm run dev` (DO NOT attempt to deploy - runs locally only)
 - Manual mode by default for new conversations
 - Review LLM prompts in conversation details
-- PDF proposals auto-generated for proposal phase
+- PDF proposals auto-generated for proposal phase and stored in S3
+- Proposals viewable in frontend with version history
 
 ### Testing Hierarchy
 1. `poetry run pre-commit run --all-files` - Linting and formatting
