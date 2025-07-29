@@ -267,7 +267,21 @@ Keep it under 100 words. Be decisive and specific.
 
 CRITICAL: Output EXACTLY in the format shown above with the markers. The email body should be minimal since a PDF will be attached."""
 
+        # Log the prompt being sent to LLM
+        logger.info("=" * 80)
+        logger.info(f"PROPOSAL GENERATION PROMPT for conversation {conversation.get('conversation_id', 'unknown')}:")
+        logger.info("=" * 80)
+        logger.info(prompt)
+        logger.info("=" * 80)
+        
         response = self._call_llm(prompt)
+        
+        # Log the raw LLM response
+        logger.info("=" * 80)
+        logger.info(f"LLM RESPONSE for conversation {conversation.get('conversation_id', 'unknown')}:")
+        logger.info("=" * 80)
+        logger.info(response)
+        logger.info("=" * 80)
 
         # Parse the structured response to extract email body and proposal content
         email_body = response  # Default to full response if parsing fails
@@ -301,6 +315,17 @@ CRITICAL: Output EXACTLY in the format shown above with the markers. The email b
         except Exception as e:
             logger.warning(f"Failed to parse structured proposal response: {str(e)}")
             # Fallback to using the whole response as both
+        
+        # Log what we extracted
+        logger.info("=" * 80)
+        logger.info(f"EXTRACTED EMAIL BODY for conversation {conversation.get('conversation_id', 'unknown')}:")
+        logger.info("=" * 80)
+        logger.info(email_body)
+        logger.info("=" * 80)
+        logger.info(f"EXTRACTED PROPOSAL CONTENT for conversation {conversation.get('conversation_id', 'unknown')}:")
+        logger.info("=" * 80)
+        logger.info(proposal_content)
+        logger.info("=" * 80)
 
         metadata = {
             "phase": "proposal_draft",

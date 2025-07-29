@@ -367,6 +367,15 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         # Initialize storage_info for all emails (will be populated for PDFs)
         storage_info = None
 
+        # Log the email metadata we're processing
+        logger.info("=" * 80)
+        logger.info(f"APPROVE_REPLY: Processing reply for conversation {conversation_id}")
+        logger.info(f"  - Phase: {email_meta.get('phase', 'unknown')}")
+        logger.info(f"  - Should Send PDF: {email_meta.get('should_send_pdf', False)}")
+        logger.info(f"  - Email Body Length: {len(email_meta.get('email_body', ''))}")
+        logger.info(f"  - Proposal Content Length: {len(email_meta.get('proposal_content', ''))}")
+        logger.info("=" * 80)
+        
         # Check if we should send a PDF proposal
         if email_meta.get("should_send_pdf") and email_meta.get("phase") == "proposal_draft":
             # Generate PDF proposal
