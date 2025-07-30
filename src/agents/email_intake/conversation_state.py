@@ -9,7 +9,7 @@ from uuid import uuid4
 import boto3
 from botocore.exceptions import ClientError
 
-from src.agents.email_intake.utils import EmailThreadingUtils
+from utils import EmailThreadingUtils
 
 logger = logging.getLogger(__name__)
 

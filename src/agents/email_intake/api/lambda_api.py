@@ -16,10 +16,10 @@ import boto3
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
 
-from src.agents.email_intake.conversation_state import (  # Needed to append sent email to history
+from conversation_state import (  # Needed to append sent email to history
     ConversationStateManager,
 )
-from src.agents.email_intake.email_sender import (
+from email_sender import (
     extract_email_metadata,
     format_proposal_email_body,
     send_proposal_email,
@@ -371,7 +371,7 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         if email_meta.get("should_send_pdf") and email_meta.get("phase") == "proposal_draft":
             # Generate PDF proposal
             try:
-                from src.agents.email_intake.pdf_generator import ProposalPDFGenerator
+                from pdf_generator import ProposalPDFGenerator
 
                 # Get PDF Lambda ARN from environment
                 pdf_lambda_arn = os.environ.get("PDF_LAMBDA_ARN", "")
@@ -518,7 +518,7 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         if ses_message_id:
             try:
                 # Import canonicalization function
-                from src.agents.email_intake.utils import EmailThreadingUtils
+                from utils import EmailThreadingUtils
 
                 message_map_table = dynamodb.Table("email_message_map")
                 # Store the SES Message-ID in the format email clients will use
@@ -793,7 +793,7 @@ def list_proposals(conversation_id: str) -> Dict[str, Any]:
     try:
         # Check if storage module is available
         try:
-            from src.storage import ProposalVersionIndex
+            from storage import ProposalVersionIndex
 
             version_index = ProposalVersionIndex()
             proposals = version_index.list_versions(conversation_id)
@@ -856,7 +856,7 @@ def get_proposal_url(conversation_id: str, version: str) -> Dict[str, Any]:
 
         # Check if storage module is available
         try:
-            from src.storage import S3ProposalStore
+            from storage import S3ProposalStore
 
             s3_store = S3ProposalStore(
                 bucket_name=os.environ.get("ATTACHMENTS_BUCKET", "solopilot-attachments")
