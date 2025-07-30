@@ -51,6 +51,17 @@ class RequirementExtractor:
         Returns:
             Updated requirements dict matching analyser format
         """
+        # Log extraction start
+        logger.info("=" * 80)
+        logger.info("REQUIREMENT EXTRACTOR: Starting extraction")
+        logger.info(f"  - Email History Count: {len(email_history)}")
+        logger.info(f"  - Has Existing Requirements: {bool(existing_requirements)}")
+        if email_history:
+            latest_email = email_history[-1]
+            logger.info(f"  - Latest Email From: {latest_email.get('from', 'unknown')}")
+            logger.info(f"  - Latest Email Subject: {latest_email.get('subject', 'unknown')}")
+        logger.info("=" * 80)
+        
         # Build conversation context
         conversation = self._build_conversation_context(email_history)
 
@@ -86,6 +97,13 @@ Extract and return a JSON object with these fields:
 
 Return ONLY valid JSON, no additional text."""
 
+        # Log the prompt being sent
+        logger.info("=" * 80)
+        logger.info("REQUIREMENT EXTRACTOR: Sending prompt to LLM")
+        logger.info("Prompt preview (first 500 chars):")
+        logger.info(prompt[:500] + "..." if len(prompt) > 500 else prompt)
+        logger.info("=" * 80)
+
         try:
             if USE_AI_PROVIDER:
                 # Use provider to extract requirements
@@ -111,14 +129,27 @@ Return ONLY valid JSON, no additional text."""
                 # Parse JSON response
                 requirements = json.loads(llm_response)
 
+            # Log extracted requirements
+            logger.info("=" * 80)
+            logger.info("REQUIREMENT EXTRACTOR: Extracted new requirements")
+            logger.info(json.dumps(requirements, indent=2))
+            logger.info("=" * 80)
+            
             # Merge with existing requirements
             merged = self._merge_requirements(existing_requirements, requirements)
+            
+            # Log merged results
+            logger.info("=" * 80)
+            logger.info("REQUIREMENT EXTRACTOR: Final merged requirements")
+            logger.info(json.dumps(merged, indent=2, default=str))
+            logger.info("=" * 80)
 
             logger.info("Successfully extracted requirements")
             return merged
 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse LLM response as JSON: {str(e)}")
+            logger.error(f"LLM Response was: {llm_response if 'llm_response' in locals() else 'Not available'}")
             # Return existing requirements on error
             return existing_requirements
         except Exception as e:

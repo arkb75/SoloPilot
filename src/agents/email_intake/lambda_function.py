@@ -135,6 +135,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 state_manager.store_message_id_mapping(custom_msg_id, conversation_id)
 
         # Extract/update requirements with version control
+        logger.info(f"Running requirement extractor for conversation {conversation_id}")
         current_version = conversation.get("requirements_version", 0)
         updated_requirements = extractor.extract(
             conversation["email_history"], conversation.get("requirements", {})

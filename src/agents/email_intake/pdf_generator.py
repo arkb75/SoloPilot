@@ -370,21 +370,8 @@ class ProposalPDFGenerator:
             Tuple of (pdf_bytes, error_message)
         """
         try:
-            # Log conversation data received
-            logger.info("=" * 80)
-            logger.info(f"PDF GENERATOR: Received conversation data for {conversation.get('conversation_id', 'unknown')}:")
-            logger.info(f"  - Phase: {conversation.get('phase', 'unknown')}")
-            logger.info(f"  - Client Email: {conversation.get('client_email', 'unknown')}")
-            logger.info(f"  - Email History Count: {len(conversation.get('email_history', []))}")
-            
             # Extract proposal data from conversation
             proposal_data = self.extract_proposal_data(conversation)
-            
-            # Log extracted proposal data
-            logger.info("=" * 80)
-            logger.info("PDF GENERATOR: Extracted proposal data:")
-            logger.info(json.dumps(proposal_data, indent=2))
-            logger.info("=" * 80)
 
             # Prepare the payload for the PDF Lambda
             # Extract clientId from email (required by document Lambda)
