@@ -305,11 +305,14 @@ CRITICAL: Output EXACTLY in the format shown above with the markers. The email b
         metadata = {
             "phase": "proposal_draft",
             "proposal_version": 1,
-            "should_send_proposal": True,  # Always generate PDF for proposals
+            "should_send_pdf": True,  # Always generate PDF for proposals
             "email_body": email_body,  # Minimal email body for sending
             "proposal_content": proposal_content,  # Detailed content for PDF
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+        
+        # Log metadata being set
+        logger.info(f"[PROPOSAL_DRAFT] Setting metadata with should_send_pdf={metadata.get('should_send_pdf')}")
 
         # For backward compatibility, return the email body as the main response
         return email_body, metadata, prompt
@@ -324,6 +327,21 @@ CRITICAL: Output EXACTLY in the format shown above with the markers. The email b
             conversation.get("email_history", [])
         )
         calendly_link = self.calendly_link
+        
+        # Check if this is a revision request
+        feedback_body = latest_email.get("body", "").lower()
+        revision_keywords = [
+            "revision", "revise", "adjust", "change", "update", "modify",
+            "budget", "cost", "price", "cheaper", "expensive", "reduce",
+            "quote", "proposal", "new proposal", "different proposal"
+        ]
+        
+        is_revision_request = any(keyword in feedback_body for keyword in revision_keywords)
+        logger.info(f"[PROPOSAL_FEEDBACK] Is revision request: {is_revision_request}")
+        
+        if is_revision_request:
+            # Generate a revised proposal
+            return self._generate_revised_proposal_tracked(context, latest_email, conversation)
 
         prompt = f"""You are {self.sender_name}, a professional freelancer responding to {client_name}'s feedback on your proposal.
 
@@ -365,8 +383,106 @@ CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, think
             "feedback_sentiment": "positive" if is_approved else "needs_revision",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+        
+        # Log metadata for regular feedback
+        logger.info(f"[PROPOSAL_FEEDBACK] Regular feedback - should_send_pdf not set (sentiment={metadata.get('feedback_sentiment')})")
 
         return response, metadata, prompt
+
+    def _generate_revised_proposal_tracked(
+        self, context: str, latest_email: Dict[str, Any], conversation: Dict[str, Any]
+    ) -> Tuple[str, Dict[str, Any], str]:
+        """Generate a revised proposal based on feedback."""
+        
+        # Extract client name and requirements
+        client_name = self._extract_client_name_from_signature(
+            conversation.get("email_history", [])
+        )
+        requirements = conversation.get("requirements", {})
+        understanding = conversation.get("understanding_context", {})
+        
+        # Try to extract any specific budget mentioned in feedback
+        feedback_body = latest_email.get("body", "")
+        
+        prompt = f"""You are {self.sender_name}, creating a REVISED proposal for {client_name} based on their feedback.
+
+CRITICAL: Address the client as "{client_name}" throughout your response.
+
+Conversation history:
+{context}
+
+Client's feedback requesting changes:
+{feedback_body}
+
+Original requirements:
+{json.dumps(decimal_to_json_serializable(requirements), indent=2)}
+
+IMPORTANT: Generate TWO separate outputs in this exact format:
+
+===EMAIL_BODY===
+Hi {client_name},
+
+Thank you for your feedback. I've revised the proposal based on your requirements.
+
+Please find the updated proposal attached.
+
+Best,
+{self.sender_name}
+===END_EMAIL_BODY===
+
+===PROPOSAL_CONTENT===
+Generate a REVISED proposal for the PDF that addresses the client's feedback:
+1. Project Overview: Same project but adjusted based on feedback
+2. Scope: Updated features/deliverables (3-4 bullet points)
+3. Investment: Revised amount addressing their concerns
+4. Timeline: Updated timeline if needed
+
+Be specific about what changes were made to address their feedback.
+Keep it under 100 words.
+===END_PROPOSAL_CONTENT===
+
+CRITICAL: Output EXACTLY in the format shown above with the markers."""
+
+        response = self._call_llm(prompt)
+        
+        # Parse the structured response
+        email_body = response  # Default fallback
+        proposal_content = response
+        
+        try:
+            # Extract email body
+            if "===EMAIL_BODY===" in response and "===END_EMAIL_BODY===" in response:
+                email_body_start = response.find("===EMAIL_BODY===") + len("===EMAIL_BODY===")
+                email_body_end = response.find("===END_EMAIL_BODY===")
+                email_body = response[email_body_start:email_body_end].strip()
+                
+            # Extract proposal content
+            if "===PROPOSAL_CONTENT===" in response and "===END_PROPOSAL_CONTENT===" in response:
+                content_start = response.find("===PROPOSAL_CONTENT===") + len("===PROPOSAL_CONTENT===")
+                content_end = response.find("===END_PROPOSAL_CONTENT===")
+                proposal_content = response[content_start:content_end].strip()
+        except Exception as e:
+            logger.warning(f"Failed to parse structured revision response: {str(e)}")
+        
+        # Get current proposal version
+        current_version = 1
+        for reply in conversation.get("pending_replies", []):
+            if reply.get("proposal_version"):
+                current_version = max(current_version, reply["proposal_version"])
+        
+        metadata = {
+            "phase": "proposal_feedback",
+            "proposal_version": current_version + 1,
+            "should_send_pdf": True,  # Generate PDF for revised proposal
+            "email_body": email_body,
+            "proposal_content": proposal_content,
+            "feedback_sentiment": "revision_requested",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        
+        logger.info(f"[PROPOSAL_FEEDBACK] Generated revised proposal with should_send_pdf={metadata.get('should_send_pdf')}")
+        
+        return email_body, metadata, prompt
 
     def _generate_documentation_response_tracked(
         self, context: str, conversation: Dict[str, Any]

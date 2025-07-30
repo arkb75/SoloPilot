@@ -46,11 +46,15 @@ def send_reply_email(
     """
     # Guard clause: Prevent sending proposal emails without PDFs
     # Check if the body indicates this should be a proposal with attachment
+    logger.info(f"[INVARIANT_CHECK] Body mentions attachment: {'Please find the proposal attached' in body or 'Please find attached' in body}")
+    logger.info(f"[INVARIANT_CHECK] Has attachments: {bool(attachments)}")
+    
     if (
         "Please find the proposal attached" in body or "Please find attached" in body
     ) and not attachments:
         error_msg = f"Invariant violated: Attempted to send proposal email without PDF attachment for conversation {conversation_id}"
-        logger.error(error_msg)
+        logger.error(f"[INVARIANT_VIOLATION] {error_msg}")
+        logger.error(f"[INVARIANT_VIOLATION] Body preview: {body[:200]}...")
         raise RuntimeError(error_msg)
 
     try:

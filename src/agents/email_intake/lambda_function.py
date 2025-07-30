@@ -17,11 +17,11 @@ import boto3
 from botocore.exceptions import ClientError
 
 # Import modules using absolute imports for Lambda
-from src.agents.email_intake.conversation_state import ConversationStateManager
-from src.agents.email_intake.conversational_responder import ConversationalResponder
-from src.agents.email_intake.email_parser import EmailParser
-from src.agents.email_intake.requirement_extractor import RequirementExtractor
-from src.agents.email_intake.utils import EmailThreadingUtils
+from conversation_state import ConversationStateManager
+from conversational_responder import ConversationalResponder
+from email_parser import EmailParser
+from requirement_extractor import RequirementExtractor
+from utils import EmailThreadingUtils
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -195,21 +195,28 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.info("Manual mode - queuing response for approval")
 
             # Add pending reply
+            # BACKWARD COMPATIBILITY: Translate should_send_proposal to should_send_pdf
+            # This handles legacy code that might still use the old field name
+            # New code should use should_send_pdf directly
+            should_send_pdf = response_metadata.get("should_send_pdf", response_metadata.get("should_send_proposal", False))
+            logger.info(f"[FIELD_TRANSLATION] Resolved should_send_pdf={should_send_pdf} (checked both should_send_pdf and should_send_proposal)")
+            
             metadata_to_store = {
                 "recipient": parsed_email["from"],
                 "subject": f"Re: {parsed_email['subject']}",
                 "in_reply_to": parsed_email.get("message_id", ""),
                 "references": conversation.get("thread_references", []),
-                "should_send_pdf": response_metadata.get("should_send_proposal", False),
+                "should_send_pdf": should_send_pdf,  # Use the resolved value
                 "email_body": response_text,  # ALWAYS store the email body
             }
 
-            # For proposal_draft phase, also store the separate proposal_content
+            # For proposal phases, also store the separate proposal_content
             if (
-                response_metadata.get("phase") == "proposal_draft"
+                response_metadata.get("phase") in ["proposal_draft", "proposal_feedback"]
                 and "proposal_content" in response_metadata
             ):
                 metadata_to_store["proposal_content"] = response_metadata["proposal_content"]
+                logger.info(f"[PROPOSAL_CONTENT] Storing proposal content for phase={response_metadata.get('phase')}")
 
             # Extract client name from conversation for better personalization
             email_history = conversation.get("email_history", [])
@@ -372,7 +379,7 @@ def _send_followup_email_v2(
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
-    from src.agents.email_intake.email_sender import format_followup_email_body
+    from email_sender import format_followup_email_body
 
     # Use the formatted email body that includes conversation ID
     body = format_followup_email_body(questions, conversation_id)

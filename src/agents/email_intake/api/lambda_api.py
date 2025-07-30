@@ -360,6 +360,10 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
 
         # Extract email metadata from the pending reply BEFORE updating status
         email_meta = extract_email_metadata(reply_data)
+        
+        # Log the extracted metadata
+        logger.info(f"[APPROVE_REPLY] Extracted metadata - should_send_pdf={email_meta.get('should_send_pdf')}, phase={email_meta.get('phase')}")
+        logger.info(f"[APPROVE_REPLY] Email body preview: {email_meta.get('body', '')[:100]}...")
 
         # Store timestamp for later use
         now = datetime.now(timezone.utc).isoformat()
@@ -368,7 +372,7 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         storage_info = None
 
         # Check if we should send a PDF proposal
-        if email_meta.get("should_send_pdf") and email_meta.get("phase") == "proposal_draft":
+        if email_meta.get("should_send_pdf") and email_meta.get("phase") in ["proposal_draft", "proposal_feedback"]:
             # Generate PDF proposal
             try:
                 from pdf_generator import ProposalPDFGenerator
