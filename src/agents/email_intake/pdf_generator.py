@@ -64,15 +64,8 @@ class ProposalPDFGenerator:
         Returns:
             Dict with extracted proposal data
         """
-        # Check for revised requirements first
-        revised_requirements = conversation.get("revised_requirements", {})
-        base_requirements = conversation.get("requirements", {})
-
-        # Merge revised requirements with base requirements
-        effective_requirements = base_requirements.copy()
-        if revised_requirements:
-            logger.info(f"Using revised requirements: {revised_requirements}")
-            effective_requirements.update(revised_requirements)
+        # Use the main requirements (which are now always updated directly)
+        effective_requirements = conversation.get("requirements", {})
 
         # Get client info from conversation
         # client_email = conversation.get("client_email", "")  # Currently unused
@@ -166,7 +159,7 @@ class ProposalPDFGenerator:
         }
 
         # Extract scope from effective requirements
-        removed_features = revised_requirements.get("removed_features", [])
+        removed_features = []  # No longer using revised_requirements
 
         if "dashboard" in project_type.lower():
             # Check if Shopify was originally mentioned but not removed
@@ -328,8 +321,8 @@ class ProposalPDFGenerator:
         """Extract specific project description from conversation."""
 
         # Check for removed features
-        revised_requirements = conversation.get("revised_requirements", {})
-        removed_features = revised_requirements.get("removed_features", [])
+        # No longer using revised_requirements
+        removed_features = []
 
         # Check for specific mentions in email content
         for email in conversation.get("email_history", []):
@@ -504,7 +497,6 @@ class ProposalPDFGenerator:
             # Extract data for storage
             proposal_data = self.extract_proposal_data(conversation)
             requirements = conversation.get("requirements", {})
-            revised_requirements = conversation.get("revised_requirements")
             conversation_id = conversation.get("conversation_id")
 
             if not conversation_id:
@@ -517,7 +509,7 @@ class ProposalPDFGenerator:
                 pdf_bytes=pdf_bytes,
                 proposal_data=proposal_data,
                 requirements=requirements,
-                revised_requirements=revised_requirements,
+                revised_requirements=None,  # No longer using revised_requirements
                 generated_by=conversation.get("phase", "proposal_draft"),
             )
 

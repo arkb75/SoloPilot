@@ -76,15 +76,28 @@ class RequirementExtractor:
         safe_existing_json = json.dumps(existing_requirements, indent=2, default=_decimal_safe)
 
         # Create extraction prompt
-        prompt = f"""You are a project requirement analyst. Extract project requirements from this email conversation.
+        if existing_requirements:
+            prompt = f"""You are a project requirement analyst. Update the existing requirements based on the email conversation.
 
-Previous requirements (update and enhance these):
+EXISTING REQUIREMENTS (update these based on new information):
 {safe_existing_json}
 
-Email conversation:
+EMAIL CONVERSATION:
 {conversation}
 
-Extract and return a JSON object with these fields:
+IMPORTANT: Return the COMPLETE updated requirements, not just changes. Include all fields from the existing requirements, updating values where the conversation provides new information.
+
+Return a JSON object with these fields:"""
+        else:
+            prompt = f"""You are a project requirement analyst. Extract project requirements from this email conversation.
+
+EMAIL CONVERSATION:
+{conversation}
+
+Extract and return a JSON object with these fields:"""
+        
+        # Add the common fields description
+        prompt += """
 - title: Project name/title
 - summary: Brief project description
 - project_type: "website", "web_app", "mobile_app", or "other"
@@ -131,21 +144,12 @@ Return ONLY valid JSON, no additional text."""
 
             # Log extracted requirements
             logger.info("=" * 80)
-            logger.info("REQUIREMENT EXTRACTOR: Extracted new requirements")
+            logger.info("REQUIREMENT EXTRACTOR: Extracted requirements")
             logger.info(json.dumps(requirements, indent=2))
-            logger.info("=" * 80)
-            
-            # Merge with existing requirements
-            merged = self._merge_requirements(existing_requirements, requirements)
-            
-            # Log merged results
-            logger.info("=" * 80)
-            logger.info("REQUIREMENT EXTRACTOR: Final merged requirements")
-            logger.info(json.dumps(merged, indent=2, default=str))
             logger.info("=" * 80)
 
             logger.info("Successfully extracted requirements")
-            return merged
+            return requirements
 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse LLM response as JSON: {str(e)}")
@@ -245,45 +249,98 @@ Return ONLY valid JSON, no additional text."""
 
         return "\n".join(conversation_parts)
 
-    def _merge_requirements(self, existing: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
-        """Merge new requirements with existing ones."""
-        merged = existing.copy()
 
-        # Update simple fields
-        for field in [
-            "title",
-            "summary",
-            "project_type",
-            "business_description",
-            "timeline",
-            "budget",
-        ]:
-            if field in new and new[field]:
-                merged[field] = new[field]
+    def update_requirements_from_feedback(
+        self, existing_requirements: Dict[str, Any], feedback_email: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Update requirements based on client feedback using LLM.
+        
+        Args:
+            existing_requirements: Current complete requirements
+            feedback_email: Latest feedback email from client
+            
+        Returns:
+            Updated complete requirements (not just changes)
+        """
+        # Safely serialize existing requirements by converting Decimal to native types
+        def _decimal_safe(obj: Any):
+            """Custom JSON encoder for Decimal objects."""
+            if isinstance(obj, Decimal):
+                # Preserve integers without .0
+                return int(obj) if obj % 1 == 0 else float(obj)
+            raise TypeError
 
-        # Merge arrays (features, tech_stack, constraints)
-        for array_field in ["features", "tech_stack", "constraints"]:
-            existing_items = existing.get(array_field, [])
-            new_items = new.get(array_field, [])
+        safe_existing_json = json.dumps(existing_requirements, indent=2, default=_decimal_safe)
+        
+        prompt = f"""You are a requirements analyst. You have an existing set of project requirements and the client has provided feedback requesting changes.
 
-            if array_field == "features":
-                # For features, replace if new has more detail
-                if new_items:
-                    merged[array_field] = new_items
+EXISTING REQUIREMENTS:
+{safe_existing_json}
+
+CLIENT FEEDBACK:
+From: {feedback_email.get('from', 'Unknown')}
+Body: {feedback_email.get('body', '')}
+
+TASK:
+Update the existing requirements based on the client's feedback. Return the COMPLETE updated requirements, not just the changes.
+
+Key instructions:
+1. If the client mentions a new budget, update the budget field
+2. If the client asks to remove features, remove them from the features list
+3. If the client asks to add features, add them to the features list
+4. If the client updates the timeline, update the timeline field
+5. Keep all other requirements that aren't explicitly changed
+6. Maintain the same JSON structure as the existing requirements
+
+Return ONLY the updated requirements as a valid JSON object. Do not include any explanation or commentary."""
+
+        try:
+            # Call LLM
+            if USE_AI_PROVIDER:
+                llm_response = self.provider.generate_code(prompt, [])
             else:
-                # For others, combine unique items
-                combined = existing_items + new_items
-                # Remove duplicates while preserving order
-                seen = set()
-                unique = []
-                for item in combined:
-                    item_str = str(item)
-                    if item_str not in seen:
-                        seen.add(item_str)
-                        unique.append(item)
-                merged[array_field] = unique
-
-        return merged
+                # Lambda environment
+                request_body = {
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 4000,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1,
+                }
+                
+                response = self.bedrock_client.invoke_model(
+                    modelId=self.model_id, body=json.dumps(request_body)
+                )
+                
+                response_body = json.loads(response["body"].read())
+                llm_response = response_body["content"][0]["text"]
+            
+            # Clean response
+            llm_response = llm_response.strip()
+            if llm_response.startswith("```json"):
+                llm_response = llm_response[7:]
+            if llm_response.endswith("```"):
+                llm_response = llm_response[:-3]
+            llm_response = llm_response.strip()
+            
+            # Parse JSON response
+            updated_requirements = json.loads(llm_response)
+            
+            # Log the update
+            logger.info("=" * 80)
+            logger.info("REQUIREMENT EXTRACTOR: Updated requirements from feedback")
+            logger.info(json.dumps(updated_requirements, indent=2))
+            logger.info("=" * 80)
+            
+            return updated_requirements
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse LLM response as JSON: {str(e)}")
+            logger.error(f"LLM Response was: {llm_response if 'llm_response' in locals() else 'Not available'}")
+            # Return existing requirements on error
+            return existing_requirements
+        except Exception as e:
+            logger.error(f"Error updating requirements from feedback: {str(e)}")
+            return existing_requirements
 
     def extract_requirement_updates(
         self, latest_email: Dict[str, Any], existing_requirements: Dict[str, Any]

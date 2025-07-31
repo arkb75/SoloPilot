@@ -11,6 +11,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
 import boto3
@@ -168,24 +169,27 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             conversation, parsed_email
         )
 
-        # Extract requirement updates if in proposal_feedback phase
+        # Update requirements if in proposal_feedback phase
         if conversation.get("phase") == "proposal_feedback":
-            logger.info("Proposal feedback phase - checking for requirement updates")
-            requirement_updates = extractor.extract_requirement_updates(
-                parsed_email, conversation.get("requirements", {})
+            logger.info("Proposal feedback phase - updating requirements based on feedback")
+            
+            # Use the new update method to get complete updated requirements
+            updated_requirements_from_feedback = extractor.update_requirements_from_feedback(
+                conversation.get("requirements", {}), parsed_email
             )
-
-            if requirement_updates:
-                logger.info(f"Found requirement updates: {requirement_updates}")
-                # Store revised requirements
-                try:
-                    state_manager.update_revised_requirements(conversation_id, requirement_updates)
-                    # Refresh conversation to get updated state
-                    conversation = state_manager.fetch_or_create_conversation(
-                        conversation_id, original_message_id, parsed_email
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to update revised requirements: {str(e)}")
+            
+            # Update the main requirements (not revised_requirements)
+            try:
+                current_version = conversation.get("requirements_version", 0)
+                conversation = state_manager.update_requirements_atomic(
+                    conversation_id, updated_requirements_from_feedback, expected_version=current_version
+                )
+                logger.info("Successfully updated requirements based on feedback")
+                
+                # Send updated requirements to queue
+                _send_to_queue_enhanced(conversation_id, updated_requirements_from_feedback, conversation)
+            except Exception as e:
+                logger.error(f"Failed to update requirements from feedback: {str(e)}")
 
         # Check reply mode (default to manual if not set)
         reply_mode = conversation.get("reply_mode", "manual")
@@ -320,6 +324,14 @@ def _send_to_queue_enhanced(
     conversation_id: str, requirements: Dict[str, Any], conversation: Dict[str, Any]
 ) -> None:
     """Send enhanced message to SQS with conversation metadata."""
+    # Custom JSON encoder to handle Decimal objects from DynamoDB
+    def decimal_default(obj):
+        """Convert Decimal to int or float for JSON serialization."""
+        if isinstance(obj, Decimal):
+            # Preserve integers without .0
+            return int(obj) if obj % 1 == 0 else float(obj)
+        raise TypeError
+    
     message = {
         "conversation_id": conversation_id,
         "requirements": requirements,
@@ -337,7 +349,7 @@ def _send_to_queue_enhanced(
     try:
         response = sqs_client.send_message(
             QueueUrl=QUEUE_URL,
-            MessageBody=json.dumps(message),
+            MessageBody=json.dumps(message, default=decimal_default),
             MessageAttributes={
                 "conversation_id": {
                     "StringValue": conversation_id,
