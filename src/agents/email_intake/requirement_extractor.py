@@ -98,6 +98,7 @@ Extract and return a JSON object with these fields:"""
         
         # Add the common fields description
         prompt += """
+- client_name: Client's name (extract from email signature if possible)
 - title: Project name/title
 - summary: Brief project description
 - project_type: "website", "web_app", "mobile_app", or "other"
@@ -107,6 +108,16 @@ Extract and return a JSON object with these fields:"""
 - constraints: Array of technical/business constraints
 - timeline: Delivery timeline or deadline
 - budget: Budget range or fixed amount
+- budget_amount: Single numeric budget amount (e.g., 1000 for $1k, 3500 for $3-4k range)
+- scope_items: Array of {{"title": "Scope Title", "description": "Detailed description"}} for proposal sections
+- timeline_phases: Array of {{"phase": "Phase Name", "duration": "X weeks"}} for project phases
+- pricing_breakdown: Array of {{"item": "Line Item", "amount": numeric_amount}} that adds up to budget_amount
+
+For scope_items, timeline_phases, and pricing_breakdown:
+- If project mentions "dashboard", include appropriate dashboard-specific items
+- If "Shopify" is mentioned with dashboard, include Shopify integration
+- Timeline should typically have Discovery, Design/Development, Testing, Launch phases
+- Pricing should be realistic and add up to the budget_amount
 
 Return ONLY valid JSON, no additional text."""
 
@@ -285,12 +296,20 @@ TASK:
 Update the existing requirements based on the client's feedback. Return the COMPLETE updated requirements, not just the changes.
 
 Key instructions:
-1. If the client mentions a new budget, update the budget field
+1. If the client mentions a new budget, update BOTH the budget field AND budget_amount
 2. If the client asks to remove features, remove them from the features list
 3. If the client asks to add features, add them to the features list
 4. If the client updates the timeline, update the timeline field
-5. Keep all other requirements that aren't explicitly changed
-6. Maintain the same JSON structure as the existing requirements
+5. If features change significantly, update scope_items to reflect the changes
+6. If budget changes, recalculate pricing_breakdown to match the new budget_amount
+7. Keep all other requirements that aren't explicitly changed
+8. Maintain the same JSON structure as the existing requirements
+
+For budget changes:
+- "$1k" or "$1000" → budget_amount: 1000
+- "$500" → budget_amount: 500
+- "$3-4k" → budget_amount: 3500 (midpoint)
+- Update pricing_breakdown items proportionally
 
 Return ONLY the updated requirements as a valid JSON object. Do not include any explanation or commentary."""
 

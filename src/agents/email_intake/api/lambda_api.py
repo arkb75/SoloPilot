@@ -409,10 +409,11 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
                     )
 
                     if pdf_bytes:
-                        # Extract client name and project title
-                        proposal_data = pdf_generator.extract_proposal_data(conversation)
-                        client_name = proposal_data.get("clientName", "Client")
-                        project_title = proposal_data.get("projectTitle", "Your Project")
+                        # Extract client name and project title from requirements
+                        requirements = conversation.get("requirements", {})
+                        client_name = requirements.get("client_name", "Client")
+                        # Use title from requirements, fallback to generic
+                        project_title = requirements.get("title", "Your Project")
 
                         # Use the actual LLM-generated email body from metadata
                         # This ensures what the user sees in frontend is what gets sent

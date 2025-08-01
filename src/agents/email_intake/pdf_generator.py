@@ -54,8 +54,120 @@ class ProposalPDFGenerator:
                 logger.warning(f"Failed to initialize S3 store: {str(e)}")
                 self.s3_store = None
 
+    def generate_proposal_pdf_from_data(
+        self, proposal_data: Dict, client_id: str, timeout: int = 5
+    ) -> Tuple[Optional[bytes], Optional[str]]:
+        """
+        Generate a proposal PDF from pre-extracted proposal data.
+        
+        Args:
+            proposal_data: Formatted proposal data (from ProposalDataMapper)
+            client_id: Client identifier for the PDF
+            timeout: Lambda invocation timeout in seconds
+            
+        Returns:
+            Tuple of (pdf_bytes, error_message)
+        """
+        try:
+            # Prepare the payload for the PDF Lambda
+            payload = {
+                "template": "glassmorphic-proposal",
+                "data": proposal_data,
+                "clientId": client_id,
+                "docType": "proposal",
+                "filename": "project-proposal.pdf",
+            }
+
+            logger.info(
+                f"Generating proposal PDF for {proposal_data['clientName']} with clientId: {client_id}"
+            )
+            logger.info(
+                f"Payload keys: {list(payload.keys())}, data keys: {list(payload['data'].keys())}"
+            )
+
+            # Invoke the PDF generation Lambda synchronously
+            response = lambda_client.invoke(
+                FunctionName=self.pdf_lambda_arn,
+                InvocationType="RequestResponse",
+                Payload=json.dumps(payload),
+            )
+
+            # Parse the response
+            raw_response = response["Payload"].read()
+            logger.info(
+                f"Lambda response status: {response.get('StatusCode')}, response size: {len(raw_response)} bytes"
+            )
+
+            try:
+                response_payload = json.loads(raw_response)
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse Lambda response as JSON: {e}")
+                logger.error(f"Raw response (first 500 chars): {raw_response[:500]}")
+                return None, f"Invalid JSON response from PDF Lambda: {str(e)}"
+
+            logger.info(f"Parsed response keys: {list(response_payload.keys())}")
+
+            # Check if this is an HTTP response format (with statusCode and body)
+            if response_payload.get("statusCode") == 200:
+                # Parse the nested body JSON
+                try:
+                    body_json = json.loads(response_payload.get("body", "{}"))
+                    logger.info(f"Parsed body keys: {list(body_json.keys())}")
+
+                    if body_json.get("success"):
+                        # Get the PDF from the response (base64 encoded)
+                        pdf_base64 = body_json.get("pdf")
+                        if pdf_base64:
+                            pdf_bytes = base64.b64decode(pdf_base64)
+                            logger.info(f"Successfully generated PDF ({len(pdf_bytes)} bytes)")
+                            return pdf_bytes, None
+                        else:
+                            # If PDF not in response, might be in S3
+                            s3_key = body_json.get("s3Key")
+                            if s3_key:
+                                logger.info(f"PDF stored in S3: {s3_key}")
+                                # For now, we need the PDF bytes, so this is considered an error
+                                return (
+                                    None,
+                                    f"PDF generated but not included in response. S3 key: {s3_key}",
+                                )
+                    else:
+                        # Handle errors in the nested body
+                        error_msg = body_json.get(
+                            "error", body_json.get("errorMessage", "Unknown error in body")
+                        )
+                        return None, error_msg
+
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse Lambda body JSON: {e}")
+                    return None, f"Invalid body JSON in Lambda response: {str(e)}"
+
+            elif response.get("StatusCode") == 200 and response_payload.get("success"):
+                # Direct format (fallback for compatibility)
+                pdf_base64 = response_payload.get("pdf")
+                if pdf_base64:
+                    pdf_bytes = base64.b64decode(pdf_base64)
+                    logger.info(f"Successfully generated PDF ({len(pdf_bytes)} bytes)")
+                    return pdf_bytes, None
+
+            # Handle errors - log full response for debugging
+            logger.error(f"PDF generation failed. Full response: {response_payload}")
+            error_msg = response_payload.get(
+                "error", response_payload.get("errorMessage", "Unknown error generating PDF")
+            )
+            if "errors" in response_payload:
+                error_msg = f"Validation errors: {response_payload['errors']}"
+            return None, error_msg
+
+        except Exception as e:
+            logger.error(f"Exception generating PDF: {str(e)}")
+            return None, f"Failed to generate PDF: {str(e)}"
+    
     def extract_proposal_data(self, conversation: Dict) -> Dict:
         """
+        DEPRECATED: Use ProposalDataMapper instead.
+        This method is kept for backward compatibility only.
+        
         Extract relevant data from the conversation for the proposal.
 
         Args:
@@ -64,8 +176,12 @@ class ProposalPDFGenerator:
         Returns:
             Dict with extracted proposal data
         """
+        logger.warning("DEPRECATED: extract_proposal_data called. Use ProposalDataMapper instead.")
         # Use the main requirements (which are now always updated directly)
         effective_requirements = conversation.get("requirements", {})
+        
+        # Initialize field source tracking
+        field_sources = {}
 
         # Get client info from conversation
         # client_email = conversation.get("client_email", "")  # Currently unused
@@ -125,6 +241,7 @@ class ProposalPDFGenerator:
                             ]
                         ):
                             client_name = line.split("(")[0].strip()
+                            field_sources["clientName"] = "PDF_GENERATOR: Extracted from email signature"
                             break
                         else:
                             signature_candidates.append(line)
@@ -132,19 +249,26 @@ class ProposalPDFGenerator:
                 # Fallback to title lines if no pure name found
                 if client_name == "Client" and signature_candidates:
                     client_name = signature_candidates[-1].split("(")[0].strip()
+                    field_sources["clientName"] = "PDF_GENERATOR: Extracted from email signature (title line)"
+                elif client_name == "Client":
+                    field_sources["clientName"] = "PDF_GENERATOR: Default value (no signature found)"
 
         # Extract project details from understanding
         understanding = conversation.get("current_understanding", {})
 
         # Extract project type from email content
         project_type = "Web Development Project"
+        field_sources["projectTitle"] = "PDF_GENERATOR: Default value"
+        
         if conversation.get("email_history"):
             for email in conversation["email_history"]:
                 if "dashboard" in email.get("body", "").lower():
                     project_type = "Internal Dashboard"
+                    field_sources["projectTitle"] = "PDF_GENERATOR: Detected 'dashboard' in email content"
                     break
                 elif "shopify" in email.get("body", "").lower():
                     project_type = "Shopify Dashboard"
+                    field_sources["projectTitle"] = "PDF_GENERATOR: Detected 'shopify' in email content"
                     break
 
         # Build proposal data structure
@@ -185,6 +309,7 @@ class ProposalPDFGenerator:
                         "description": "Implement secure authentication with Google Workspace",
                     },
                 ]
+                field_sources["scope"] = "PDF_GENERATOR: Shopify dashboard template (detected shopify + dashboard)"
             else:
                 # Generic dashboard scope without Shopify
                 proposal_data["scope"] = [
@@ -201,6 +326,7 @@ class ProposalPDFGenerator:
                         "description": "Implement secure access control for your team",
                     },
                 ]
+                field_sources["scope"] = "PDF_GENERATOR: Generic dashboard template"
         else:
             # Generic scope
             proposal_data["scope"] = [
@@ -217,13 +343,16 @@ class ProposalPDFGenerator:
                     "description": "Ensure quality and deploy to production",
                 },
             ]
+            field_sources["scope"] = "PDF_GENERATOR: Generic project template"
 
         # Generate timeline based on project complexity
         timeline_complexity = understanding.get("timeline", {})
         if timeline_complexity.get("urgency") == "high":
             weeks = [1, 2, 4, 1, 1]  # Faster timeline
+            field_sources["timeline"] = "PDF_GENERATOR: Fast timeline template (high urgency detected)"
         else:
             weeks = [2, 3, 8, 2, 1]  # Standard timeline
+            field_sources["timeline"] = "PDF_GENERATOR: Standard timeline template"
 
         phases = ["Discovery", "Design", "Development", "Testing", "Launch"]
         for phase, duration in zip(phases, weeks):
@@ -236,6 +365,7 @@ class ProposalPDFGenerator:
         budget_info = effective_requirements.get("budget", {})
         if budget_info.get("max_amount"):
             requested_budget = budget_info["max_amount"]
+            field_sources["budget"] = f"REQUIREMENT_EXTRACTOR: ${requested_budget} from requirements.budget.max_amount"
             logger.info(f"Using budget from requirements: ${requested_budget}")
         else:
             # Fallback to scanning email history only if no budget in requirements
@@ -243,13 +373,19 @@ class ProposalPDFGenerator:
                 body = email.get("body", "").lower()
                 if "$1k" in body or "$1,000" in body or "cost down to $1" in body:
                     requested_budget = 1000
+                    field_sources["budget"] = "PDF_GENERATOR: $1000 detected in email content"
                     break
                 elif "$500" in body or "cost down to $500" in body or "down to $500" in body:
                     requested_budget = 500
+                    field_sources["budget"] = "PDF_GENERATOR: $500 detected in email content"
                     break
                 elif "$3-4" in body or "$3-4k" in body:
                     requested_budget = 3500
+                    field_sources["budget"] = "PDF_GENERATOR: $3500 detected in email content"
                     break
+            
+            if requested_budget is None:
+                field_sources["budget"] = "PDF_GENERATOR: No budget found, using default pricing"
 
         # Generate realistic pricing based on project type
         if requested_budget == 500:
@@ -308,10 +444,42 @@ class ProposalPDFGenerator:
         default_stack = ["Next.js", "React", "Node.js", "PostgreSQL", "AWS"]
 
         # Add any specifically mentioned technologies
-        if tech_mentioned.get("technologies"):
+        if effective_requirements.get("tech_stack"):
+            proposal_data["techStack"] = effective_requirements["tech_stack"][:9]  # Max 9 items
+            field_sources["techStack"] = f"REQUIREMENT_EXTRACTOR: {', '.join(effective_requirements['tech_stack'])}"
+        elif tech_mentioned.get("technologies"):
             proposal_data["techStack"] = tech_mentioned["technologies"][:9]  # Max 9 items
+            field_sources["techStack"] = "PDF_GENERATOR: From conversation understanding"
         else:
             proposal_data["techStack"] = default_stack
+            field_sources["techStack"] = "PDF_GENERATOR: Default tech stack"
+
+        # Add comprehensive logging
+        logger.info("=" * 80)
+        logger.info("PDF GENERATOR - PROPOSAL DATA EXTRACTION COMPLETE")
+        logger.info("=" * 80)
+        logger.info("FIELD VALUES AND SOURCES:")
+        logger.info(f"  clientName: '{proposal_data['clientName']}' - {field_sources['clientName']}")
+        logger.info(f"  projectTitle: '{proposal_data['projectTitle']}' - {field_sources['projectTitle']}")
+        logger.info(f"  proposalDate: '{proposal_data['proposalDate']}' - PDF_GENERATOR: Current month/year")
+        logger.info(f"  scope: {len(proposal_data['scope'])} items - {field_sources['scope']}")
+        for i, scope_item in enumerate(proposal_data['scope']):
+            logger.info(f"    [{i+1}] {scope_item['title']}")
+        logger.info(f"  timeline: {len(proposal_data['timeline'])} phases - {field_sources['timeline']}")
+        logger.info(f"  budget: ${requested_budget if requested_budget else 'Not specified'} - {field_sources['budget']}")
+        logger.info(f"  pricing: {len(proposal_data['pricing'])} items - PDF_GENERATOR: Generated based on budget/project type")
+        total_price = sum(int(item['amount'].replace('$', '').replace(',', '')) for item in proposal_data['pricing'])
+        logger.info(f"    Total: ${total_price:,}")
+        logger.info(f"  techStack: {', '.join(proposal_data['techStack'])} - {field_sources['techStack']}")
+        logger.info("=" * 80)
+        logger.info("REQUIREMENTS FROM EXTRACTOR:")
+        logger.info(f"  title: {effective_requirements.get('title', 'Not provided')}")
+        logger.info(f"  summary: {effective_requirements.get('summary', 'Not provided')}")
+        logger.info(f"  project_type: {effective_requirements.get('project_type', 'Not provided')}")
+        logger.info(f"  features: {len(effective_requirements.get('features', []))} features")
+        logger.info(f"  budget: {effective_requirements.get('budget', 'Not provided')}")
+        logger.info(f"  timeline: {effective_requirements.get('timeline', 'Not provided')}")
+        logger.info("=" * 80)
 
         return proposal_data
 
@@ -354,6 +522,9 @@ class ProposalPDFGenerator:
     ) -> Tuple[Optional[bytes], Optional[str]]:
         """
         Generate a proposal PDF for the current conversation.
+        
+        DEPRECATED: This method now uses ProposalDataMapper internally.
+        Consider using generate_proposal_pdf_from_data directly.
 
         Args:
             conversation: Full conversation history with metadata
@@ -362,112 +533,30 @@ class ProposalPDFGenerator:
         Returns:
             Tuple of (pdf_bytes, error_message)
         """
-        try:
-            # Extract proposal data from conversation
-            proposal_data = self.extract_proposal_data(conversation)
-
-            # Prepare the payload for the PDF Lambda
-            # Extract clientId from email (required by document Lambda)
-            client_id = (
-                conversation.get("client_email", "unknown-client")
-                .split("@")[0]
-                .replace(".", "-")
-                .replace("_", "-")
-            )
-
-            payload = {
-                "template": "glassmorphic-proposal",
-                "data": proposal_data,
-                "clientId": client_id,
-                "docType": "proposal",
-                "filename": "project-proposal.pdf",
-            }
-
-            logger.info(
-                f"Generating proposal PDF for {proposal_data['clientName']} with clientId: {client_id}"
-            )
-            logger.info(
-                f"Payload keys: {list(payload.keys())}, data keys: {list(payload['data'].keys())}"
-            )
-
-            # Invoke the PDF generation Lambda synchronously
-            response = lambda_client.invoke(
-                FunctionName=self.pdf_lambda_arn,
-                InvocationType="RequestResponse",
-                Payload=json.dumps(payload),
-            )
-
-            # Parse the response
-            raw_response = response["Payload"].read()
-            logger.info(
-                f"Lambda response status: {response.get('StatusCode')}, response size: {len(raw_response)} bytes"
-            )
-
-            try:
-                response_payload = json.loads(raw_response)
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse Lambda response as JSON: {e}")
-                logger.error(f"Raw response (first 500 chars): {raw_response[:500]}")
-                return None, f"Invalid JSON response from PDF Lambda: {str(e)}"
-
-            logger.info(f"Parsed response keys: {list(response_payload.keys())}")
-
-            # Check if this is an HTTP response format (with statusCode and body)
-            if response_payload.get("statusCode") == 200:
-                # Parse the nested body JSON
-                try:
-                    body_json = json.loads(response_payload.get("body", "{}"))
-                    logger.info(f"Parsed body keys: {list(body_json.keys())}")
-
-                    if body_json.get("success"):
-                        # Get the PDF from the response (base64 encoded)
-                        pdf_base64 = body_json.get("pdf")
-                        if pdf_base64:
-                            pdf_bytes = base64.b64decode(pdf_base64)
-                            logger.info(f"Successfully generated PDF ({len(pdf_bytes)} bytes)")
-                            return pdf_bytes, None
-                        else:
-                            # If PDF not in response, might be in S3
-                            s3_key = body_json.get("s3Key")
-                            # document_url = body_json.get("documentUrl")  # Currently unused
-                            if s3_key:
-                                logger.info(f"PDF stored in S3: {s3_key}")
-                                # For now, we need the PDF bytes, so this is considered an error
-                                return (
-                                    None,
-                                    f"PDF generated but not included in response. S3 key: {s3_key}",
-                                )
-                    else:
-                        # Handle errors in the nested body
-                        error_msg = body_json.get(
-                            "error", body_json.get("errorMessage", "Unknown error in body")
-                        )
-                        return None, error_msg
-
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse Lambda body JSON: {e}")
-                    return None, f"Invalid body JSON in Lambda response: {str(e)}"
-
-            elif response.get("StatusCode") == 200 and response_payload.get("success"):
-                # Direct format (fallback for compatibility)
-                pdf_base64 = response_payload.get("pdf")
-                if pdf_base64:
-                    pdf_bytes = base64.b64decode(pdf_base64)
-                    logger.info(f"Successfully generated PDF ({len(pdf_bytes)} bytes)")
-                    return pdf_bytes, None
-
-            # Handle errors - log full response for debugging
-            logger.error(f"PDF generation failed. Full response: {response_payload}")
-            error_msg = response_payload.get(
-                "error", response_payload.get("errorMessage", "Unknown error generating PDF")
-            )
-            if "errors" in response_payload:
-                error_msg = f"Validation errors: {response_payload['errors']}"
-            return None, error_msg
-
-        except Exception as e:
-            logger.error(f"Exception generating PDF: {str(e)}")
-            return None, f"Failed to generate PDF: {str(e)}"
+        logger.warning("DEPRECATED: generate_proposal_pdf called. Consider using generate_proposal_pdf_from_data.")
+        
+        # Import mapper here to avoid circular imports
+        from proposal_mapper import ProposalDataMapper
+        
+        # Extract requirements
+        requirements = conversation.get("requirements", {})
+        if not requirements:
+            return None, "No requirements found in conversation"
+        
+        # Map requirements to proposal data
+        mapper = ProposalDataMapper()
+        proposal_data = mapper.map_requirements_to_proposal_data(requirements)
+        
+        # Extract clientId from email (required by document Lambda)
+        client_id = (
+            conversation.get("client_email", "unknown-client")
+            .split("@")[0]
+            .replace(".", "-")
+            .replace("_", "-")
+        )
+        
+        # Use the new method
+        return self.generate_proposal_pdf_from_data(proposal_data, client_id, timeout)
 
     def generate_and_store_proposal_pdf(
         self, conversation: Dict, timeout: int = 5
@@ -483,8 +572,28 @@ class ProposalPDFGenerator:
             Tuple of (pdf_bytes, error_message, storage_info)
             storage_info contains version and s3_key if stored
         """
-        # First generate the PDF
-        pdf_bytes, error = self.generate_proposal_pdf(conversation, timeout)
+        # Import mapper here to avoid circular imports
+        from proposal_mapper import ProposalDataMapper
+        
+        # Extract requirements
+        requirements = conversation.get("requirements", {})
+        if not requirements:
+            return None, "No requirements found in conversation", None
+        
+        # Map requirements to proposal data
+        mapper = ProposalDataMapper()
+        proposal_data = mapper.map_requirements_to_proposal_data(requirements)
+        
+        # Extract clientId
+        client_id = (
+            conversation.get("client_email", "unknown-client")
+            .split("@")[0]
+            .replace(".", "-")
+            .replace("_", "-")
+        )
+        
+        # Generate the PDF
+        pdf_bytes, error = self.generate_proposal_pdf_from_data(proposal_data, client_id, timeout)
 
         if not pdf_bytes or error:
             return pdf_bytes, error, None
@@ -494,9 +603,6 @@ class ProposalPDFGenerator:
             return pdf_bytes, error, None
 
         try:
-            # Extract data for storage
-            proposal_data = self.extract_proposal_data(conversation)
-            requirements = conversation.get("requirements", {})
             conversation_id = conversation.get("conversation_id")
 
             if not conversation_id:
