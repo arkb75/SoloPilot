@@ -214,13 +214,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "email_body": response_text,  # ALWAYS store the email body
             }
 
-            # For proposal phases, also store the separate proposal_content
-            if (
-                response_metadata.get("phase") in ["proposal_draft", "proposal_feedback"]
-                and "proposal_content" in response_metadata
-            ):
-                metadata_to_store["proposal_content"] = response_metadata["proposal_content"]
-                logger.info(f"[PROPOSAL_CONTENT] Storing proposal content for phase={response_metadata.get('phase')}")
+            # Note: proposal_content is no longer used - PDFs are generated from requirements
 
             # Extract client name from conversation for better personalization
             email_history = conversation.get("email_history", [])

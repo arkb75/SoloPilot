@@ -220,4 +220,8 @@ poetry run python scripts/run_dev_agent.py
    - Consider caching PDF generation for identical proposals
    - Implement retry logic for transient PDF failures
 
-Remember: We're building a system that makes freelancers superhuman, not replacing them. Every line of code should serve that vision.
+
+## AWS Configuration
+- **AWS Account**: 392894085110 (use `--profile root`)
+- **Region**: us-east-2
+- **Lambda Functions**: solopilot-email-intake, email-agent-api, solopilot-document-generation
