@@ -184,7 +184,7 @@ Guidelines:
 - Acknowledge what they've shared
 - Ask clarifying questions if needed
 - Keep it concise (2-3 paragraphs max)
-{f"- They want to schedule a meeting (Calendly link will be added automatically)" if meeting_requested else ""}
+{f"- They want to schedule a meeting (Calendly link will be added automatically)" if meeting_requested else "- Do NOT suggest meetings or calls - the client hasn't asked for one"}
 
 Write only the email body text.
 
@@ -193,7 +193,12 @@ CRITICAL INSTRUCTIONS:
 - Do NOT add your name at the end
 - Do NOT add any P.S. lines
 - End the email with your last sentence about the topic
-- The signature and P.S. will be added automatically by the system"""
+- The signature and P.S. will be added automatically by the system
+
+ENVIRONMENT AWARENESS:
+- Meeting requested: {"YES - mention the call" if meeting_requested else "NO - do NOT suggest calls/meetings"}
+- You can gather requirements via email without meetings
+- Only suggest meetings if the client explicitly asked for one"""
 
         response = self._call_llm(prompt)
         
@@ -247,7 +252,7 @@ Guidelines:
 - 2-3 sentences maximum
 - Mention the attached proposal naturally
 - Don't include proposal details (they're in the PDF)
-{f"- Meeting was requested (P.S. with Calendly will be added automatically)" if meeting_requested else ""}
+{f"- Meeting was requested (P.S. with Calendly will be added automatically)" if meeting_requested else "- Do NOT suggest meetings or calls - focus on the proposal"}
 
 Write only the email body text. Be natural, not robotic.
 
@@ -256,7 +261,10 @@ CRITICAL INSTRUCTIONS:
 - Do NOT add your name at the end
 - Do NOT add any P.S. lines
 - End the email with your last sentence about the topic
-- The signature and P.S. will be added automatically by the system"""
+- The signature and P.S. will be added automatically by the system
+
+ENVIRONMENT AWARENESS:
+- Meeting requested: {"YES" if meeting_requested else "NO - do not mention calls/meetings"}"""
 
         # Generate the email body
         email_body = self._call_llm(prompt)
