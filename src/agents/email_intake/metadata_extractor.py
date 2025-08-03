@@ -109,6 +109,7 @@ Extract the following information into a JSON object:
   "current_phase": "{current_phase}",
   "should_attach_pdf": boolean (true for proposal_draft or revision requests),
   "meeting_requested": boolean (true if client asked for a call/meeting),
+  "meeting_confidence": 0.0 to 1.0 (confidence that this is a real meeting request),
   "revision_requested": boolean (true if client is asking for changes to proposal),
   "feedback_sentiment": "One of: positive, negative, neutral, needs_revision",
   "key_topics": ["array", "of", "main", "topics"],
@@ -122,9 +123,20 @@ IMPORTANT RULES:
 2. Look for names typically found in signatures (at the end of emails, after greetings)
 3. For project_name: Create a descriptive name based on what they're building
 4. For should_attach_pdf: Set to true ONLY for proposal_draft phase or when revising a proposal
-5. For meeting_requested: Look for phrases like "can we meet", "schedule a call", "book a time"
+5. For meeting_requested: ONLY set to true if BOTH conditions are met:
+   a) Contains verbs like "schedule", "arrange", "meet", "call", "book"
+   b) Contains a specific time reference OR explicit request like "book a call", "set up a meeting"
+   
+   These are NOT meeting requests:
+   - "Let me know next steps"
+   - "What's the timeline?"
+   - "How should we proceed?"
+   - "Looking forward to hearing from you"
+   - "Let me know if you need anything"
+   
 6. For revision_requested: Look for budget concerns, feature changes, timeline adjustments
-7. Set confidence_score based on how clear the information is
+7. Set confidence_score based on how clear the information is (0.0-1.0)
+8. For meeting_requested confidence: Use 0.9+ only when explicit meeting request, 0.5-0.8 for ambiguous cases
 
 Return ONLY the JSON object, no other text."""
         
@@ -180,6 +192,7 @@ Return ONLY the JSON object, no other text."""
             "current_phase": current_phase,  # Use provided phase, not extracted
             "should_attach_pdf": metadata.get("should_attach_pdf", False),
             "meeting_requested": metadata.get("meeting_requested", False),
+            "meeting_confidence": metadata.get("meeting_confidence", 0.5),
             "revision_requested": metadata.get("revision_requested", False),
             "feedback_sentiment": metadata.get("feedback_sentiment", "neutral"),
             "key_topics": metadata.get("key_topics", []),
@@ -224,6 +237,7 @@ Return ONLY the JSON object, no other text."""
             "current_phase": current_phase,
             "should_attach_pdf": current_phase == "proposal_draft",
             "meeting_requested": False,
+            "meeting_confidence": 0.0,
             "revision_requested": False,
             "feedback_sentiment": "neutral",
             "key_topics": [],

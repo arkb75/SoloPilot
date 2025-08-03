@@ -156,7 +156,15 @@ class ConversationalResponder:
         client_first_name = metadata.get("client_first_name", "there")
         project_name = metadata.get("project_name", "your project")
         key_topics = metadata.get("key_topics", [])
+        
+        # Apply confidence threshold for meeting detection
         meeting_requested = metadata.get("meeting_requested", False)
+        meeting_confidence = metadata.get("meeting_confidence", 0.5)
+        
+        # Only accept meeting request if confidence is high enough
+        if meeting_requested and meeting_confidence < 0.8:
+            logger.info(f"Meeting request detected but confidence too low ({meeting_confidence}), ignoring")
+            meeting_requested = False
         
         # Get latest message
         email_body = latest_email.get('body', '')
@@ -207,7 +215,15 @@ Write only the email body text."""
         # Use metadata for personalization
         client_first_name = metadata.get("client_first_name", "there")
         project_name = metadata.get("project_name", "your project")
+        
+        # Apply confidence threshold for meeting detection
         meeting_requested = metadata.get("meeting_requested", False)
+        meeting_confidence = metadata.get("meeting_confidence", 0.5)
+        
+        # Only accept meeting request if confidence is high enough
+        if meeting_requested and meeting_confidence < 0.8:
+            logger.info(f"Meeting request detected but confidence too low ({meeting_confidence}), ignoring")
+            meeting_requested = False
         
         # Get requirements for additional context if needed
         requirements = conversation.get("requirements", {})
