@@ -184,9 +184,16 @@ Guidelines:
 - Acknowledge what they've shared
 - Ask clarifying questions if needed
 - Keep it concise (2-3 paragraphs max)
-{f"- They want to schedule a meeting. Mention your Calendly: {self.calendly_link}" if meeting_requested else ""}
+{f"- They want to schedule a meeting (Calendly link will be added automatically)" if meeting_requested else ""}
 
-Write only the email body text."""
+Write only the email body text.
+
+CRITICAL INSTRUCTIONS:
+- Do NOT add any signature (no "Best,", "Regards,", "Sincerely," etc.)
+- Do NOT add your name at the end
+- Do NOT add any P.S. lines
+- End the email with your last sentence about the topic
+- The signature and P.S. will be added automatically by the system"""
 
         response = self._call_llm(prompt)
         
@@ -240,9 +247,16 @@ Guidelines:
 - 2-3 sentences maximum
 - Mention the attached proposal naturally
 - Don't include proposal details (they're in the PDF)
-{f"- Add a P.S. with your Calendly link: {self.calendly_link}" if meeting_requested else ""}
+{f"- Meeting was requested (P.S. with Calendly will be added automatically)" if meeting_requested else ""}
 
-Write only the email body text. Be natural, not robotic."""
+Write only the email body text. Be natural, not robotic.
+
+CRITICAL INSTRUCTIONS:
+- Do NOT add any signature (no "Best,", "Regards,", "Sincerely," etc.)
+- Do NOT add your name at the end
+- Do NOT add any P.S. lines
+- End the email with your last sentence about the topic
+- The signature and P.S. will be added automatically by the system"""
 
         # Generate the email body
         email_body = self._call_llm(prompt)
@@ -304,7 +318,14 @@ Guidelines:
 - Mention the attached revised proposal
 - Don't repeat the changes in detail (they're in the PDF)
 
-Write only the email body text."""
+Write only the email body text.
+
+CRITICAL INSTRUCTIONS:
+- Do NOT add any signature (no "Best,", "Regards,", "Sincerely," etc.)
+- Do NOT add your name at the end
+- Do NOT add any P.S. lines
+- End the email with your last sentence about the topic
+- The signature and P.S. will be added automatically by the system"""
 
             email_body = self._call_llm(prompt)
             email_body = email_body.strip() + f"\n\nBest,\n{self.sender_name}"
@@ -339,10 +360,17 @@ Guidelines:
 - Be conversational and helpful
 - If they're ready to proceed, confirm next steps
 - If they have questions, answer clearly
-- If they want to meet: "You can book a time at {self.calendly_link}"
+- If they want to meet: mention a call (Calendly link will be added automatically)
 - Keep it concise
 
-Write only the email body text."""
+Write only the email body text.
+
+CRITICAL INSTRUCTIONS:
+- Do NOT add any signature (no "Best,", "Regards,", "Sincerely," etc.)
+- Do NOT add your name at the end
+- Do NOT add any P.S. lines
+- End the email with your last sentence about the topic
+- The signature and P.S. will be added automatically by the system"""
 
         email_body = self._call_llm(prompt)
         email_body = email_body.strip() + f"\n\nBest,\n{self.sender_name}"
@@ -380,9 +408,9 @@ Requirements:
 {json.dumps(decimal_to_json_serializable(requirements), indent=2)}
 
 RULES:
-1. Sign as "{self.sender_name}"
-2. NO meeting speculation
-3. Be concise but thorough
+1. NO meeting speculation
+2. Be concise but thorough
+3. Do NOT add a signature - it will be added automatically
 
 Create detailed documentation including:
 1. Project Specification
@@ -404,7 +432,7 @@ Create detailed documentation including:
 
 End by asking for final approval to begin development.
 
-Sign as "{self.sender_name}".
+Do NOT add a signature - it will be added automatically.
 
 CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, thinking, or explanation. Start directly with the greeting."""
 
@@ -444,7 +472,7 @@ If not approved or needs changes:
 
 Keep it professional and positive.
 
-Sign as "{self.sender_name}".
+Do NOT add a signature - it will be added automatically.
 
 CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, thinking, or explanation. Start directly with the greeting."""
 
@@ -478,9 +506,9 @@ Latest message:
 {latest_email.get('body', '')}
 
 RULES:
-1. Sign as "{self.sender_name}"
+1. Do NOT add a signature - it will be added automatically
 2. NO meeting availability speculation
-3. If scheduling needed: "You can book a time at {self.calendly_link}"
+3. If scheduling needed: mention it (Calendly link will be added automatically)
 
 Provide a helpful, professional response that moves the conversation forward.
 Be natural and conversational.

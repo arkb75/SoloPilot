@@ -181,12 +181,16 @@ class ProposalDataMapper:
                     "amount": f"${int(item.get('amount', 0)):,}"
                 }
                 for item in pricing_breakdown
-                if item.get("item") and item.get("amount", 0) > 0
+                if item.get("item") and (item.get("amount") or 0) > 0
             ]
         
         # Generate based on budget_amount
         budget_amount = requirements.get("budget_amount", 0)
         
+        # Handle None values explicitly
+        if budget_amount is None:
+            budget_amount = 0
+            
         if budget_amount > 0:
             if budget_amount <= 1000:
                 # Simple breakdown for small budgets
