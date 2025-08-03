@@ -844,8 +844,11 @@ CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, think
             "time estimates",
             "how much",
             "send me a proposal",
-            "next steps",
+            "send proposal",
             "let's move forward",
+            "ready to proceed",
+            "what's the timeline",
+            "project timeline",
         ]
 
         frustration_signals = [
@@ -862,18 +865,20 @@ CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, think
                 if trigger in email_body:
                     return "proposal_draft"
 
-            # Check email count - if this is 3rd+ exchange, move to proposal
+            # Check email count - if this is 5th+ exchange, move to proposal
             email_count = len(conversation.get("email_history", []))
-            if email_count >= 4:  # 2 from client, 2 from us
+            if email_count >= 6:  # 3 from client, 3 from us - substantial conversation
                 return "proposal_draft"
 
-            understanding = conversation.get("understanding_context", {})
-            confidence = understanding.get("confidence_level", 0)
-            clarified_points = understanding.get("clarified_points", [])
-
-            # Move to proposal if we have enough understanding
-            if confidence >= 0.7 or len(clarified_points) >= 3:
-                return "proposal_draft"
+            # TODO: Fix understanding_context not being updated with actual data
+            # For now, disable this check as it's not working properly
+            # understanding = conversation.get("understanding_context", {})
+            # confidence = understanding.get("confidence_level", 0)
+            # clarified_points = understanding.get("clarified_points", [])
+            # 
+            # # Move to proposal if we have enough understanding
+            # if confidence >= 0.7 or len(clarified_points) >= 3:
+            #     return "proposal_draft"
 
         # Proposal Draft -> Proposal Feedback
         elif current_phase == "proposal_draft":
