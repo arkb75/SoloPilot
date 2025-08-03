@@ -1,5 +1,5 @@
 #!/bin/bash
-# Deploy Lambda function update with conversation ID fix
+# Deploy Lambda function update with all required modules
 
 set -e
 
@@ -22,6 +22,20 @@ cp "$EMAIL_INTAKE_DIR"/*.py /tmp/lambda_deploy/src/agents/email_intake/
 
 # Also copy all modules to root for Lambda imports
 cp "$EMAIL_INTAKE_DIR"/*.py /tmp/lambda_deploy/
+
+# Copy API subdirectory if it exists
+if [ -d "$EMAIL_INTAKE_DIR/api" ]; then
+    cp -r "$EMAIL_INTAKE_DIR/api" /tmp/lambda_deploy/
+fi
+
+# Copy storage subdirectory if it exists
+if [ -d "$EMAIL_INTAKE_DIR/storage" ]; then
+    cp -r "$EMAIL_INTAKE_DIR/storage" /tmp/lambda_deploy/
+fi
+
+# List files to verify all modules are included
+echo "📋 Verifying deployment package contents..."
+ls -la /tmp/lambda_deploy/ | grep -E "(pdf_generator|proposal_mapper|storage)\.py" || echo "Missing critical files!"
 
 # Create zip file
 cd /tmp/lambda_deploy
