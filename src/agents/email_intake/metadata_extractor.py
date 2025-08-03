@@ -13,24 +13,21 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# Try to use the AI provider framework, fallback to direct Claude if not available
+# Try to use the AI provider framework, fallback to Bedrock if not available
 try:
-    USE_AI_PROVIDER = os.environ.get("USE_AI_PROVIDER", "true").lower() == "true"
-    if USE_AI_PROVIDER:
-        from src.providers import get_ai_provider
-        ai_provider = get_ai_provider()
+    from src.providers import get_provider
+    USE_AI_PROVIDER = True
 except ImportError:
     USE_AI_PROVIDER = False
-    logger.warning("AI provider framework not available, using direct Claude client")
-
-# Direct Claude client as fallback
+    logger.warning("AI provider framework not available, using Bedrock directly")
+    
+# Use Bedrock in Lambda environment
 if not USE_AI_PROVIDER:
-    try:
-        import anthropic
-        claude_client = anthropic.Anthropic(api_key=os.environ.get("CLAUDE_API_KEY"))
-    except ImportError:
-        logger.error("Neither AI provider framework nor anthropic library available")
-        claude_client = None
+    import boto3
+    bedrock_client = boto3.client(
+        "bedrock-runtime", 
+        region_name=os.environ.get("AWS_REGION", "us-east-2")
+    )
 
 
 class MetadataExtractor:
@@ -38,7 +35,12 @@ class MetadataExtractor:
     
     def __init__(self):
         """Initialize the metadata extractor with Claude Haiku model."""
-        self.model = "claude-3-haiku-20240307"  # Fast, efficient model for structured extraction
+        # Use Haiku for fast extraction
+        self.model = "us.anthropic.claude-3-5-haiku-20241022-v1:0"  # Bedrock model ID
+        self.anthropic_model = "claude-3-haiku-20240307"  # For AI provider
+        
+        if USE_AI_PROVIDER:
+            self.provider = get_provider(os.environ.get("AI_PROVIDER", "bedrock"))
         
     def extract_metadata(self, conversation: Dict[str, Any], current_phase: str) -> Dict[str, Any]:
         """
@@ -144,25 +146,24 @@ Return ONLY the JSON object, no other text."""
         try:
             if USE_AI_PROVIDER:
                 # Use the AI provider framework
-                response = ai_provider.generate_code(
-                    prompt=prompt,
-                    model_override=self.model,
-                    temperature=0.1,  # Low temperature for consistent extraction
-                    max_tokens=1000
-                )
+                response = self.provider.generate_code(prompt, [])
                 return response
             else:
-                # Fallback to direct Claude client
-                if not claude_client:
-                    raise Exception("No Claude client available")
-                    
-                response = claude_client.messages.create(
-                    model=self.model,
-                    max_tokens=1000,
-                    temperature=0.1,
-                    messages=[{"role": "user", "content": prompt}]
+                # Use Bedrock directly in Lambda
+                request_body = {
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 1000,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1,  # Low temperature for consistent extraction
+                }
+                
+                response = bedrock_client.invoke_model(
+                    modelId=self.model,
+                    body=json.dumps(request_body)
                 )
-                return response.content[0].text
+                
+                response_body = json.loads(response["body"].read())
+                return response_body["content"][0]["text"].strip()
                 
         except Exception as e:
             logger.error(f"Error calling Haiku model: {str(e)}")

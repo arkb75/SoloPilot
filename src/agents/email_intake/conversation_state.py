@@ -974,3 +974,75 @@ class ConversationStateManager:
                     return conv_id
 
         return None
+    
+    def update_conversation(self, conversation_id: str, updates: Dict[str, Any]) -> None:
+        """Update conversation fields.
+        
+        Args:
+            conversation_id: Conversation identifier
+            updates: Dictionary of fields to update
+        """
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            
+            # Debug logging
+            logger.info(f"[UPDATE_CONVERSATION] Starting update for {conversation_id}")
+            logger.info(f"[UPDATE_CONVERSATION] Updates: {updates}")
+            logger.info(f"[UPDATE_CONVERSATION] Table: {self.table}")
+            
+            # Build update expression dynamically
+            update_parts = []
+            expr_values = {":updated": now, ":one": Decimal(1)}
+            expr_names = {}
+            
+            for key, value in updates.items():
+                if value is not None:
+                    # Handle reserved keywords
+                    if key in ["status", "phase"]:
+                        expr_names[f"#{key}"] = key
+                        update_parts.append(f"#{key} = :{key}")
+                    else:
+                        update_parts.append(f"{key} = :{key}")
+                    
+                    # Convert floats to Decimal for DynamoDB
+                    if isinstance(value, float):
+                        expr_values[f":{key}"] = Decimal(str(value))
+                    elif isinstance(value, dict):
+                        expr_values[f":{key}"] = self._convert_floats_to_decimal(value)
+                    else:
+                        expr_values[f":{key}"] = value
+            
+            # Always update timestamps
+            update_parts.extend(["updated_at = :updated", "last_seq = last_seq + :one"])
+            
+            update_expr = "SET " + ", ".join(update_parts)
+            
+            logger.info(f"[UPDATE_CONVERSATION] Update expression: {update_expr}")
+            logger.info(f"[UPDATE_CONVERSATION] Expression values: {expr_values}")
+            logger.info(f"[UPDATE_CONVERSATION] Expression names: {expr_names}")
+            
+            self.table.update_item(
+                Key={"conversation_id": conversation_id},
+                UpdateExpression=update_expr,
+                ExpressionAttributeNames=expr_names if expr_names else None,
+                ExpressionAttributeValues=expr_values,
+            )
+            
+            logger.info(f"Updated conversation {conversation_id} with fields: {list(updates.keys())}")
+            
+        except Exception as e:
+            logger.error(f"Error updating conversation {conversation_id}: {str(e)}")
+            logger.error(f"[UPDATE_CONVERSATION] Exception type: {type(e)}")
+            logger.error(f"[UPDATE_CONVERSATION] Full exception: {repr(e)}")
+            raise
+    
+    def _convert_floats_to_decimal(self, obj: Any) -> Any:
+        """Recursively convert floats to Decimal in a dictionary or list."""
+        if isinstance(obj, float):
+            return Decimal(str(obj))
+        elif isinstance(obj, dict):
+            return {k: self._convert_floats_to_decimal(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._convert_floats_to_decimal(item) for item in obj]
+        else:
+            return obj

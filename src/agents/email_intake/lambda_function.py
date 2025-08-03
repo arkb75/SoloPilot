@@ -231,6 +231,42 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
             metadata_to_store["client_name"] = client_name
             metadata_to_store["sender_name"] = responder.sender_name
+            
+            # Store the extracted metadata for frontend display
+            if "extracted_metadata" in response_metadata:
+                extracted = response_metadata["extracted_metadata"]
+                # Convert floats to Decimal for DynamoDB storage
+                extracted_for_storage = state_manager._convert_floats_to_decimal(extracted)
+                metadata_to_store["extracted_metadata"] = extracted_for_storage
+                
+                # Also update the conversation with key extracted fields
+                updates = {
+                    "client_name": extracted.get("client_name"),
+                    "project_name": extracted.get("project_name"),
+                    "project_type": extracted.get("project_type"),
+                    "latest_metadata": extracted_for_storage,
+                    "metadata_updated_at": datetime.now(timezone.utc).isoformat()
+                }
+                
+                # Update conversation with extracted metadata
+                try:
+                    # Use direct DynamoDB update instead of the update_conversation method
+                    state_manager.table.update_item(
+                        Key={"conversation_id": conversation_id},
+                        UpdateExpression="SET client_name = :cn, project_name = :pn, project_type = :pt, latest_metadata = :lm, metadata_updated_at = :mua, updated_at = :updated",
+                        ExpressionAttributeValues={
+                            ":cn": extracted.get("client_name"),
+                            ":pn": extracted.get("project_name"),
+                            ":pt": extracted.get("project_type"),
+                            ":lm": extracted_for_storage,
+                            ":mua": datetime.now(timezone.utc).isoformat(),
+                            ":updated": datetime.now(timezone.utc).isoformat()
+                        }
+                    )
+                    logger.info(f"Updated conversation with extracted metadata: client={extracted.get('client_name')}, project={extracted.get('project_name')}")
+                except Exception as e:
+                    logger.error(f"Failed to update conversation with metadata: {str(e)}")
+                    logger.error(f"[DEBUG] Exception details:", exc_info=True)
 
             state_manager.add_pending_reply(
                 conversation_id,
@@ -244,6 +280,41 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         else:
             # Auto mode - send immediately
             logger.info("Auto mode - sending response immediately")
+            
+            # Store the extracted metadata for auto mode too
+            if "extracted_metadata" in response_metadata:
+                extracted = response_metadata["extracted_metadata"]
+                
+                # Convert floats to Decimal for DynamoDB storage
+                extracted_for_storage = state_manager._convert_floats_to_decimal(extracted)
+                
+                # Update conversation with key extracted fields
+                updates = {
+                    "client_name": extracted.get("client_name"),
+                    "project_name": extracted.get("project_name"),
+                    "project_type": extracted.get("project_type"),
+                    "latest_metadata": extracted_for_storage,
+                    "metadata_updated_at": datetime.now(timezone.utc).isoformat()
+                }
+                
+                try:
+                    # Use direct DynamoDB update instead of the update_conversation method
+                    state_manager.table.update_item(
+                        Key={"conversation_id": conversation_id},
+                        UpdateExpression="SET client_name = :cn, project_name = :pn, project_type = :pt, latest_metadata = :lm, metadata_updated_at = :mua, updated_at = :updated",
+                        ExpressionAttributeValues={
+                            ":cn": extracted.get("client_name"),
+                            ":pn": extracted.get("project_name"),
+                            ":pt": extracted.get("project_type"),
+                            ":lm": extracted_for_storage,
+                            ":mua": datetime.now(timezone.utc).isoformat(),
+                            ":updated": datetime.now(timezone.utc).isoformat()
+                        }
+                    )
+                    logger.info(f"Updated conversation with extracted metadata: client={extracted.get('client_name')}, project={extracted.get('project_name')}")
+                except Exception as e:
+                    logger.error(f"Failed to update conversation with metadata: {str(e)}")
+                    logger.error(f"[DEBUG-AUTO] Exception details:", exc_info=True)
 
             # Determine email type and send
             if response_metadata.get("phase") == "proposal_draft":

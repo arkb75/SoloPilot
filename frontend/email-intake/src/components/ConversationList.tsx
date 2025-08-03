@@ -107,7 +107,13 @@ const ConversationList: React.FC<ConversationListProps> = ({ onSelectConversatio
                   </div>
                   <div className="mt-2 flex items-center justify-between">
                     <div className="flex items-center text-sm text-gray-500">
-                      <p>{conversation.client_email}</p>
+                      <p>{conversation.client_name || conversation.client_email}</p>
+                      {conversation.project_name && (
+                        <>
+                          <span className="mx-2">•</span>
+                          <p className="text-gray-700">{conversation.project_name}</p>
+                        </>
+                      )}
                       <span className="mx-2">•</span>
                       <p>{format(new Date(conversation.updated_at), 'MMM d, h:mm a')}</p>
                     </div>

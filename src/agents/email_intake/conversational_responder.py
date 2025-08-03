@@ -113,18 +113,23 @@ class ConversationalResponder:
 
         # Generate phase-appropriate response and capture prompt
         if phase == "understanding":
-            return self._generate_clarifying_response_tracked(context, latest_email, conversation, extracted_metadata)
+            response, metadata, prompt = self._generate_clarifying_response_tracked(context, latest_email, conversation, extracted_metadata)
         elif phase == "proposal_draft":
-            return self._generate_proposal_response_tracked(context, conversation, extracted_metadata)
+            response, metadata, prompt = self._generate_proposal_response_tracked(context, conversation, extracted_metadata)
         elif phase == "proposal_feedback":
-            return self._handle_proposal_feedback_tracked(context, latest_email, conversation, extracted_metadata)
+            response, metadata, prompt = self._handle_proposal_feedback_tracked(context, latest_email, conversation, extracted_metadata)
         elif phase == "documentation":
-            return self._generate_documentation_response_tracked(context, conversation)
+            response, metadata, prompt = self._generate_documentation_response_tracked(context, conversation)
         elif phase == "awaiting_approval":
-            return self._handle_approval_response_tracked(context, latest_email)
+            response, metadata, prompt = self._handle_approval_response_tracked(context, latest_email)
         else:
             # Default conversational response
-            return self._generate_general_response_tracked(context, latest_email)
+            response, metadata, prompt = self._generate_general_response_tracked(context, latest_email)
+        
+        # Add the extracted metadata to the response metadata
+        metadata["extracted_metadata"] = extracted_metadata
+        
+        return response, metadata, prompt
 
     def generate_response(
         self, conversation: Dict[str, Any], latest_email: Dict[str, Any]

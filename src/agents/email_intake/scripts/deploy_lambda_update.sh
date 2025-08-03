@@ -20,8 +20,8 @@ mkdir -p /tmp/lambda_deploy/src/agents/email_intake
 # Copy all Python files to preserve src structure
 cp "$EMAIL_INTAKE_DIR"/*.py /tmp/lambda_deploy/src/agents/email_intake/
 
-# Also copy the main handler to root for Lambda entry point
-cp "$EMAIL_INTAKE_DIR/lambda_function.py" /tmp/lambda_deploy/
+# Also copy all modules to root for Lambda imports
+cp "$EMAIL_INTAKE_DIR"/*.py /tmp/lambda_deploy/
 
 # Create zip file
 cd /tmp/lambda_deploy

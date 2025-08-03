@@ -161,10 +161,10 @@ def list_conversations(query_params: Dict[str, str]) -> Dict[str, Any]:
         limit = int(query_params.get("limit", "20"))
         last_evaluated_key = query_params.get("nextToken")
 
-        # Build scan parameters
+        # Build scan parameters - include metadata fields
         scan_params = {
             "Limit": limit,
-            "ProjectionExpression": "conversation_id, subject, participants, phase, reply_mode, created_at, updated_at",
+            "ProjectionExpression": "conversation_id, subject, participants, phase, reply_mode, created_at, updated_at, client_name, project_name, project_type, latest_metadata, metadata_updated_at",
         }
 
         if last_evaluated_key:
@@ -193,6 +193,12 @@ def list_conversations(query_params: Dict[str, str]) -> Dict[str, Any]:
                     "created_at": item.get("created_at"),
                     "updated_at": item.get("updated_at"),
                     "pending_replies": pending_count,
+                    # Include metadata fields
+                    "client_name": item.get("client_name"),
+                    "project_name": item.get("project_name"),
+                    "project_type": item.get("project_type"),
+                    "latest_metadata": _convert_decimals(item.get("latest_metadata")) if item.get("latest_metadata") else None,
+                    "metadata_updated_at": item.get("metadata_updated_at"),
                 }
             )
 
@@ -231,6 +237,9 @@ def get_conversation_detail(conversation_id: str) -> Dict[str, Any]:
         # Add computed fields
         conversation["client_email"] = _extract_client_email(conversation.get("participants", []))
         conversation["email_count"] = len(conversation.get("email_history", []))
+        
+        # These fields are already in the conversation from DynamoDB, just ensure they're included
+        # The _convert_decimals above already handles the latest_metadata field if it exists
 
         return {"statusCode": 200, "body": json.dumps(conversation, default=str)}
 

@@ -29,6 +29,13 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
         api.getConversation(conversationId),
         api.getPendingReplies(conversationId),
       ]);
+      console.log('Conversation data received:', convData); // DEBUG
+      console.log('Has latest_metadata?', !!convData.latest_metadata); // DEBUG
+      console.log('Metadata fields:', {
+        client_name: convData.client_name,
+        project_name: convData.project_name,
+        latest_metadata: convData.latest_metadata
+      }); // DEBUG
       setConversation(convData);
       setPendingReplies(repliesData.pending_replies);
     } catch (err) {
@@ -120,13 +127,73 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
         </button>
         <h2 className="text-2xl font-bold text-gray-900">{conversation.subject || 'No subject'}</h2>
         <div className="mt-2 flex items-center space-x-4 text-sm text-gray-500">
-          <span>Client: {conversation.client_email}</span>
+          <span>Client: {conversation.client_name || conversation.client_email}</span>
           <span>•</span>
           <span>Phase: {conversation.phase.replace('_', ' ')}</span>
           <span>•</span>
           <span>Mode: {conversation.reply_mode}</span>
+          {conversation.project_name && (
+            <>
+              <span>•</span>
+              <span>Project: {conversation.project_name}</span>
+            </>
+          )}
         </div>
       </div>
+
+      {/* Extracted Metadata */}
+      {conversation.latest_metadata && (
+        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h3 className="text-lg font-medium text-blue-900 mb-4">Extracted Information</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="font-medium text-gray-700">Client Name:</span>{' '}
+              <span className="text-gray-900">{conversation.latest_metadata.client_name || 'Not detected'}</span>
+            </div>
+            <div>
+              <span className="font-medium text-gray-700">Project Name:</span>{' '}
+              <span className="text-gray-900">{conversation.latest_metadata.project_name || 'Not specified'}</span>
+            </div>
+            <div>
+              <span className="font-medium text-gray-700">Project Type:</span>{' '}
+              <span className="text-gray-900">{conversation.latest_metadata.project_type || 'Unknown'}</span>
+            </div>
+            <div>
+              <span className="font-medium text-gray-700">Meeting Requested:</span>{' '}
+              <span className="text-gray-900">{conversation.latest_metadata.meeting_requested ? 'Yes' : 'No'}</span>
+            </div>
+            <div>
+              <span className="font-medium text-gray-700">Feedback Sentiment:</span>{' '}
+              <span className="text-gray-900">{conversation.latest_metadata.feedback_sentiment || 'N/A'}</span>
+            </div>
+            <div>
+              <span className="font-medium text-gray-700">Confidence Score:</span>{' '}
+              <span className="text-gray-900">
+                {conversation.latest_metadata.confidence_score 
+                  ? `${(conversation.latest_metadata.confidence_score * 100).toFixed(0)}%`
+                  : 'N/A'}
+              </span>
+            </div>
+            {conversation.latest_metadata.key_topics && conversation.latest_metadata.key_topics.length > 0 && (
+              <div className="md:col-span-2">
+                <span className="font-medium text-gray-700">Key Topics:</span>{' '}
+                <span className="text-gray-900">{conversation.latest_metadata.key_topics.join(', ')}</span>
+              </div>
+            )}
+            {conversation.latest_metadata.extraction_notes && (
+              <div className="md:col-span-2">
+                <span className="font-medium text-gray-700">Extraction Notes:</span>{' '}
+                <span className="text-gray-900 italic">{conversation.latest_metadata.extraction_notes}</span>
+              </div>
+            )}
+          </div>
+          {conversation.metadata_updated_at && (
+            <div className="mt-2 text-xs text-gray-500">
+              Last extracted: {format(new Date(conversation.metadata_updated_at), 'MMM d, h:mm a')}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Pending Replies */}
       {pendingReplies.length > 0 && (
