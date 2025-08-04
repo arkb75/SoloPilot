@@ -152,8 +152,24 @@ class ConversationalResponder:
         self, context: str, latest_email: Dict[str, Any], conversation: Dict[str, Any], metadata: Dict[str, Any]
     ) -> Tuple[str, Dict[str, Any], str]:
         """Generate response during understanding phase using extracted metadata."""
-        # Use metadata for personalization
-        client_first_name = metadata.get("client_first_name", "there")
+        # First check if metadata has a high-confidence name (for new conversations)
+        extracted_name = metadata.get("client_name")
+        confidence = metadata.get("confidence_score", 0.5)
+        
+        # Then check stored name (for existing conversations)
+        stored_client_name = conversation.get("client_name")
+        
+        # Decide which name to use
+        if extracted_name and extracted_name != "Client" and confidence >= 0.7:
+            # Use the newly extracted name with high confidence
+            client_first_name = extracted_name.split()[0]
+        elif stored_client_name and stored_client_name != "Client":
+            # Use the stored name
+            client_first_name = stored_client_name.split()[0]
+        else:
+            # No name available - will use generic greeting
+            client_first_name = None
+        
         project_name = metadata.get("project_name", "your project")
         key_topics = metadata.get("key_topics", [])
         
@@ -169,9 +185,17 @@ class ConversationalResponder:
         # Get latest message
         email_body = latest_email.get('body', '')
 
-        prompt = f"""You are {self.sender_name}, a freelance developer in conversation with {client_first_name}.
+        # Build greeting based on whether we have a name
+        if client_first_name:
+            greeting_context = f"in conversation with {client_first_name}"
+            from_context = f"Latest message from {client_first_name}:"
+        else:
+            greeting_context = "responding to a potential client"
+            from_context = "Latest message:"
+        
+        prompt = f"""You are {self.sender_name}, a freelance developer {greeting_context}.
 
-Latest message from {client_first_name}:
+{from_context}
 {email_body}
 
 Project context: {project_name}
@@ -181,6 +205,7 @@ Write a natural response to understand their needs better.
 
 Guidelines:
 - Be conversational and friendly
+{f"- Address them as {client_first_name}" if client_first_name else "- Use generic greetings like 'Hi there' or 'Hello' - don't use a name"}
 - Acknowledge what they've shared
 - Ask clarifying questions if needed
 - Keep it concise (2-3 paragraphs max)
@@ -224,8 +249,24 @@ ENVIRONMENT AWARENESS:
         self, context: str, conversation: Dict[str, Any], metadata: Dict[str, Any]
     ) -> Tuple[str, Dict[str, Any], str]:
         """Generate proposal email using extracted metadata - no proposal content."""
-        # Use metadata for personalization
-        client_first_name = metadata.get("client_first_name", "there")
+        # First check if metadata has a high-confidence name (for new conversations)
+        extracted_name = metadata.get("client_name")
+        confidence = metadata.get("confidence_score", 0.5)
+        
+        # Then check stored name (for existing conversations)
+        stored_client_name = conversation.get("client_name")
+        
+        # Decide which name to use
+        if extracted_name and extracted_name != "Client" and confidence >= 0.7:
+            # Use the newly extracted name with high confidence
+            client_first_name = extracted_name.split()[0]
+        elif stored_client_name and stored_client_name != "Client":
+            # Use the stored name
+            client_first_name = stored_client_name.split()[0]
+        else:
+            # No name available - will use generic greeting
+            client_first_name = None
+        
         project_name = metadata.get("project_name", "your project")
         
         # Apply confidence threshold for meeting detection
@@ -240,7 +281,13 @@ ENVIRONMENT AWARENESS:
         # Get requirements for additional context if needed
         requirements = conversation.get("requirements", {})
         
-        prompt = f"""You are {self.sender_name}, a freelance developer writing to {client_first_name}.
+        # Build greeting based on whether we have a name
+        if client_first_name:
+            recipient_context = f"writing to {client_first_name}"
+        else:
+            recipient_context = "writing a proposal email"
+        
+        prompt = f"""You are {self.sender_name}, a freelance developer {recipient_context}.
 
 Project: {project_name}
 Meeting requested: {meeting_requested}
@@ -249,6 +296,7 @@ Write a brief, natural email informing them that their proposal is attached.
 
 Guidelines:
 - Be conversational and friendly
+{f"- Address them as {client_first_name}" if client_first_name else "- Use generic greetings like 'Hi there' or 'Hello' - don't use a name"}
 - 2-3 sentences maximum
 - Mention the attached proposal naturally
 - Don't include proposal details (they're in the PDF)
@@ -299,8 +347,24 @@ ENVIRONMENT AWARENESS:
         self, context: str, latest_email: Dict[str, Any], conversation: Dict[str, Any], metadata: Dict[str, Any]
     ) -> Tuple[str, Dict[str, Any], str]:
         """Handle feedback on proposal using extracted metadata."""
-        # Use metadata for personalization
-        client_first_name = metadata.get("client_first_name", "there")
+        # First check if metadata has a high-confidence name (for new conversations)
+        extracted_name = metadata.get("client_name")
+        confidence = metadata.get("confidence_score", 0.5)
+        
+        # Then check stored name (for existing conversations)
+        stored_client_name = conversation.get("client_name")
+        
+        # Decide which name to use
+        if extracted_name and extracted_name != "Client" and confidence >= 0.7:
+            # Use the newly extracted name with high confidence
+            client_first_name = extracted_name.split()[0]
+        elif stored_client_name and stored_client_name != "Client":
+            # Use the stored name
+            client_first_name = stored_client_name.split()[0]
+        else:
+            # No name available - will use generic greeting
+            client_first_name = None
+        
         project_name = metadata.get("project_name", "your project")
         revision_requested = metadata.get("revision_requested", False)
         feedback_sentiment = metadata.get("feedback_sentiment", "neutral")
@@ -314,7 +378,12 @@ ENVIRONMENT AWARENESS:
             logger.info(f"[PROPOSAL_FEEDBACK] Revision requested for {client_first_name}")
             
             # Simple prompt for revision acknowledgment
-            prompt = f"""You are {self.sender_name} responding to {client_first_name}'s request for proposal changes.
+            if client_first_name:
+                recipient_context = f"responding to {client_first_name}'s request for proposal changes"
+            else:
+                recipient_context = "responding to the client's request for proposal changes"
+                
+            prompt = f"""You are {self.sender_name} {recipient_context}.
 
 Their feedback: {feedback_body}
 
@@ -356,7 +425,12 @@ CRITICAL INSTRUCTIONS:
             return email_body, response_metadata, prompt
         
         # Regular feedback (no revision needed)
-        prompt = f"""You are {self.sender_name} responding to {client_first_name}'s feedback.
+        if client_first_name:
+            recipient_context = f"responding to {client_first_name}'s feedback"
+        else:
+            recipient_context = "responding to feedback on the proposal"
+            
+        prompt = f"""You are {self.sender_name} {recipient_context}.
 
 Their feedback: {feedback_body}
 Project: {project_name}
@@ -366,6 +440,7 @@ Write a natural response based on their feedback.
 
 Guidelines:
 - Be conversational and helpful
+{f"- Address them as {client_first_name}" if client_first_name else "- Use generic greetings - don't use a name"}
 - If they're ready to proceed, confirm next steps
 - If they have questions, answer clearly
 - If they want to meet: mention a call (Calendly link will be added automatically)
@@ -559,84 +634,6 @@ CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, think
 
         return False
 
-    def _extract_client_name_from_signature(self, email_history: List[Dict]) -> str:
-        """Extract client name from email signature using improved logic."""
-        if not email_history:
-            return "Client"
-
-        # Get first inbound email
-        first_email = None
-        for email in email_history:
-            if email.get("direction") == "inbound":
-                first_email = email
-                break
-
-        if not first_email:
-            return "Client"
-
-        # Extract from signature using same logic as pdf_generator.py
-        body_lines = first_email.get("body", "").split("\n")
-        signature_candidates = []
-        client_name = "Client"
-
-        # Collect potential name lines from signature area
-        for line in reversed(body_lines):
-            line = line.strip()
-            if not line or line.startswith("--") or "@" in line:
-                continue
-
-            # Skip common non-name patterns
-            if any(
-                word in line.lower()
-                for word in ["thanks", "regards", "best", "sincerely", "cheers"]
-            ):
-                continue
-
-            # Skip lines that end with colon (likely headers like "Nice-to-haves:")
-            if line.endswith(":"):
-                continue
-
-            # Skip common section headers
-            if any(
-                header in line.lower()
-                for header in ["nice-to-have", "requirements", "features", "notes", "additional"]
-            ):
-                continue
-
-            # Look for name-like patterns (1-3 words, starts with capital)
-            words = line.split()
-            if 1 <= len(words) <= 3 and words[0][0].isupper():
-                # Prefer lines that look like names over titles
-                if not any(
-                    title in line.lower()
-                    for title in ["ceo", "cto", "manager", "director", "president", "founder"]
-                ):
-                    client_name = line.split("(")[0].strip()
-                    break
-                else:
-                    signature_candidates.append(line)
-
-        # If still no name found, check for standalone names in email body
-        if client_name == "Client":
-            for email in email_history:
-                body = email.get("body", "")
-                # Look for standalone names at the end of short emails
-                lines = body.strip().split("\n")
-                for line in reversed(lines):
-                    line = line.strip()
-                    if len(line.split()) == 1 and len(line) > 2 and line[0].isupper():
-                        # Single word that could be a name
-                        if line.lower() not in ["thanks", "regards", "best", "sincerely", "cheers"]:
-                            client_name = line
-                            break
-                if client_name != "Client":
-                    break
-
-        # Fallback to title lines if no pure name found
-        if client_name == "Client" and signature_candidates:
-            client_name = signature_candidates[-1].split("(")[0].strip()
-
-        return client_name
 
     def _extract_budget_constraints(self, email_history: List[Dict]) -> Dict[str, Any]:
         """Extract budget constraints from conversation history."""
@@ -682,8 +679,8 @@ CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, think
             f"CONVERSATION THREAD ID: {conversation.get('conversation_id', 'unknown')}"
         )
 
-        # Extract client name from signature (improved logic)
-        client_name = self._extract_client_name_from_signature(email_history)
+        # Use stored client name from conversation (single source of truth)
+        client_name = conversation.get("client_name", "Client")
 
         # Identify the client email
         participants = conversation.get("participants", [])

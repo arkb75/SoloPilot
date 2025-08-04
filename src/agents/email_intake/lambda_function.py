@@ -240,28 +240,63 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 metadata_to_store["extracted_metadata"] = extracted_for_storage
                 
                 # Also update the conversation with key extracted fields
-                updates = {
-                    "client_name": extracted.get("client_name"),
-                    "project_name": extracted.get("project_name"),
-                    "project_type": extracted.get("project_type"),
-                    "latest_metadata": extracted_for_storage,
-                    "metadata_updated_at": datetime.now(timezone.utc).isoformat()
-                }
+                # Only update client_name if we have a new, confident value
+                existing_client_name = conversation.get("client_name")
+                new_client_name = extracted.get("client_name")
+                confidence_score = extracted.get("confidence_score", 0.5)
+                
+                # Decide whether to update client_name
+                should_update_client_name = False
+                final_client_name = existing_client_name
+                
+                if new_client_name and confidence_score >= 0.7:
+                    # We have a confident new name
+                    if not existing_client_name or existing_client_name == "Client":
+                        # No existing name or default name - use new one
+                        should_update_client_name = True
+                        final_client_name = new_client_name
+                    elif new_client_name != existing_client_name:
+                        # Different name with high confidence - update
+                        logger.info(f"Updating client name from '{existing_client_name}' to '{new_client_name}' (confidence: {confidence_score})")
+                        should_update_client_name = True
+                        final_client_name = new_client_name
+                
+                # Build update expression dynamically
+                update_parts = []
+                expression_values = {}
+                
+                if should_update_client_name:
+                    update_parts.append("client_name = :cn")
+                    expression_values[":cn"] = final_client_name
+                
+                # Always update project_name and project_type if provided
+                if extracted.get("project_name"):
+                    update_parts.append("project_name = :pn")
+                    expression_values[":pn"] = extracted.get("project_name")
+                    
+                if extracted.get("project_type"):
+                    update_parts.append("project_type = :pt")
+                    expression_values[":pt"] = extracted.get("project_type")
+                
+                # Always update metadata
+                update_parts.extend(["latest_metadata = :lm", "metadata_updated_at = :mua", "updated_at = :updated"])
+                expression_values.update({
+                    ":lm": extracted_for_storage,
+                    ":mua": datetime.now(timezone.utc).isoformat(),
+                    ":updated": datetime.now(timezone.utc).isoformat()
+                })
+                
+                update_expression = "SET " + ", ".join(update_parts)
+                
+                logger.info(f"[DEBUG] Client name update: existing='{existing_client_name}', new='{new_client_name}', confidence={confidence_score}, updating={should_update_client_name}")
                 
                 # Update conversation with extracted metadata
                 try:
                     # Use direct DynamoDB update instead of the update_conversation method
                     state_manager.table.update_item(
                         Key={"conversation_id": conversation_id},
-                        UpdateExpression="SET client_name = :cn, project_name = :pn, project_type = :pt, latest_metadata = :lm, metadata_updated_at = :mua, updated_at = :updated",
-                        ExpressionAttributeValues={
-                            ":cn": extracted.get("client_name"),
-                            ":pn": extracted.get("project_name"),
-                            ":pt": extracted.get("project_type"),
-                            ":lm": extracted_for_storage,
-                            ":mua": datetime.now(timezone.utc).isoformat(),
-                            ":updated": datetime.now(timezone.utc).isoformat()
-                        }
+                        UpdateExpression=update_expression,
+                        ExpressionAttributeValues=expression_values
                     )
                     logger.info(f"Updated conversation with extracted metadata: client={extracted.get('client_name')}, project={extracted.get('project_name')}")
                 except Exception as e:
@@ -288,28 +323,63 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Convert floats to Decimal for DynamoDB storage
                 extracted_for_storage = state_manager._convert_floats_to_decimal(extracted)
                 
-                # Update conversation with key extracted fields
-                updates = {
-                    "client_name": extracted.get("client_name"),
-                    "project_name": extracted.get("project_name"),
-                    "project_type": extracted.get("project_type"),
-                    "latest_metadata": extracted_for_storage,
-                    "metadata_updated_at": datetime.now(timezone.utc).isoformat()
-                }
+                # Update conversation with key extracted fields - same logic as manual mode
+                # Only update client_name if we have a new, confident value
+                existing_client_name = conversation.get("client_name")
+                new_client_name = extracted.get("client_name")
+                confidence_score = extracted.get("confidence_score", 0.5)
+                
+                # Decide whether to update client_name
+                should_update_client_name = False
+                final_client_name = existing_client_name
+                
+                if new_client_name and confidence_score >= 0.7:
+                    # We have a confident new name
+                    if not existing_client_name or existing_client_name == "Client":
+                        # No existing name or default name - use new one
+                        should_update_client_name = True
+                        final_client_name = new_client_name
+                    elif new_client_name != existing_client_name:
+                        # Different name with high confidence - update
+                        logger.info(f"[AUTO MODE] Updating client name from '{existing_client_name}' to '{new_client_name}' (confidence: {confidence_score})")
+                        should_update_client_name = True
+                        final_client_name = new_client_name
+                
+                # Build update expression dynamically
+                update_parts = []
+                expression_values = {}
+                
+                if should_update_client_name:
+                    update_parts.append("client_name = :cn")
+                    expression_values[":cn"] = final_client_name
+                
+                # Always update project_name and project_type if provided
+                if extracted.get("project_name"):
+                    update_parts.append("project_name = :pn")
+                    expression_values[":pn"] = extracted.get("project_name")
+                    
+                if extracted.get("project_type"):
+                    update_parts.append("project_type = :pt")
+                    expression_values[":pt"] = extracted.get("project_type")
+                
+                # Always update metadata
+                update_parts.extend(["latest_metadata = :lm", "metadata_updated_at = :mua", "updated_at = :updated"])
+                expression_values.update({
+                    ":lm": extracted_for_storage,
+                    ":mua": datetime.now(timezone.utc).isoformat(),
+                    ":updated": datetime.now(timezone.utc).isoformat()
+                })
+                
+                update_expression = "SET " + ", ".join(update_parts)
+                
+                logger.info(f"[DEBUG][AUTO MODE] Client name update: existing='{existing_client_name}', new='{new_client_name}', confidence={confidence_score}, updating={should_update_client_name}")
                 
                 try:
                     # Use direct DynamoDB update instead of the update_conversation method
                     state_manager.table.update_item(
                         Key={"conversation_id": conversation_id},
-                        UpdateExpression="SET client_name = :cn, project_name = :pn, project_type = :pt, latest_metadata = :lm, metadata_updated_at = :mua, updated_at = :updated",
-                        ExpressionAttributeValues={
-                            ":cn": extracted.get("client_name"),
-                            ":pn": extracted.get("project_name"),
-                            ":pt": extracted.get("project_type"),
-                            ":lm": extracted_for_storage,
-                            ":mua": datetime.now(timezone.utc).isoformat(),
-                            ":updated": datetime.now(timezone.utc).isoformat()
-                        }
+                        UpdateExpression=update_expression,
+                        ExpressionAttributeValues=expression_values
                     )
                     logger.info(f"Updated conversation with extracted metadata: client={extracted.get('client_name')}, project={extracted.get('project_name')}")
                 except Exception as e:
