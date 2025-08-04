@@ -54,15 +54,18 @@ class MetadataExtractor:
             Dict containing extracted metadata with confidence scores
         """
         try:
+            # Get existing metadata to preserve persistent fields
+            existing_metadata = conversation.get("latest_metadata", {})
+            
             # Build the extraction prompt
-            prompt = self._build_extraction_prompt(conversation, current_phase)
+            prompt = self._build_extraction_prompt(conversation, current_phase, existing_metadata)
             
             # Call Haiku for extraction
             response = self._call_haiku(prompt)
             
             # Parse and validate the response
             metadata = json.loads(response)
-            validated_metadata = self._validate_metadata(metadata, current_phase)
+            validated_metadata = self._validate_metadata(metadata, current_phase, existing_metadata)
             
             # Log successful extraction
             logger.info(f"Successfully extracted metadata with confidence: {validated_metadata.get('confidence_score', 0)}")
@@ -78,23 +81,34 @@ class MetadataExtractor:
             logger.error(f"Error extracting metadata: {str(e)}")
             return self._get_default_metadata(current_phase)
     
-    def _build_extraction_prompt(self, conversation: Dict[str, Any], current_phase: str) -> str:
+    def _build_extraction_prompt(self, conversation: Dict[str, Any], current_phase: str, existing_metadata: Dict[str, Any]) -> str:
         """Build the prompt for metadata extraction."""
-        # Format conversation history
-        conversation_text = self._format_conversation_history(conversation)
+        # Get only the latest 2 emails (latest inbound and latest outbound if available)
+        email_history = conversation.get("email_history", [])
+        recent_emails = email_history[-2:] if len(email_history) > 1 else email_history
+        
+        # Format only recent emails
+        conversation_text = self._format_recent_emails(recent_emails)
         
         # Get the latest email for detailed analysis
-        email_history = conversation.get("email_history", [])
         latest_email = email_history[-1] if email_history else {}
         
-        prompt = f"""Analyze this email conversation and extract metadata.
+        # Format existing metadata for context
+        existing_client_name = existing_metadata.get("client_name")
+        existing_project_name = existing_metadata.get("project_name")
+        
+        prompt = f"""Analyze this email and extract metadata.
 
 Current conversation phase: {current_phase}
 
-Conversation history:
+Existing metadata (for persistent fields only):
+- Client Name: {existing_client_name or 'Not yet identified'}
+- Project Name: {existing_project_name or 'Not yet defined'}
+
+Recent conversation context (last 2 emails only):
 {conversation_text}
 
-Latest email:
+Latest email to analyze:
 From: {latest_email.get('from', 'Unknown')}
 Subject: {latest_email.get('subject', 'No subject')}
 Body: {latest_email.get('body', 'No body')}
@@ -102,45 +116,68 @@ Body: {latest_email.get('body', 'No body')}
 Extract the following information into a JSON object:
 
 {{
-  "client_name": "Full name extracted from email signature (null if not found)",
+  "client_name": "Full name from signature (use existing if not found with high confidence)",
   "client_first_name": "First name only (null if not found)",
-  "project_name": "Descriptive name for the project based on discussion",
+  "project_name": "Descriptive name for project (use existing unless client provides new one)",
   "project_type": "One of: website, web_app, dashboard, api, mobile_app, other",
   "current_phase": "{current_phase}",
-  "should_attach_pdf": boolean (true for proposal_draft or revision requests),
-  "meeting_requested": boolean (true if client asked for a call/meeting),
+  "should_send_pdf": boolean (true when proposal should be sent),
+  "proposal_explicitly_requested": boolean (true if client explicitly asked for proposal),
+  "meeting_requested": boolean (true if client asked for a call/meeting IN THIS EMAIL),
   "meeting_confidence": 0.0 to 1.0 (confidence that this is a real meeting request),
   "revision_requested": boolean (true if client is asking for changes to proposal),
   "feedback_sentiment": "One of: positive, negative, neutral, needs_revision",
-  "key_topics": ["array", "of", "main", "topics"],
+  "key_topics": ["array", "of", "main", "topics", "from", "this", "email"],
   "action_required": "One of: send_proposal, answer_question, revise_proposal, schedule_meeting, close_conversation",
   "confidence_score": 0.0 to 1.0 (your confidence in the extraction accuracy),
   "extraction_notes": "Any relevant notes about the extraction"
 }}
 
 IMPORTANT RULES:
-1. For client_name: Extract from email signature, NOT from section headers like "Must-haves", "Requirements", "Nice-to-haves"
-2. Look for names typically found in signatures (at the end of emails, after greetings)
-3. For project_name: Create a descriptive name based on what they're building
-4. For should_attach_pdf: Set to true ONLY for proposal_draft phase or when revising a proposal
-5. For meeting_requested: ONLY set to true if BOTH conditions are met:
+1. For client_name: Only update if you find a name with >0.8 confidence, otherwise use existing
+2. For project_name: Only update if client explicitly mentions a new project name
+3. For should_send_pdf: Set to true when:
+   - Client explicitly asks for proposal/quote ("send proposal", "give me a quote", "send pricing")
+   - Client says "answer these yourself and give me a proposal"
+   - Current phase is proposal_draft AND this is first proposal
+   - revision_requested is true AND current phase is proposal_feedback
+4. For proposal_explicitly_requested: ONLY true when client uses words like:
+   - "send me a proposal"
+   - "give me a quote"
+   - "send the proposal"
+   - "answer these yourself and give me a proposal"
+   - "just send something"
+5. For meeting_requested: ONLY analyze THIS EMAIL, not conversation history
+   Set to true ONLY if BOTH conditions are met:
    a) Contains verbs like "schedule", "arrange", "meet", "call", "book"
-   b) Contains a specific time reference OR explicit request like "book a call", "set up a meeting"
+   b) Contains explicit request like "book a call", "set up a meeting", "can we schedule"
    
    These are NOT meeting requests:
    - "Let me know next steps"
    - "What's the timeline?"
    - "How should we proceed?"
    - "Looking forward to hearing from you"
-   - "Let me know if you need anything"
    
-6. For revision_requested: Look for budget concerns, feature changes, timeline adjustments
-7. Set confidence_score based on how clear the information is (0.0-1.0)
-8. For meeting_requested confidence: Use 0.9+ only when explicit meeting request, 0.5-0.8 for ambiguous cases
+6. Reset per-email fields (don't carry forward from history):
+   - meeting_requested
+   - revision_requested
+   - key_topics (only from this email)
+   - action_required (based on this email)
 
 Return ONLY the JSON object, no other text."""
         
         return prompt
+    
+    def _format_recent_emails(self, recent_emails: List[Dict[str, Any]]) -> str:
+        """Format only recent emails into readable text."""
+        formatted = []
+        
+        for email in recent_emails:
+            direction = "Client" if email.get("direction") == "inbound" else "Assistant"
+            body_preview = email.get('body', '')[:300]  # Shorter preview for recent context
+            formatted.append(f"{direction}: {body_preview}...")
+            
+        return "\n---\n".join(formatted) if formatted else "No recent emails"
     
     def _format_conversation_history(self, conversation: Dict[str, Any]) -> str:
         """Format email history into readable text."""
@@ -181,16 +218,17 @@ Return ONLY the JSON object, no other text."""
             logger.error(f"Error calling Haiku model: {str(e)}")
             raise
     
-    def _validate_metadata(self, metadata: Dict[str, Any], current_phase: str) -> Dict[str, Any]:
-        """Validate and clean extracted metadata."""
-        # Ensure all required fields exist
+    def _validate_metadata(self, metadata: Dict[str, Any], current_phase: str, existing_metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate and clean extracted metadata, preserving persistent fields."""
+        # Start with extracted metadata
         validated = {
             "client_name": metadata.get("client_name"),
             "client_first_name": metadata.get("client_first_name"),
             "project_name": metadata.get("project_name", "Your Project"),
             "project_type": metadata.get("project_type", "web_app"),
             "current_phase": current_phase,  # Use provided phase, not extracted
-            "should_attach_pdf": metadata.get("should_attach_pdf", False),
+            "should_send_pdf": metadata.get("should_send_pdf", False),
+            "proposal_explicitly_requested": metadata.get("proposal_explicitly_requested", False),
             "meeting_requested": metadata.get("meeting_requested", False),
             "meeting_confidence": metadata.get("meeting_confidence", 0.5),
             "revision_requested": metadata.get("revision_requested", False),
@@ -202,13 +240,30 @@ Return ONLY the JSON object, no other text."""
             "timestamp": datetime.utcnow().isoformat()
         }
         
-        # Phase-specific validation
-        if current_phase == "proposal_draft":
-            validated["should_attach_pdf"] = True
-            validated["action_required"] = "send_proposal"
+        # Preserve persistent fields if not confidently updated
+        if existing_metadata:
+            # Client name: only update if new extraction has high confidence
+            existing_client = existing_metadata.get("client_name")
+            if existing_client and (not validated["client_name"] or 
+                                  validated["confidence_score"] < 0.8):
+                validated["client_name"] = existing_client
+                validated["client_first_name"] = existing_metadata.get("client_first_name")
+                
+            # Project name: preserve unless explicitly changed
+            existing_project = existing_metadata.get("project_name")
+            if existing_project and existing_project != "Your Project":
+                if not validated["project_name"] or validated["project_name"] == "Your Project":
+                    validated["project_name"] = existing_project
+        
+        # Override should_send_pdf based on explicit request or phase logic
+        if validated["proposal_explicitly_requested"]:
+            validated["should_send_pdf"] = True
+            logger.info("Proposal explicitly requested - setting should_send_pdf to True")
+        elif current_phase == "proposal_draft" and not existing_metadata.get("proposal_sent"):
+            # First proposal in proposal_draft phase
+            validated["should_send_pdf"] = True
         elif current_phase == "proposal_feedback" and validated["revision_requested"]:
-            validated["should_attach_pdf"] = True
-            validated["action_required"] = "revise_proposal"
+            validated["should_send_pdf"] = True
             
         # Clean client names
         if validated["client_name"]:
@@ -235,7 +290,8 @@ Return ONLY the JSON object, no other text."""
             "project_name": "your project",
             "project_type": "web_app",
             "current_phase": current_phase,
-            "should_attach_pdf": current_phase == "proposal_draft",
+            "should_send_pdf": current_phase == "proposal_draft",
+            "proposal_explicitly_requested": False,
             "meeting_requested": False,
             "meeting_confidence": 0.0,
             "revision_requested": False,

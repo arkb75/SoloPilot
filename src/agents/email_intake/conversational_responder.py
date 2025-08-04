@@ -170,7 +170,9 @@ RESPONSE GUIDELINES:
 2. Be concise and natural (2-3 paragraphs max)
 3. Focus on the client's specific questions/concerns
 4. Don't repeat information already discussed
-5. If proposing, mention that details are in the attached PDF
+5. IMPORTANT: Should send PDF = {metadata.get('should_send_pdf', False)}
+   - If True: You MUST mention "attached" or "I've attached" when referring to the proposal
+   - If False: DO NOT mention attachments, just discuss the project
 6. If they want a meeting, acknowledge it (system will add Calendly)
 
 What is the most appropriate response to this email?"""
@@ -182,7 +184,6 @@ What is the most appropriate response to this email?"""
         
         current_phase = conversation.get("phase", "understanding")
         requirements = conversation.get("requirements", {})
-        has_requirements = bool(requirements.get("features")) and bool(requirements.get("title"))
         
         # Check if proposal was already sent
         proposal_sent = any(
@@ -292,16 +293,6 @@ CONSTRAINTS:
         response_lower = response_body.lower()
         current_phase = conversation.get("phase", "understanding")
         
-        # Detect if proposal was mentioned
-        proposal_mentioned = any(word in response_lower for word in [
-            "proposal", "attached", "pdf", "document", "quote"
-        ])
-        
-        # Detect if revision was acknowledged
-        revision_acknowledged = any(word in response_lower for word in [
-            "revised", "updated", "changes", "adjustments"
-        ])
-        
         # Build metadata
         response_metadata = {
             "phase": current_phase,
@@ -310,19 +301,30 @@ CONSTRAINTS:
             "should_send_pdf": False,
         }
         
-        # Determine if we should send a PDF
-        if proposal_mentioned and "attached" in response_lower:
-            if metadata.get("revision_requested", False) or revision_acknowledged:
-                # Sending revised proposal
+        # Use metadata extractor's decision for PDF sending
+        if metadata.get("should_send_pdf", False):
+            logger.info(f"Metadata extractor says should_send_pdf=True (proposal_explicitly_requested={metadata.get('proposal_explicitly_requested', False)})")
+            
+            # Check if AI mentioned proposal/attached in response
+            proposal_mentioned = any(word in response_lower for word in [
+                "proposal", "attached", "pdf", "document", "quote", "pricing"
+            ])
+            
+            if proposal_mentioned:
                 response_metadata["should_send_pdf"] = True
-                response_metadata["action_taken"] = "revised_proposal_sent"
-                response_metadata["proposal_version"] = conversation.get("proposal_version", 1) + 1
-            elif current_phase == "understanding":
-                # Sending initial proposal
-                response_metadata["should_send_pdf"] = True
-                response_metadata["action_taken"] = "initial_proposal_sent"
-                response_metadata["proposal_version"] = 1
-                response_metadata["suggested_phase"] = "proposal_draft"
+                
+                if metadata.get("revision_requested", False):
+                    # Sending revised proposal
+                    response_metadata["action_taken"] = "revised_proposal_sent"
+                    response_metadata["proposal_version"] = conversation.get("proposal_version", 1) + 1
+                else:
+                    # Sending initial proposal
+                    response_metadata["action_taken"] = "initial_proposal_sent"
+                    response_metadata["proposal_version"] = 1
+                    if current_phase == "understanding":
+                        response_metadata["suggested_phase"] = "proposal_draft"
+            else:
+                logger.warning("Metadata says to send PDF but AI didn't mention proposal/attached - not sending PDF")
         
         return response_metadata
 
