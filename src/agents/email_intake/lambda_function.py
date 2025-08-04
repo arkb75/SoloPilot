@@ -38,6 +38,7 @@ SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "noreply@solopilot.ai")
 DYNAMO_TABLE = os.environ.get("DYNAMO_TABLE", "conversations")
 ENABLE_OUTBOUND_TRACKING = os.environ.get("ENABLE_OUTBOUND_TRACKING", "true").lower() == "true"
 CALENDLY_LINK = os.environ.get("CALENDLY_LINK", "https://calendly.com/your-link")
+BUCKET_NAME = os.environ.get("EMAIL_BUCKET", "solopilot-emails")
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -51,12 +52,25 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         Response dict with status code and message
     """
     try:
-        # Extract S3 info from SES event
+        # Extract S3 info from event
         record = event["Records"][0]
-        bucket = record["s3"]["bucket"]["name"]
-        key = record["s3"]["object"]["key"]
+        
+        # Handle SES event (when Lambda is triggered directly by SES)
+        if "ses" in record:
+            # For SES events, the email is stored in S3 with the message ID as the key
+            ses_mail = record["ses"]["mail"]
+            bucket = BUCKET_NAME
+            key = ses_mail["messageId"]
+            logger.info(f"Processing SES event with message ID: {key}")
+        # Handle S3 event (when Lambda is triggered by S3)
+        elif "s3" in record:
+            bucket = record["s3"]["bucket"]["name"]
+            key = record["s3"]["object"]["key"]
+            logger.info(f"Processing S3 event from: {bucket}/{key}")
+        else:
+            raise ValueError("Unknown event type - neither SES nor S3 event")
 
-        logger.info(f"Processing email from S3: {bucket}/{key}")
+        logger.info(f"Fetching email from S3: {bucket}/{key}")
 
         # Download email from S3
         email_obj = s3_client.get_object(Bucket=bucket, Key=key)
