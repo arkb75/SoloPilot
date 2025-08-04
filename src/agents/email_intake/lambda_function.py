@@ -418,16 +418,30 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 f"Sent {response_metadata.get('phase', 'followup')} email for {conversation_id}"
             )
 
-        # Update conversation phase
-        if "phase" in response_metadata:
-            new_phase = responder.determine_phase_transition(
-                conversation.get("phase", "understanding"),
-                response_metadata,
-                conversation,
-                parsed_email,
+        # Update conversation phase based on AI's actions
+        current_phase = conversation.get("phase", "understanding")
+        suggested_phase = response_metadata.get("suggested_phase")
+        
+        # Handle phase transitions based on actions taken
+        if response_metadata.get("action_taken") == "initial_proposal_sent":
+            # Move to proposal_draft when first proposal is sent
+            new_phase = "proposal_draft"
+            logger.info(f"Phase transition: {current_phase} -> {new_phase} (proposal sent)")
+            state_manager.update_phase(conversation_id, new_phase)
+        elif current_phase == "proposal_draft" and len(conversation.get("email_history", [])) > 1:
+            # Auto-transition to proposal_feedback after client responds to proposal
+            inbound_after_proposal = any(
+                email.get("direction") == "inbound" 
+                for email in conversation.get("email_history", [])[-2:]
             )
-            if new_phase:
+            if inbound_after_proposal:
+                new_phase = "proposal_feedback"
+                logger.info(f"Phase transition: {current_phase} -> {new_phase} (client responded)")
                 state_manager.update_phase(conversation_id, new_phase)
+        elif suggested_phase and suggested_phase != current_phase:
+            # Honor other AI-suggested phase transitions
+            logger.info(f"Phase transition: {current_phase} -> {suggested_phase} (AI suggested)")
+            state_manager.update_phase(conversation_id, suggested_phase)
 
         return {
             "statusCode": 200,

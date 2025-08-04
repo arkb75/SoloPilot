@@ -1,4 +1,4 @@
-"""Enhanced conversational response generator with prompt tracking."""
+"""Enhanced conversational response generator with unified response method."""
 
 import json
 import logging
@@ -41,7 +41,7 @@ def decimal_to_json_serializable(obj):
 
 
 class ConversationalResponder:
-    """Generates phase-appropriate conversational responses with prompt tracking."""
+    """Generates unified conversational responses with Claude 4 Sonnet."""
 
     def __init__(self, sender_name="Abdul", calendly_link="[CALENDLY_LINK]"):
         """Initialize with AI provider or Bedrock client.
@@ -52,6 +52,7 @@ class ConversationalResponder:
         """
         self.sender_name = sender_name
         self.calendly_link = calendly_link
+        self.metadata_extractor = MetadataExtractor()
 
         if USE_AI_PROVIDER:
             self.provider = get_provider(AI_PROVIDER)
@@ -61,13 +62,13 @@ class ConversationalResponder:
                 "bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-2")
             )
             self.model_id = os.environ.get(
-                "BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+                "BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0"
             )
 
     def generate_response_with_tracking(
         self, conversation: Dict[str, Any], latest_email: Dict[str, Any]
     ) -> Tuple[str, Dict[str, Any], str]:
-        """Generate phase-appropriate response with prompt tracking.
+        """Generate unified response with metadata tracking.
 
         Args:
             conversation: Full conversation state
@@ -76,650 +77,254 @@ class ConversationalResponder:
         Returns:
             Tuple of (response_text, metadata, llm_prompt)
         """
-        phase = conversation.get("phase", "understanding")
-        email_body = latest_email.get("body", "").lower()
-
-        # Check for user impatience or proposal request
-        impatience_indicators = [
-            "just give me",
-            "no just",
-            "you decide",
-            "send me the proposal",
-            "let's move forward",
-            "sounds good",
-            "that works",
-            "let me know how we can call",
-            "book a call",
-            "schedule",
-            "give me a proposal",
-            "send proposal",
-            "quote please",
-        ]
-
-        is_impatient = any(indicator in email_body for indicator in impatience_indicators)
-
-        if is_impatient and phase == "understanding":
-            logger.info("User impatience detected - jumping to proposal phase")
-            # Override phase to jump to proposal
-            phase = "proposal_draft"
-
         # Extract metadata using Haiku
-        extractor = MetadataExtractor()
-        extracted_metadata = extractor.extract_metadata(conversation, phase)
-        logger.info(f"Extracted metadata: {json.dumps(extracted_metadata, default=str)}")
-
-        # Build conversation context
-        context = self._build_conversation_context(conversation)
-
-        # Generate phase-appropriate response and capture prompt
-        if phase == "understanding":
-            response, metadata, prompt = self._generate_clarifying_response_tracked(context, latest_email, conversation, extracted_metadata)
-        elif phase == "proposal_draft":
-            response, metadata, prompt = self._generate_proposal_response_tracked(context, conversation, extracted_metadata)
-        elif phase == "proposal_feedback":
-            response, metadata, prompt = self._handle_proposal_feedback_tracked(context, latest_email, conversation, extracted_metadata)
-        elif phase == "documentation":
-            response, metadata, prompt = self._generate_documentation_response_tracked(context, conversation)
-        elif phase == "awaiting_approval":
-            response, metadata, prompt = self._handle_approval_response_tracked(context, latest_email)
-        else:
-            # Default conversational response
-            response, metadata, prompt = self._generate_general_response_tracked(context, latest_email)
+        current_phase = conversation.get("phase", "understanding")
+        metadata = self.metadata_extractor.extract_metadata(conversation, current_phase)
+        logger.info(f"Extracted metadata: {json.dumps(metadata, default=str)}")
         
-        # Add the extracted metadata to the response metadata
-        metadata["extracted_metadata"] = extracted_metadata
-        
-        return response, metadata, prompt
-
-    def generate_response(
-        self, conversation: Dict[str, Any], latest_email: Dict[str, Any]
-    ) -> Tuple[str, Dict[str, Any]]:
-        """Generate phase-appropriate response (backward compatibility).
-
-        Args:
-            conversation: Full conversation state
-            latest_email: Latest email received
-
-        Returns:
-            Tuple of (response_text, metadata)
-        """
-        response_text, metadata, _ = self.generate_response_with_tracking(
-            conversation, latest_email
+        # Generate unified response
+        response_body, response_metadata, prompt = self._generate_unified_response(
+            conversation, latest_email, metadata
         )
-        return response_text, metadata
+        
+        # Build final email with greeting and signature
+        final_email = self._build_final_email(response_body, metadata, conversation)
+        
+        # Add the extracted metadata to response metadata
+        response_metadata["extracted_metadata"] = metadata
+        
+        return final_email, response_metadata, prompt
 
-    def _generate_clarifying_response_tracked(
-        self, context: str, latest_email: Dict[str, Any], conversation: Dict[str, Any], metadata: Dict[str, Any]
+    def _generate_unified_response(
+        self, conversation: Dict[str, Any], latest_email: Dict[str, Any], metadata: Dict[str, Any]
     ) -> Tuple[str, Dict[str, Any], str]:
-        """Generate response during understanding phase using extracted metadata."""
-        # First check if metadata has a high-confidence name (for new conversations)
+        """Generate response using unified approach with full context."""
+        
+        # Build comprehensive prompt
+        prompt = self._build_unified_prompt(conversation, latest_email, metadata)
+        
+        # Generate response body only
+        response_body = self._call_llm(prompt)
+        
+        # Determine what action the AI took based on response
+        response_metadata = self._analyze_response_action(
+            response_body, conversation, metadata
+        )
+        
+        return response_body, response_metadata, prompt
+
+    def _build_unified_prompt(
+        self, conversation: Dict[str, Any], latest_email: Dict[str, Any], metadata: Dict[str, Any]
+    ) -> str:
+        """Build comprehensive prompt with all context."""
+        
+        # Get conversation details
+        email_history = conversation.get("email_history", [])
+        requirements = conversation.get("requirements", {})
+        current_phase = conversation.get("phase", "understanding")
+        
+        # Determine client name
+        client_name = self._get_client_name(metadata, conversation)
+        if client_name and client_name != "Client":
+            client_context = f"helping {client_name}"
+        else:
+            client_context = "helping a potential client"
+        
+        # Build conversation history
+        history_text = self._build_conversation_history(email_history[-5:])  # Last 5 emails
+        
+        # Determine conversation stage and capabilities
+        stage_info = self._determine_stage_info(conversation, metadata)
+        
+        prompt = f"""You are {self.sender_name}, a freelance developer {client_context}.
+
+CONVERSATION CONTEXT:
+- Project: {metadata.get('project_name', 'Not yet defined')}
+- Project Type: {metadata.get('project_type', 'Not specified')}
+- Current Phase: {current_phase}
+- Emails Exchanged: {len(email_history)}
+- Client Sentiment: {metadata.get('feedback_sentiment', 'neutral')}
+
+REQUIREMENTS GATHERED:
+- Title: {requirements.get('title', 'Not clear yet')}
+- Features: {len(requirements.get('features', []))} identified
+- Budget: ${requirements.get('budget_amount', 'Not mentioned')}
+- Timeline: {requirements.get('timeline', 'Not specified')}
+
+METADATA ANALYSIS:
+- Meeting Requested: {metadata.get('meeting_requested', False)}
+- Revision Requested: {metadata.get('revision_requested', False)}
+- Action Required: {metadata.get('action_required', 'respond')}
+- Key Topics: {', '.join(metadata.get('key_topics', []))}
+
+CONVERSATION HISTORY:
+{history_text}
+
+LATEST EMAIL FROM CLIENT:
+{latest_email.get('body', '')}
+
+{stage_info}
+
+RESPONSE GUIDELINES:
+1. Generate ONLY the email body - no greeting, no signature
+2. Be concise and natural (2-3 paragraphs max)
+3. Focus on the client's specific questions/concerns
+4. Don't repeat information already discussed
+5. If proposing, mention that details are in the attached PDF
+6. If they want a meeting, acknowledge it (system will add Calendly)
+
+What is the most appropriate response to this email?"""
+        
+        return prompt
+
+    def _determine_stage_info(self, conversation: Dict[str, Any], metadata: Dict[str, Any]) -> str:
+        """Determine stage-specific instructions based on conversation state."""
+        
+        current_phase = conversation.get("phase", "understanding")
+        requirements = conversation.get("requirements", {})
+        has_requirements = bool(requirements.get("features")) and bool(requirements.get("title"))
+        
+        # Check if proposal was already sent
+        proposal_sent = any(
+            email.get("metadata", {}).get("should_send_pdf", False)
+            for email in conversation.get("email_history", [])
+            if email.get("direction") == "outbound"
+        )
+        
+        if current_phase == "understanding" and not proposal_sent:
+            return f"""
+YOUR CURRENT CAPABILITIES:
+- Ask clarifying questions about requirements
+- Gather information about budget, timeline, technical needs
+- Build rapport and understand their business
+- If they explicitly ask for a proposal/pricing AND you have basic requirements: You can send a proposal
+- If they seem impatient ("just send something", "figure it out"): You can send a proposal with caveats
+
+CONSTRAINTS:
+- Don't send a proposal unless: (a) they ask for it, OR (b) you have enough core requirements
+- Don't suggest meetings unless they ask
+- Focus on understanding their needs thoroughly"""
+        
+        elif proposal_sent:
+            return f"""
+YOUR CURRENT SITUATION:
+- You have already sent a proposal (PDF attached in previous email)
+- The client is now responding with feedback/questions
+
+YOUR CAPABILITIES:
+- Address specific concerns about the proposal
+- Negotiate terms (budget, timeline, scope)
+- Clarify any misunderstandings
+- If they request changes: Acknowledge and mention revised proposal will be attached
+- Answer questions about implementation details
+- Schedule calls if requested
+
+CONSTRAINTS:
+- Don't resend the same proposal information
+- Be responsive to their specific feedback
+- If they ask about cost reduction, be flexible and suggest options"""
+        
+        else:
+            return f"""
+YOUR CAPABILITIES:
+- Respond naturally to their message
+- Answer any questions
+- Provide clarifications
+- Move the conversation forward
+
+CONSTRAINTS:
+- Be helpful and professional
+- Focus on their specific needs"""
+
+    def _build_conversation_history(self, recent_emails: List[Dict[str, Any]]) -> str:
+        """Build formatted conversation history from recent emails."""
+        history = []
+        for email in recent_emails:
+            direction = "Client" if email.get("direction") == "inbound" else "You"
+            timestamp = email.get("timestamp", "")
+            body = email.get("body", "")[:500]  # Truncate long emails
+            history.append(f"[{direction} - {timestamp[:10]}]\n{body}\n")
+        
+        return "\n---\n".join(history) if history else "No previous conversation"
+
+    def _get_client_name(self, metadata: Dict[str, Any], conversation: Dict[str, Any]) -> Optional[str]:
+        """Get client name from metadata or conversation."""
+        # First check metadata with confidence
         extracted_name = metadata.get("client_name")
         confidence = metadata.get("confidence_score", 0.5)
         
-        # Then check stored name (for existing conversations)
-        stored_client_name = conversation.get("client_name")
-        
-        # Decide which name to use
         if extracted_name and extracted_name != "Client" and confidence >= 0.7:
-            # Use the newly extracted name with high confidence
-            client_first_name = extracted_name.split()[0]
-        elif stored_client_name and stored_client_name != "Client":
-            # Use the stored name
-            client_first_name = stored_client_name.split()[0]
+            return extracted_name
+            
+        # Then check stored name
+        stored_name = conversation.get("client_name")
+        if stored_name and stored_name != "Client":
+            return stored_name
+            
+        return None
+
+    def _build_final_email(
+        self, response_body: str, metadata: Dict[str, Any], conversation: Dict[str, Any]
+    ) -> str:
+        """Build final email with greeting, body, and signature."""
+        
+        # Determine greeting
+        client_name = self._get_client_name(metadata, conversation)
+        if client_name:
+            greeting = f"Hi {client_name.split()[0]},"
         else:
-            # No name available - will use generic greeting
-            client_first_name = None
+            greeting = "Hi there,"
         
-        project_name = metadata.get("project_name", "your project")
-        key_topics = metadata.get("key_topics", [])
-        
-        # Apply confidence threshold for meeting detection
-        meeting_requested = metadata.get("meeting_requested", False)
-        meeting_confidence = metadata.get("meeting_confidence", 0.5)
-        
-        # Only accept meeting request if confidence is high enough
-        if meeting_requested and meeting_confidence < 0.8:
-            logger.info(f"Meeting request detected but confidence too low ({meeting_confidence}), ignoring")
-            meeting_requested = False
-        
-        # Get latest message
-        email_body = latest_email.get('body', '')
-
-        # Build greeting based on whether we have a name
-        if client_first_name:
-            greeting_context = f"in conversation with {client_first_name}"
-            from_context = f"Latest message from {client_first_name}:"
-        else:
-            greeting_context = "responding to a potential client"
-            from_context = "Latest message:"
-        
-        prompt = f"""You are {self.sender_name}, a freelance developer {greeting_context}.
-
-{from_context}
-{email_body}
-
-Project context: {project_name}
-Key topics discussed: {', '.join(key_topics) if key_topics else 'Not yet clear'}
-
-Write a natural response to understand their needs better.
-
-Guidelines:
-- Be conversational and friendly
-{f"- Address them as {client_first_name}" if client_first_name else "- Use generic greetings like 'Hi there' or 'Hello' - don't use a name"}
-- Acknowledge what they've shared
-- Ask clarifying questions if needed
-- Keep it concise (2-3 paragraphs max)
-{f"- They want to schedule a meeting (Calendly link will be added automatically)" if meeting_requested else "- Do NOT suggest meetings or calls - the client hasn't asked for one"}
-
-Write only the email body text.
-
-CRITICAL INSTRUCTIONS:
-- Do NOT add any signature (no "Best,", "Regards,", "Sincerely," etc.)
-- Do NOT add your name at the end
-- Do NOT add any P.S. lines
-- End the email with your last sentence about the topic
-- The signature and P.S. will be added automatically by the system
-
-ENVIRONMENT AWARENESS:
-- Meeting requested: {"YES - mention the call" if meeting_requested else "NO - do NOT suggest calls/meetings"}
-- You can gather requirements via email without meetings
-- Only suggest meetings if the client explicitly asked for one"""
-
-        response = self._call_llm(prompt)
-        
-        # Add signature
-        response = response.strip() + f"\n\nBest,\n{self.sender_name}"
+        # Build email
+        email_parts = [greeting, "", response_body.strip(), "", f"Best,\n{self.sender_name}"]
         
         # Add Calendly if meeting requested
-        if meeting_requested and self.calendly_link:
-            response += f"\n\nP.S. You can book a time at: {self.calendly_link}"
+        if metadata.get("meeting_requested", False) and self.calendly_link:
+            email_parts.append(f"\nP.S. You can book a time at: {self.calendly_link}")
+        
+        return "\n".join(email_parts)
 
+    def _analyze_response_action(
+        self, response_body: str, conversation: Dict[str, Any], metadata: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Analyze what action the AI took in its response."""
+        
+        response_lower = response_body.lower()
+        current_phase = conversation.get("phase", "understanding")
+        
+        # Detect if proposal was mentioned
+        proposal_mentioned = any(word in response_lower for word in [
+            "proposal", "attached", "pdf", "document", "quote"
+        ])
+        
+        # Detect if revision was acknowledged
+        revision_acknowledged = any(word in response_lower for word in [
+            "revised", "updated", "changes", "adjustments"
+        ])
+        
         # Build metadata
         response_metadata = {
-            "phase": "understanding",
-            "client_name": metadata.get("client_name"),
-            "client_first_name": client_first_name,
-            "clarified_points": self._extract_clarified_points(response),
+            "phase": current_phase,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-
-        return response, response_metadata, prompt
-
-    def _generate_proposal_response_tracked(
-        self, context: str, conversation: Dict[str, Any], metadata: Dict[str, Any]
-    ) -> Tuple[str, Dict[str, Any], str]:
-        """Generate proposal email using extracted metadata - no proposal content."""
-        # First check if metadata has a high-confidence name (for new conversations)
-        extracted_name = metadata.get("client_name")
-        confidence = metadata.get("confidence_score", 0.5)
-        
-        # Then check stored name (for existing conversations)
-        stored_client_name = conversation.get("client_name")
-        
-        # Decide which name to use
-        if extracted_name and extracted_name != "Client" and confidence >= 0.7:
-            # Use the newly extracted name with high confidence
-            client_first_name = extracted_name.split()[0]
-        elif stored_client_name and stored_client_name != "Client":
-            # Use the stored name
-            client_first_name = stored_client_name.split()[0]
-        else:
-            # No name available - will use generic greeting
-            client_first_name = None
-        
-        project_name = metadata.get("project_name", "your project")
-        
-        # Apply confidence threshold for meeting detection
-        meeting_requested = metadata.get("meeting_requested", False)
-        meeting_confidence = metadata.get("meeting_confidence", 0.5)
-        
-        # Only accept meeting request if confidence is high enough
-        if meeting_requested and meeting_confidence < 0.8:
-            logger.info(f"Meeting request detected but confidence too low ({meeting_confidence}), ignoring")
-            meeting_requested = False
-        
-        # Get requirements for additional context if needed
-        requirements = conversation.get("requirements", {})
-        
-        # Build greeting based on whether we have a name
-        if client_first_name:
-            recipient_context = f"writing to {client_first_name}"
-        else:
-            recipient_context = "writing a proposal email"
-        
-        prompt = f"""You are {self.sender_name}, a freelance developer {recipient_context}.
-
-Project: {project_name}
-Meeting requested: {meeting_requested}
-
-Write a brief, natural email informing them that their proposal is attached.
-
-Guidelines:
-- Be conversational and friendly
-{f"- Address them as {client_first_name}" if client_first_name else "- Use generic greetings like 'Hi there' or 'Hello' - don't use a name"}
-- 2-3 sentences maximum
-- Mention the attached proposal naturally
-- Don't include proposal details (they're in the PDF)
-{f"- Meeting was requested (P.S. with Calendly will be added automatically)" if meeting_requested else "- Do NOT suggest meetings or calls - focus on the proposal"}
-
-Write only the email body text. Be natural, not robotic.
-
-CRITICAL INSTRUCTIONS:
-- Do NOT add any signature (no "Best,", "Regards,", "Sincerely," etc.)
-- Do NOT add your name at the end
-- Do NOT add any P.S. lines
-- End the email with your last sentence about the topic
-- The signature and P.S. will be added automatically by the system
-
-ENVIRONMENT AWARENESS:
-- Meeting requested: {"YES" if meeting_requested else "NO - do not mention calls/meetings"}"""
-
-        # Generate the email body
-        email_body = self._call_llm(prompt)
-        
-        # Clean up the email body
-        email_body = email_body.strip()
-        
-        # Add signature
-        email_body += f"\n\nBest,\n{self.sender_name}"
-        
-        # Add Calendly link if requested
-        if meeting_requested and self.calendly_link:
-            email_body += f"\n\nP.S. You can book a time at: {self.calendly_link}"
-
-        # Build metadata
-        response_metadata = {
-            "phase": "proposal_draft",
-            "client_name": metadata.get("client_name"),
-            "client_first_name": client_first_name,
-            "proposal_version": 1,
-            "should_send_pdf": True,  # Always true for proposal_draft
-            "meeting_requested": meeting_requested,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "action_taken": "response_sent",
+            "should_send_pdf": False,
         }
         
-        # Log metadata
-        logger.info(f"[PROPOSAL_DRAFT] Generated email for {client_first_name}, project: {project_name}, PDF: True")
-
-        return email_body, response_metadata, prompt
-
-    def _handle_proposal_feedback_tracked(
-        self, context: str, latest_email: Dict[str, Any], conversation: Dict[str, Any], metadata: Dict[str, Any]
-    ) -> Tuple[str, Dict[str, Any], str]:
-        """Handle feedback on proposal using extracted metadata."""
-        # First check if metadata has a high-confidence name (for new conversations)
-        extracted_name = metadata.get("client_name")
-        confidence = metadata.get("confidence_score", 0.5)
+        # Determine if we should send a PDF
+        if proposal_mentioned and "attached" in response_lower:
+            if metadata.get("revision_requested", False) or revision_acknowledged:
+                # Sending revised proposal
+                response_metadata["should_send_pdf"] = True
+                response_metadata["action_taken"] = "revised_proposal_sent"
+                response_metadata["proposal_version"] = conversation.get("proposal_version", 1) + 1
+            elif current_phase == "understanding":
+                # Sending initial proposal
+                response_metadata["should_send_pdf"] = True
+                response_metadata["action_taken"] = "initial_proposal_sent"
+                response_metadata["proposal_version"] = 1
+                response_metadata["suggested_phase"] = "proposal_draft"
         
-        # Then check stored name (for existing conversations)
-        stored_client_name = conversation.get("client_name")
-        
-        # Decide which name to use
-        if extracted_name and extracted_name != "Client" and confidence >= 0.7:
-            # Use the newly extracted name with high confidence
-            client_first_name = extracted_name.split()[0]
-        elif stored_client_name and stored_client_name != "Client":
-            # Use the stored name
-            client_first_name = stored_client_name.split()[0]
-        else:
-            # No name available - will use generic greeting
-            client_first_name = None
-        
-        project_name = metadata.get("project_name", "your project")
-        revision_requested = metadata.get("revision_requested", False)
-        feedback_sentiment = metadata.get("feedback_sentiment", "neutral")
-        action_required = metadata.get("action_required", "answer_question")
-        
-        # Get the feedback
-        feedback_body = latest_email.get("body", "")
-        
-        # If revision is requested, generate a revised proposal
-        if revision_requested or action_required == "revise_proposal":
-            logger.info(f"[PROPOSAL_FEEDBACK] Revision requested for {client_first_name}")
-            
-            # Simple prompt for revision acknowledgment
-            if client_first_name:
-                recipient_context = f"responding to {client_first_name}'s request for proposal changes"
-            else:
-                recipient_context = "responding to the client's request for proposal changes"
-                
-            prompt = f"""You are {self.sender_name} {recipient_context}.
-
-Their feedback: {feedback_body}
-
-Write a brief email acknowledging their feedback and mentioning the revised proposal is attached.
-
-Guidelines:
-- Be understanding and professional
-- 2-3 sentences maximum
-- Mention the attached revised proposal
-- Don't repeat the changes in detail (they're in the PDF)
-
-Write only the email body text.
-
-CRITICAL INSTRUCTIONS:
-- Do NOT add any signature (no "Best,", "Regards,", "Sincerely," etc.)
-- Do NOT add your name at the end
-- Do NOT add any P.S. lines
-- End the email with your last sentence about the topic
-- The signature and P.S. will be added automatically by the system"""
-
-            email_body = self._call_llm(prompt)
-            email_body = email_body.strip() + f"\n\nBest,\n{self.sender_name}"
-            
-            # Get current proposal version and increment
-            current_version = conversation.get("proposal_version", 1)
-            
-            response_metadata = {
-                "phase": "proposal_feedback",
-                "client_name": metadata.get("client_name"),
-                "client_first_name": client_first_name,
-                "proposal_version": current_version + 1,
-                "should_send_pdf": True,  # Generate revised PDF
-                "feedback_sentiment": "revision_requested",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-            
-            logger.info(f"[PROPOSAL_FEEDBACK] Revision response - PDF: True, version: {current_version + 1}")
-            
-            return email_body, response_metadata, prompt
-        
-        # Regular feedback (no revision needed)
-        if client_first_name:
-            recipient_context = f"responding to {client_first_name}'s feedback"
-        else:
-            recipient_context = "responding to feedback on the proposal"
-            
-        prompt = f"""You are {self.sender_name} {recipient_context}.
-
-Their feedback: {feedback_body}
-Project: {project_name}
-Sentiment: {feedback_sentiment}
-
-Write a natural response based on their feedback.
-
-Guidelines:
-- Be conversational and helpful
-{f"- Address them as {client_first_name}" if client_first_name else "- Use generic greetings - don't use a name"}
-- If they're ready to proceed, confirm next steps
-- If they have questions, answer clearly
-- If they want to meet: mention a call (Calendly link will be added automatically)
-- Keep it concise
-
-Write only the email body text.
-
-CRITICAL INSTRUCTIONS:
-- Do NOT add any signature (no "Best,", "Regards,", "Sincerely," etc.)
-- Do NOT add your name at the end
-- Do NOT add any P.S. lines
-- End the email with your last sentence about the topic
-- The signature and P.S. will be added automatically by the system"""
-
-        email_body = self._call_llm(prompt)
-        email_body = email_body.strip() + f"\n\nBest,\n{self.sender_name}"
-
-        response_metadata = {
-            "phase": "proposal_feedback",
-            "client_name": metadata.get("client_name"),
-            "client_first_name": client_first_name,
-            "feedback_sentiment": feedback_sentiment,
-            "should_send_pdf": False,  # No PDF for regular feedback
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-        
-        logger.info(f"[PROPOSAL_FEEDBACK] Regular feedback - PDF: False, sentiment: {feedback_sentiment}")
-
-        return email_body, response_metadata, prompt
-
-    def _generate_documentation_response_tracked(
-        self, context: str, conversation: Dict[str, Any]
-    ) -> Tuple[str, Dict[str, Any], str]:
-        """Generate detailed project documentation with prompt tracking."""
-        requirements = conversation.get("requirements", {})
-        proposal = conversation.get("proposal", {})
-
-        prompt = f"""You are {self.sender_name}, a professional freelancer creating detailed project documentation.
-The client has approved the proposal. Now create comprehensive project documentation.
-
-Conversation history:
-{context}
-
-Approved proposal:
-{json.dumps(decimal_to_json_serializable(proposal), indent=2)}
-
-Requirements:
-{json.dumps(decimal_to_json_serializable(requirements), indent=2)}
-
-RULES:
-1. NO meeting speculation
-2. Be concise but thorough
-3. Do NOT add a signature - it will be added automatically
-
-Create detailed documentation including:
-1. Project Specification
-   - Detailed requirements
-   - Technical specifications
-   - User stories/use cases
-2. Development Plan
-   - Phase breakdown
-   - Milestones and deliverables
-   - Timeline with dates
-3. Technical Architecture
-   - Technology stack
-   - System design overview
-   - Integration points
-4. Success Criteria
-   - Acceptance criteria
-   - Testing approach
-   - Launch checklist
-
-End by asking for final approval to begin development.
-
-Do NOT add a signature - it will be added automatically.
-
-CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, thinking, or explanation. Start directly with the greeting."""
-
-        response = self._call_llm(prompt)
-
-        metadata = {
-            "phase": "documentation",
-            "documentation_complete": True,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-
-        return response, metadata, prompt
-
-    def _handle_approval_response_tracked(
-        self, context: str, latest_email: Dict[str, Any]
-    ) -> Tuple[str, Dict[str, Any], str]:
-        """Handle final approval response with prompt tracking."""
-        calendly_link = self.calendly_link
-        prompt = f"""You are {self.sender_name}, a professional freelancer responding to client's decision on the project documentation.
-
-Conversation history:
-{context}
-
-Client's response:
-{latest_email.get('body', '')}
-
-If approved:
-- Thank them for their trust
-- Confirm project kickoff
-- Outline immediate next steps
-- Provide contact/communication expectations
-
-If not approved or needs changes:
-- Acknowledge their feedback
-- Offer to revise if needed
-- Keep door open for future
-
-Keep it professional and positive.
-
-Do NOT add a signature - it will be added automatically.
-
-CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, thinking, or explanation. Start directly with the greeting."""
-
-        response = self._call_llm(prompt)
-
-        # Check for approval
-        approval_indicators = ["approved", "yes", "let's start", "begin", "go ahead"]
-        response_lower = latest_email.get("body", "").lower()
-
-        is_approved = any(indicator in response_lower for indicator in approval_indicators)
-
-        metadata = {
-            "phase": "awaiting_approval",
-            "approved": is_approved,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-
-        return response, metadata, prompt
-
-    def _generate_general_response_tracked(
-        self, context: str, latest_email: Dict[str, Any]
-    ) -> Tuple[str, Dict[str, Any], str]:
-        """Generate general conversational response with prompt tracking."""
-        calendly_link = self.calendly_link
-        prompt = f"""You are {self.sender_name}, a professional freelancer in ongoing conversation with a client.
-
-Conversation history:
-{context}
-
-Latest message:
-{latest_email.get('body', '')}
-
-RULES:
-1. Do NOT add a signature - it will be added automatically
-2. NO meeting availability speculation
-3. If scheduling needed: mention it (Calendly link will be added automatically)
-
-Provide a helpful, professional response that moves the conversation forward.
-Be natural and conversational.
-
-CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, thinking, or explanation. Start directly with the greeting."""
-
-        response = self._call_llm(prompt)
-
-        metadata = {"phase": "general", "timestamp": datetime.now(timezone.utc).isoformat()}
-
-        return response, metadata, prompt
-
-    def _check_if_call_requested(self, email_history: List[Dict]) -> bool:
-        """Check if client explicitly requested a call or meeting."""
-        call_indicators = [
-            "book a call",
-            "schedule a call",
-            "let's meet",
-            "can we meet",
-            "meeting",
-            "discuss over a call",
-            "phone call",
-            "video call",
-            "zoom",
-            "teams",
-            "google meet",
-            "calendly",
-            "let me know when",
-            "when can we talk",
-            "available to talk",
-            "time to chat",
-        ]
-
-        for email in email_history:
-            if email.get("direction") == "inbound":
-                body = email.get("body", "").lower()
-                for indicator in call_indicators:
-                    if indicator in body:
-                        return True
-
-        return False
-
-
-    def _extract_budget_constraints(self, email_history: List[Dict]) -> Dict[str, Any]:
-        """Extract budget constraints from conversation history."""
-        budget_info = {"initial_budget": None, "requested_budget": None, "budget_type": "unknown"}
-
-        for email in email_history:
-            body = email.get("body", "").lower()
-
-            # Check for initial budget mentions
-            if "$3-4k" in body or "$3-4" in body:
-                budget_info["initial_budget"] = 3500
-                budget_info["budget_type"] = "range"
-            elif "budget:" in body and "$" in body:
-                # Try to extract budget amount
-                import re
-
-                budget_match = re.search(r"\$(\d+(?:,\d+)?(?:k|000)?)", body)
-                if budget_match:
-                    amount_str = budget_match.group(1)
-                    if "k" in amount_str:
-                        amount = int(amount_str.replace("k", "").replace(",", "")) * 1000
-                    else:
-                        amount = int(amount_str.replace(",", ""))
-                    budget_info["initial_budget"] = amount
-
-            # Check for budget reduction requests
-            if "cost down to $500" in body or "down to $500" in body:
-                budget_info["requested_budget"] = 500
-                budget_info["budget_type"] = "reduced"
-            elif "$500" in body and ("get" in body or "cost" in body or "price" in body):
-                budget_info["requested_budget"] = 500
-                budget_info["budget_type"] = "target"
-
-        return budget_info
-
-    def _build_conversation_context(self, conversation: Dict[str, Any]) -> str:
-        """Build formatted conversation history."""
-        email_history = conversation.get("email_history", [])
-        context_parts = []
-
-        # Add conversation metadata at the top
-        context_parts.append(
-            f"CONVERSATION THREAD ID: {conversation.get('conversation_id', 'unknown')}"
-        )
-
-        # Use stored client name from conversation (single source of truth)
-        client_name = conversation.get("client_name", "Client")
-
-        # Identify the client email
-        participants = conversation.get("participants", [])
-        client_email = None
-        for p in participants:
-            if "solopilot" not in p.lower() and "abdul" not in p.lower():
-                client_email = p
-                context_parts.append(f"CLIENT: {client_name} ({p})")
-                break
-
-        context_parts.append(f"CURRENT PHASE: {conversation.get('phase', 'understanding')}")
-        context_parts.append("---")
-
-        # Include ALL emails to maintain context
-        for email in email_history:
-            sender = email.get("from", "Unknown")
-            timestamp = email.get("timestamp", "")
-            body = email.get("body", "").strip()
-            direction = email.get("direction", "inbound")
-
-            if not body:
-                continue
-
-            # Clear attribution
-            if direction == "outbound" or "solopilot" in sender.lower():
-                role = f"You ({self.sender_name})"
-            else:
-                # Extract sender name properly
-                sender_name = sender
-                if "@" in sender:
-                    local = sender.split("@")[0]
-                    sender_name = local.replace(".", " ").replace("_", " ").title()
-                role = sender_name
-
-            context_parts.append(f"{role} wrote ({timestamp}):")
-            context_parts.append(body)
-            context_parts.append("---")
-
-        return "\n".join(context_parts)
+        return response_metadata
 
     def _call_llm(self, prompt: str) -> str:
         """Call LLM with prompt."""
@@ -727,8 +332,7 @@ CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, think
             if USE_AI_PROVIDER:
                 # Use provider
                 response = self.provider.generate_code(prompt, [])
-                cleaned = self._clean_llm_response(response)
-                return cleaned
+                return response.strip()
             else:
                 # Call Bedrock directly
                 request_body = {
@@ -743,161 +347,19 @@ CRITICAL: Output ONLY the email text to send. Do NOT include any preamble, think
                 )
 
                 response_body = json.loads(response["body"].read())
-                raw_response = response_body["content"][0]["text"].strip()
-                cleaned = self._clean_llm_response(raw_response)
-                return cleaned
+                content = response_body["content"][0]["text"]
+                return content.strip()
 
         except Exception as e:
-            logger.error(f"Error calling LLM: {str(e)}")
-            # Return a safe fallback response
-            return "Thank you for your message. I'm having trouble processing it right now. Could you please try again?"
+            logger.error(f"Error calling LLM: {str(e)}", exc_info=True)
+            raise
 
-    def _clean_llm_response(self, response: str) -> str:
-        """Remove LLM preambles and thinking from response."""
-        # Common preamble patterns to remove
-        preamble_patterns = [
-            r"Based on.*?:\s*\n+",
-            r"I'll.*?:\s*\n+",
-            r"Let me.*?:\s*\n+",
-            r"Here's.*?:\s*\n+",
-            r"I will.*?:\s*\n+",
-            r"I'm going to.*?:\s*\n+",
-            r"Looking at.*?:\s*\n+",
-            r"After analyzing.*?:\s*\n+",
-            r"Given.*?:\s*\n+",
-        ]
-
-        cleaned = response.strip()
-
-        # Remove preambles
-        import re
-
-        for pattern in preamble_patterns:
-            cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE | re.DOTALL, count=1)
-
-        # If the response starts with quotes, remove them
-        if cleaned.startswith('"') and cleaned.endswith('"'):
-            cleaned = cleaned[1:-1]
-        if cleaned.startswith("'") and cleaned.endswith("'"):
-            cleaned = cleaned[1:-1]
-
-        # Remove any leading/trailing whitespace
-        cleaned = cleaned.strip()
-
-        # If we accidentally removed everything, return original
-        if not cleaned:
-            return response.strip()
-
-        return cleaned
-
-    def _extract_clarified_points(self, response: str) -> List[str]:
-        """Extract clarified points from understanding phase response."""
-        # Simple extraction - could be enhanced with LLM
-        points = []
-
-        # Look for numbered lists or bullet points
-        lines = response.split("\n")
-        for line in lines:
-            line = line.strip()
-            if line and (
-                line[0].isdigit()
-                or line.startswith("-")
-                or line.startswith("•")
-                or line.startswith("*")
-            ):
-                # Clean up the line
-                clean_line = line.lstrip("0123456789.-•* ")
-                if clean_line:
-                    points.append(clean_line)
-
-        return points[:5]  # Max 5 points
-
-    def determine_phase_transition(
-        self,
-        current_phase: str,
-        response_metadata: Dict[str, Any],
-        conversation: Dict[str, Any],
-        latest_email: Dict[str, Any],
-    ) -> Optional[str]:
-        """Determine if phase should transition based on response.
-
-        Args:
-            current_phase: Current conversation phase
-            response_metadata: Metadata from response generation
-            conversation: Full conversation state
-            latest_email: Latest email from client
-
-        Returns:
-            New phase if transition needed, None otherwise
-        """
-        email_body = latest_email.get("body", "").lower()
-
-        # Check for urgent transition signals
-        proposal_triggers = [
-            "show me a plan",
-            "show me the plan",
-            "what are the costs",
-            "what's the cost",
-            "time estimates",
-            "how much",
-            "send me a proposal",
-            "send proposal",
-            "let's move forward",
-            "ready to proceed",
-            "what's the timeline",
-            "project timeline",
-        ]
-
-        frustration_signals = [
-            "figure the rest out",
-            "that's enough questions",
-            "just give me",
-            "stop asking",
-        ]
-
-        # Understanding -> Proposal Draft
-        if current_phase == "understanding":
-            # Check for direct proposal requests
-            for trigger in proposal_triggers + frustration_signals:
-                if trigger in email_body:
-                    return "proposal_draft"
-
-            # Check email count - if this is 5th+ exchange, move to proposal
-            email_count = len(conversation.get("email_history", []))
-            if email_count >= 6:  # 3 from client, 3 from us - substantial conversation
-                return "proposal_draft"
-
-            # TODO: Fix understanding_context not being updated with actual data
-            # For now, disable this check as it's not working properly
-            # understanding = conversation.get("understanding_context", {})
-            # confidence = understanding.get("confidence_level", 0)
-            # clarified_points = understanding.get("clarified_points", [])
-            # 
-            # # Move to proposal if we have enough understanding
-            # if confidence >= 0.7 or len(clarified_points) >= 3:
-            #     return "proposal_draft"
-
-        # Proposal Draft -> Proposal Feedback
-        elif current_phase == "proposal_draft":
-            # Always move to feedback after presenting proposal
-            return "proposal_feedback"
-
-        # Proposal Feedback -> Documentation or back to Proposal
-        elif current_phase == "proposal_feedback":
-            sentiment = response_metadata.get("feedback_sentiment")
-            if sentiment == "positive":
-                return "documentation"
-            else:
-                return "proposal_draft"  # Revise proposal
-
-        # Documentation -> Awaiting Approval
-        elif current_phase == "documentation":
-            if response_metadata.get("documentation_complete"):
-                return "awaiting_approval"
-
-        # Awaiting Approval -> Approved or back to Documentation
-        elif current_phase == "awaiting_approval":
-            if response_metadata.get("approved"):
-                return "approved"
-
-        return None
+    # Backward compatibility method
+    def generate_response(
+        self, conversation: Dict[str, Any], latest_email: Dict[str, Any]
+    ) -> Tuple[str, Dict[str, Any]]:
+        """Generate response (backward compatibility)."""
+        response_text, metadata, _ = self.generate_response_with_tracking(
+            conversation, latest_email
+        )
+        return response_text, metadata
