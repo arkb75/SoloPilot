@@ -48,6 +48,11 @@ export const api = {
     return response.data;
   },
 
+  deleteConversation: async (id: string) => {
+    const response = await client.delete(`/conversations/${id}`);
+    return response.data;
+  },
+
   getPendingReplies: async (conversationId: string) => {
     const response = await client.get<{
       conversation_id: string;

@@ -90,6 +90,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         elif path.startswith("/conversations/") and http_method == "GET":
             conversation_id = path_params.get("id")
             response = get_conversation_detail(conversation_id)
+        elif path.startswith("/conversations/") and http_method == "DELETE":
+            conversation_id = path_params.get("id")
+            response = delete_conversation(conversation_id)
         elif path.startswith("/replies/") and path.endswith("/approve") and http_method == "POST":
             reply_id = path_params.get("id")
             response = approve_reply(reply_id, body)
@@ -134,7 +137,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             response["headers"] = {
                 "Access-Control-Allow-Origin": CORS_ORIGIN,
                 "Access-Control-Allow-Headers": "Content-Type,X-Api-Key",
-                "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
+                "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
             }
 
         return response
@@ -146,7 +149,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "headers": {
                 "Access-Control-Allow-Origin": CORS_ORIGIN,
                 "Access-Control-Allow-Headers": "Content-Type,X-Api-Key",
-                "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
+                "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
             },
             "body": json.dumps({"error": "Internal server error"}),
         }
@@ -911,3 +914,42 @@ def get_proposal_url(conversation_id: str, version: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error getting proposal URL: {str(e)}")
         return {"statusCode": 500, "body": json.dumps({"error": "Failed to get proposal URL"})}
+
+def delete_conversation(conversation_id: str) -> Dict[str, Any]:
+    """Delete a conversation and all its related data."""
+    try:
+        if not conversation_id:
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": "conversation_id is required"}),
+            }
+
+        # Get the table
+        table = dynamodb.Table(TABLE_NAME)
+        
+        # Delete the conversation from DynamoDB
+        response = table.delete_item(
+            Key={"conversation_id": conversation_id},
+            ReturnValues="ALL_OLD"
+        )
+
+        # Check if the item existed
+        if "Attributes" not in response:
+            return {
+                "statusCode": 404,
+                "body": json.dumps({"error": "Conversation not found"}),
+            }
+
+        logger.info(f"Deleted conversation {conversation_id}")
+
+        return {
+            "statusCode": 200,
+            "body": json.dumps({"message": "Conversation deleted successfully"}),
+        }
+
+    except Exception as e:
+        logger.error(f"Error deleting conversation {conversation_id}: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "Failed to delete conversation"}),
+        }

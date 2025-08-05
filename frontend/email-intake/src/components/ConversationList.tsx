@@ -12,6 +12,8 @@ const ConversationList: React.FC<ConversationListProps> = ({ onSelectConversatio
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nextToken, setNextToken] = useState<string | undefined>();
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     loadConversations();
@@ -48,6 +50,53 @@ const ConversationList: React.FC<ConversationListProps> = ({ onSelectConversatio
     }
   };
 
+  const handleToggleSelect = (conversationId: string) => {
+    const newSelectedIds = new Set(selectedIds);
+    if (newSelectedIds.has(conversationId)) {
+      newSelectedIds.delete(conversationId);
+    } else {
+      newSelectedIds.add(conversationId);
+    }
+    setSelectedIds(newSelectedIds);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === conversations.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(conversations.map(c => c.conversation_id)));
+    }
+  };
+
+  const handleDelete = async () => {
+    if (selectedIds.size === 0) return;
+    
+    const confirmMessage = selectedIds.size === 1 
+      ? 'Are you sure you want to delete this conversation?' 
+      : `Are you sure you want to delete ${selectedIds.size} conversations?`;
+    
+    if (!confirm(confirmMessage)) return;
+    
+    setIsDeleting(true);
+    try {
+      // Delete conversations one by one
+      const deletePromises = Array.from(selectedIds).map(id => 
+        api.deleteConversation(id)
+      );
+      
+      await Promise.all(deletePromises);
+      
+      // Remove deleted conversations from the list
+      setConversations(prev => prev.filter(c => !selectedIds.has(c.conversation_id)));
+      setSelectedIds(new Set());
+    } catch (err) {
+      console.error('Failed to delete conversations:', err);
+      setError('Failed to delete some conversations');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const getPhaseColor = (phase: string) => {
     const colors: Record<string, string> = {
       understanding: 'bg-blue-100 text-blue-800',
@@ -80,21 +129,60 @@ const ConversationList: React.FC<ConversationListProps> = ({ onSelectConversatio
   return (
     <div className="overflow-hidden bg-white shadow sm:rounded-lg">
       <div className="px-4 py-5 sm:px-6">
-        <h3 className="text-lg font-medium leading-6 text-gray-900">Conversations</h3>
-        <p className="mt-1 max-w-2xl text-sm text-gray-500">
-          Click on a conversation to view details and manage replies
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-medium leading-6 text-gray-900">Conversations</h3>
+            <p className="mt-1 max-w-2xl text-sm text-gray-500">
+              Click on a conversation to view details and manage replies
+            </p>
+          </div>
+          {conversations.length > 0 && (
+            <div className="flex items-center space-x-3">
+              <label className="flex items-center text-sm text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size === conversations.length && conversations.length > 0}
+                  onChange={handleSelectAll}
+                  className="mr-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                Select All
+              </label>
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                >
+                  {isDeleting ? 'Deleting...' : `Delete (${selectedIds.size})`}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
       <div className="border-t border-gray-200">
         <ul className="divide-y divide-gray-200">
           {conversations.map((conversation) => (
             <li
               key={conversation.conversation_id}
-              className="px-4 py-4 hover:bg-gray-50 cursor-pointer"
-              onClick={() => onSelectConversation(conversation)}
+              className="px-4 py-4 hover:bg-gray-50"
             >
               <div className="flex items-center justify-between">
-                <div className="flex-1">
+                <div className="flex items-center flex-1">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(conversation.conversation_id)}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      handleToggleSelect(conversation.conversation_id);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="mr-3 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div 
+                    className="flex-1 cursor-pointer"
+                    onClick={() => onSelectConversation(conversation)}
+                  >
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-gray-900 truncate">
                       {conversation.subject || 'No subject'}
@@ -134,6 +222,7 @@ const ConversationList: React.FC<ConversationListProps> = ({ onSelectConversatio
                         {conversation.reply_mode}
                       </button>
                     </div>
+                  </div>
                   </div>
                 </div>
               </div>
