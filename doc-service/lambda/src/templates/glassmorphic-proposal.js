@@ -383,6 +383,19 @@ const GlassmorphicProposal = ({ data = {} }) => {
     techStack = ['React', 'Next.js', 'TypeScript', 'GraphQL', 'Node.js', 'PostgreSQL', 'Redis', 'Docker', 'AWS'],
   } = data;
 
+  // Calculate total from pricing items
+  const calculateTotal = (pricingItems) => {
+    const total = pricingItems.reduce((sum, item) => {
+      // Parse the amount string (e.g., "$1,500" -> 1500)
+      const cleanAmount = item.amount.replace(/[$,]/g, '');
+      const amount = parseInt(cleanAmount, 10) || 0;
+      return sum + amount;
+    }, 0);
+    
+    // Format with thousands separator
+    return `$${total.toLocaleString()}`;
+  };
+
   return React.createElement(
     Document,
     {},
@@ -490,7 +503,7 @@ const GlassmorphicProposal = ({ data = {} }) => {
           View,
           { style: [styles.pricingRow, { marginTop: 20, backgroundColor: colors.glassDark }] },
           React.createElement(Text, { style: [styles.pricingItem, { fontWeight: 500 }] }, "Total Cost"),
-          React.createElement(Text, { style: [styles.pricingAmount, { fontSize: 20 }] }, "$20,000")
+          React.createElement(Text, { style: [styles.pricingAmount, { fontSize: 20 }] }, calculateTotal(pricing))
         )
       ),
       React.createElement(Text, { style: styles.pageNumber }, "5")

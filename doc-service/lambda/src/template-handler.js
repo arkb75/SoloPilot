@@ -5,7 +5,7 @@ const React = require('react');
 const { renderToBuffer } = require('@react-pdf/renderer');
 
 // Import templates
-const GlassmorphicProposal = require('./templates/glassmorphic-proposal-fixed');
+const GlassmorphicProposal = require('./templates/glassmorphic-proposal');
 // You can add more templates here as needed
 // const SimpleInvoice = require('./templates/simple-invoice');
 // const ProjectReport = require('./templates/project-report');
