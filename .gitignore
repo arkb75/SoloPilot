@@ -122,3 +122,7 @@ chroma_db/
 
 # SonarCloud scanner cache
 .scannerwork/
+
+
+# Serena
+.serena/
