@@ -373,8 +373,13 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         # Extract email metadata from the pending reply BEFORE updating status
         email_meta = extract_email_metadata(reply_data)
         
+        # IMPORTANT: Use the current conversation phase, not the stale one from pending reply
+        # The phase may have been updated after the reply was queued
+        current_phase = conversation.get("phase", "unknown")
+        email_meta["phase"] = current_phase
+        
         # Log the extracted metadata
-        logger.info(f"[APPROVE_REPLY] Extracted metadata - should_send_pdf={email_meta.get('should_send_pdf')}, phase={email_meta.get('phase')}")
+        logger.info(f"[APPROVE_REPLY] Extracted metadata - should_send_pdf={email_meta.get('should_send_pdf')}, phase={current_phase}")
         logger.info(f"[APPROVE_REPLY] Email body preview: {email_meta.get('body', '')[:100]}...")
 
         # Store timestamp for later use
