@@ -269,15 +269,23 @@ CONSTRAINTS:
     ) -> str:
         """Build final email with greeting, body, and signature."""
         
-        # Determine greeting
-        client_name = self._get_client_name(metadata, conversation)
-        if client_name:
-            greeting = f"Hi {client_name.split()[0]},"
-        else:
-            greeting = "Hi there,"
+        # Check if response already has a greeting
+        response_stripped = response_body.strip()
+        has_greeting = response_stripped.lower().startswith(("hi ", "hello ", "hey ", "dear "))
         
-        # Build email
-        email_parts = [greeting, "", response_body.strip(), "", f"Best,\n{self.sender_name}"]
+        if has_greeting:
+            # LLM already included greeting, don't add another
+            email_parts = [response_stripped, "", f"Best,\n{self.sender_name}"]
+        else:
+            # Add greeting since LLM didn't include one
+            client_name = self._get_client_name(metadata, conversation)
+            if client_name:
+                greeting = f"Hi {client_name.split()[0]},"
+            else:
+                greeting = "Hi there,"
+            
+            # Build email
+            email_parts = [greeting, "", response_stripped, "", f"Best,\n{self.sender_name}"]
         
         # Add Calendly if meeting requested
         if metadata.get("meeting_requested", False) and self.calendly_link:
