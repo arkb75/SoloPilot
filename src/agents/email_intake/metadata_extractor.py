@@ -82,7 +82,7 @@ class MetadataExtractor:
             return self._get_default_metadata(current_phase)
     
     def _build_extraction_prompt(self, conversation: Dict[str, Any], current_phase: str, existing_metadata: Dict[str, Any]) -> str:
-        """Build the prompt for metadata extraction."""
+        """Build reasoning-based prompt for metadata extraction."""
         # Get only the latest 2 emails (latest inbound and latest outbound if available)
         email_history = conversation.get("email_history", [])
         recent_emails = email_history[-2:] if len(email_history) > 1 else email_history
@@ -97,74 +97,75 @@ class MetadataExtractor:
         existing_client_name = existing_metadata.get("client_name")
         existing_project_name = existing_metadata.get("project_name")
         
-        prompt = f"""Analyze this email and extract metadata.
+        prompt = f"""You are analyzing an email conversation to extract metadata for automated response handling.
 
+<context>
 Current conversation phase: {current_phase}
+Previous client name (if known): {existing_client_name or 'Not identified'}
+Previous project name (if known): {existing_project_name or 'Not defined'}
+</context>
 
-Existing metadata (for persistent fields only):
-- Client Name: {existing_client_name or 'Not yet identified'}
-- Project Name: {existing_project_name or 'Not yet defined'}
-
-Recent conversation context (last 2 emails only):
-{conversation_text}
-
-Latest email to analyze:
+<latest_email>
 From: {latest_email.get('from', 'Unknown')}
 Subject: {latest_email.get('subject', 'No subject')}
 Body: {latest_email.get('body', 'No body')}
+</latest_email>
 
-Extract the following information into a JSON object:
+<recent_conversation>
+{conversation_text}
+</recent_conversation>
 
+<task>
+Analyze this email using logical reasoning to determine appropriate metadata values.
+
+REASONING APPROACH:
+1. First understand the client's intent - what are they trying to achieve?
+2. Consider the conversation context - where are we in the sales process?
+3. Determine what action a human freelancer would take next
+4. Map those insights to the metadata fields
+
+FIELD DEFINITIONS:
+- client_name: The person's actual name (not email address). Only update if found with high confidence, otherwise keep existing.
+- project_name: Descriptive name for what's being built. Keep existing unless client explicitly provides a new one.
+- should_send_pdf: Should we attach a PDF proposal document to our response?
+  * Reason about: Is the client ready for a formal proposal? Have they indicated they want pricing/proposal documentation in ANY way (even indirectly)?
+  * Consider phrases like: "send proposal", "what's the cost", "I meant the pdf", "just send me something", "give me a quote", "pricing details", etc.
+  * Also true if: We're in proposal_draft phase and haven't sent one yet, OR client is asking for revisions to existing proposal
+- proposal_explicitly_requested: Did client directly ask for a proposal/quote using clear language?
+- meeting_requested: Is client asking to schedule a call/meeting IN THIS SPECIFIC EMAIL (not in conversation history)?
+  * Look for actual scheduling intent, not just mentions of future communication
+- revision_requested: Is client asking for changes to an existing proposal they've seen?
+- feedback_sentiment: What's the emotional tone - positive, negative, neutral, or needs_revision?
+- action_required: What's the most logical next step based on client's message?
+  * Options: send_proposal, answer_question, revise_proposal, schedule_meeting, close_conversation
+
+CRITICAL REASONING POINTS:
+- If client references "the pdf" or "the proposal" they likely want the PDF document (should_send_pdf = true)
+- If client seems confused about next steps and we're in proposal phase, they probably need the proposal
+- Don't be overly rigid - understand intent, not just exact words
+- Consider what would be most helpful to the client at this moment
+
+Output a JSON object with your reasoning-based analysis:
 {{
-  "client_name": "Full name from signature (use existing if not found with high confidence)",
-  "client_first_name": "First name only (null if not found)",
-  "project_name": "Descriptive name for project (use existing unless client provides new one)",
-  "project_type": "One of: website, web_app, dashboard, api, mobile_app, other",
+  "client_name": string or null,
+  "client_first_name": string or null,
+  "project_name": string,
+  "project_type": "website|web_app|dashboard|api|mobile_app|other",
   "current_phase": "{current_phase}",
-  "should_send_pdf": boolean (true when proposal should be sent),
-  "proposal_explicitly_requested": boolean (true if client explicitly asked for proposal),
-  "meeting_requested": boolean (true if client asked for a call/meeting IN THIS EMAIL),
-  "meeting_confidence": 0.0 to 1.0 (confidence that this is a real meeting request),
-  "revision_requested": boolean (true if client is asking for changes to proposal),
-  "feedback_sentiment": "One of: positive, negative, neutral, needs_revision",
-  "key_topics": ["array", "of", "main", "topics", "from", "this", "email"],
-  "action_required": "One of: send_proposal, answer_question, revise_proposal, schedule_meeting, close_conversation",
-  "confidence_score": 0.0 to 1.0 (your confidence in the extraction accuracy),
-  "extraction_notes": "Any relevant notes about the extraction"
+  "should_send_pdf": boolean,
+  "proposal_explicitly_requested": boolean,
+  "meeting_requested": boolean,
+  "meeting_confidence": 0.0-1.0,
+  "revision_requested": boolean,
+  "feedback_sentiment": "positive|negative|neutral|needs_revision",
+  "key_topics": ["main", "topics", "from", "email"],
+  "action_required": "send_proposal|answer_question|revise_proposal|schedule_meeting|close_conversation",
+  "confidence_score": 0.0-1.0,
+  "extraction_notes": "Brief explanation of reasoning for key decisions, especially should_send_pdf"
 }}
 
-IMPORTANT RULES:
-1. For client_name: Only update if you find a name with >0.8 confidence, otherwise use existing
-2. For project_name: Only update if client explicitly mentions a new project name
-3. For should_send_pdf: Set to true when:
-   - Client explicitly asks for proposal/quote ("send proposal", "give me a quote", "send pricing")
-   - Client says "answer these yourself and give me a proposal"
-   - Current phase is proposal_draft AND this is first proposal
-   - revision_requested is true AND current phase is proposal_feedback
-4. For proposal_explicitly_requested: ONLY true when client uses words like:
-   - "send me a proposal"
-   - "give me a quote"
-   - "send the proposal"
-   - "answer these yourself and give me a proposal"
-   - "just send something"
-5. For meeting_requested: ONLY analyze THIS EMAIL, not conversation history
-   Set to true ONLY if BOTH conditions are met:
-   a) Contains verbs like "schedule", "arrange", "meet", "call", "book"
-   b) Contains explicit request like "book a call", "set up a meeting", "can we schedule"
-   
-   These are NOT meeting requests:
-   - "Let me know next steps"
-   - "What's the timeline?"
-   - "How should we proceed?"
-   - "Looking forward to hearing from you"
-   
-6. Reset per-email fields (don't carry forward from history):
-   - meeting_requested
-   - revision_requested
-   - key_topics (only from this email)
-   - action_required (based on this email)
-
-Return ONLY the JSON object, no other text."""
+Think through the client's needs step by step, then provide ONLY the JSON object:
+"""
         
         return prompt
     
@@ -255,15 +256,35 @@ Return ONLY the JSON object, no other text."""
                 if not validated["project_name"] or validated["project_name"] == "Your Project":
                     validated["project_name"] = existing_project
         
-        # Override should_send_pdf based on explicit request or phase logic
-        if validated["proposal_explicitly_requested"]:
+        # Apply consistency checks and business logic
+        # 1. If proposal is explicitly requested, PDF should be sent
+        if validated["proposal_explicitly_requested"] and not validated["should_send_pdf"]:
+            logger.info("Consistency fix: proposal_explicitly_requested=True, setting should_send_pdf=True")
             validated["should_send_pdf"] = True
-            logger.info("Proposal explicitly requested - setting should_send_pdf to True")
-        elif current_phase == "proposal_draft" and not existing_metadata.get("proposal_sent"):
-            # First proposal in proposal_draft phase
-            validated["should_send_pdf"] = True
-        elif current_phase == "proposal_feedback" and validated["revision_requested"]:
-            validated["should_send_pdf"] = True
+            validated["extraction_notes"] += " [Auto-corrected: explicit proposal request requires PDF]"
+        
+        # 2. If revision requested in proposal_feedback phase, send updated PDF
+        if current_phase == "proposal_feedback" and validated["revision_requested"]:
+            if not validated["should_send_pdf"]:
+                logger.info("Consistency fix: revision requested in proposal_feedback, setting should_send_pdf=True")
+                validated["should_send_pdf"] = True
+                validated["extraction_notes"] += " [Auto-corrected: revision request requires updated PDF]"
+        
+        # 3. Validate action_required aligns with other fields
+        if validated["should_send_pdf"] and validated["action_required"] not in ["send_proposal", "revise_proposal"]:
+            logger.info(f"Consistency fix: should_send_pdf=True but action was {validated['action_required']}, setting to send_proposal")
+            validated["action_required"] = "send_proposal"
+            validated["extraction_notes"] += " [Auto-corrected: action aligned with PDF sending]"
+        
+        # 4. If meeting requested with high confidence, action should reflect it
+        if validated["meeting_requested"] and validated["meeting_confidence"] >= 0.7:
+            if validated["action_required"] != "schedule_meeting":
+                logger.info("Consistency fix: high-confidence meeting request, setting action to schedule_meeting")
+                validated["action_required"] = "schedule_meeting"
+        
+        # 5. Log reasoning-based decisions for monitoring
+        if validated["should_send_pdf"]:
+            logger.info(f"PDF will be sent - Reasoning: {validated.get('extraction_notes', 'No notes')}")
             
         # Clean client names
         if validated["client_name"]:
@@ -290,7 +311,7 @@ Return ONLY the JSON object, no other text."""
             "project_name": "your project",
             "project_type": "web_app",
             "current_phase": current_phase,
-            "should_send_pdf": current_phase == "proposal_draft",
+            "should_send_pdf": False,  # Default to False - only True when explicitly requested
             "proposal_explicitly_requested": False,
             "meeting_requested": False,
             "meeting_confidence": 0.0,
