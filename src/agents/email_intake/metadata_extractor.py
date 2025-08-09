@@ -93,6 +93,9 @@ class MetadataExtractor:
         # Get the latest email for detailed analysis
         latest_email = email_history[-1] if email_history else {}
         
+        # Check if PDF was already sent in conversation
+        pdf_already_sent = self._check_if_pdf_was_sent(conversation)
+        
         # Format existing metadata for context
         existing_client_name = existing_metadata.get("client_name")
         existing_project_name = existing_metadata.get("project_name")
@@ -103,6 +106,7 @@ class MetadataExtractor:
 Current conversation phase: {current_phase}
 Previous client name (if known): {existing_client_name or 'Not identified'}
 Previous project name (if known): {existing_project_name or 'Not defined'}
+PDF proposal already sent: {pdf_already_sent}
 </context>
 
 <latest_email>
@@ -128,9 +132,12 @@ FIELD DEFINITIONS:
 - client_name: The person's actual name (not email address). Only update if found with high confidence, otherwise keep existing.
 - project_name: Descriptive name for what's being built. Keep existing unless client explicitly provides a new one.
 - should_send_pdf: Should we attach a PDF proposal document to our response?
-  * Reason about: Is the client ready for a formal proposal? Have they indicated they want pricing/proposal documentation in ANY way (even indirectly)?
+  * First check: Has a PDF already been sent? (see context above: "PDF proposal already sent")
+  * If PDF was already sent: ONLY set to true if client is explicitly requesting it again or asking for changes
+  * If PDF was NOT sent yet: Consider if client is ready for a formal proposal
   * Consider phrases like: "send proposal", "what's the cost", "I meant the pdf", "just send me something", "give me a quote", "pricing details", etc.
   * Also true if: We're in proposal_draft phase and haven't sent one yet, OR client is asking for revisions to existing proposal
+  * IMPORTANT: Set to FALSE if we've already sent a PDF proposal and client is just asking questions or discussing without requesting changes
 - proposal_explicitly_requested: Did client directly ask for a proposal/quote using clear language?
 - meeting_requested: Is client asking to schedule a call/meeting IN THIS SPECIFIC EMAIL (not in conversation history)?
   * Look for actual scheduling intent, not just mentions of future communication
@@ -142,8 +149,10 @@ FIELD DEFINITIONS:
 CRITICAL REASONING POINTS:
 - If client references "the pdf" or "the proposal" they likely want the PDF document (should_send_pdf = true)
 - If client seems confused about next steps and we're in proposal phase, they probably need the proposal
+- IMPORTANT: If we're in proposal_feedback phase and client is just asking questions or discussing WITHOUT requesting changes, DO NOT resend the PDF
 - Don't be overly rigid - understand intent, not just exact words
 - Consider what would be most helpful to the client at this moment
+- Avoid sending duplicate PDFs unless explicitly requested or changes are needed
 
 Output a JSON object with your reasoning-based analysis:
 {{
@@ -168,6 +177,29 @@ Think through the client's needs step by step, then provide ONLY the JSON object
 """
         
         return prompt
+    
+    def _check_if_pdf_was_sent(self, conversation: Dict[str, Any]) -> bool:
+        """Check if a PDF proposal has already been sent in this conversation."""
+        # Check email history for PDF attachments or PDF sending indicators
+        email_history = conversation.get("email_history", [])
+        for email in email_history:
+            if email.get("direction") == "outbound":
+                # Check metadata for PDF indicators
+                metadata = email.get("metadata", {})
+                if metadata.get("has_pdf_attachment") or metadata.get("should_send_pdf"):
+                    return True
+                # Check if email body mentions attached proposal
+                body = email.get("body", "").lower()
+                if "attached" in body and ("proposal" in body or "pdf" in body):
+                    return True
+        
+        # Check pending replies that were approved
+        pending_replies = conversation.get("pending_replies", [])
+        for reply in pending_replies:
+            if reply.get("status") == "approved" and reply.get("metadata", {}).get("should_send_pdf"):
+                return True
+        
+        return False
     
     def _format_recent_emails(self, recent_emails: List[Dict[str, Any]]) -> str:
         """Format only recent emails into readable text."""
