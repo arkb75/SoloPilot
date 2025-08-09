@@ -159,8 +159,26 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
               <span className="text-gray-900">{conversation.latest_metadata.project_type || 'Unknown'}</span>
             </div>
             <div>
+              <span className="font-medium text-gray-700">PDF Should Be Sent:</span>{' '}
+              <span className={`font-semibold ${conversation.latest_metadata.should_send_pdf ? 'text-green-600' : 'text-gray-500'}`}>
+                {conversation.latest_metadata.should_send_pdf ? 'Yes ✓' : 'No'}
+              </span>
+            </div>
+            <div>
+              <span className="font-medium text-gray-700">Proposal Explicitly Requested:</span>{' '}
+              <span className="text-gray-900">{conversation.latest_metadata.proposal_explicitly_requested ? 'Yes' : 'No'}</span>
+            </div>
+            <div>
+              <span className="font-medium text-gray-700">Revision Requested:</span>{' '}
+              <span className="text-gray-900">{conversation.latest_metadata.revision_requested ? 'Yes' : 'No'}</span>
+            </div>
+            <div>
               <span className="font-medium text-gray-700">Meeting Requested:</span>{' '}
               <span className="text-gray-900">{conversation.latest_metadata.meeting_requested ? 'Yes' : 'No'}</span>
+            </div>
+            <div>
+              <span className="font-medium text-gray-700">Action Required:</span>{' '}
+              <span className="text-gray-900">{conversation.latest_metadata.action_required || 'N/A'}</span>
             </div>
             <div>
               <span className="font-medium text-gray-700">Feedback Sentiment:</span>{' '}
@@ -202,9 +220,16 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
           {pendingReplies.map((reply) => (
             <div key={reply.reply_id} className="mb-4 bg-white rounded-lg p-4 shadow">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-sm text-gray-500">
-                  Generated at {format(new Date(reply.generated_at), 'MMM d, h:mm a')}
-                </span>
+                <div className="flex items-center gap-4">
+                  <span className="text-sm text-gray-500">
+                    Generated at {format(new Date(reply.generated_at), 'MMM d, h:mm a')}
+                  </span>
+                  {reply.metadata?.should_send_pdf !== undefined && (
+                    <span className={`text-sm font-medium ${reply.metadata.should_send_pdf ? 'text-green-600' : 'text-gray-500'}`}>
+                      PDF: {reply.metadata.should_send_pdf ? 'Yes' : 'No'}
+                    </span>
+                  )}
+                </div>
                 <button
                   onClick={() => showLLMPrompt(reply.reply_id)}
                   className="text-sm text-indigo-600 hover:text-indigo-500"
