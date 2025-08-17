@@ -115,6 +115,43 @@ export const api = {
     return response.data;
   },
 
+  requestRevision: async (replyId: string) => {
+    const response = await client.post<{
+      reply_id: string;
+      revision: {
+        revised_response: string;
+        feedback_prompt: string;
+        revision_prompt: string;
+        revised_at: string;
+        revision_successful: boolean;
+        revised_review?: {
+          relevance_score: number;
+          completeness_score: number;
+          accuracy_score: number;
+          next_steps_score: number;
+          overall_score: number;
+          red_flags: string[];
+          summary: string;
+          reviewed_at: string;
+        };
+        revision_error?: string;
+        revision_attempts?: number;
+      };
+      original_review: {
+        relevance_score: number;
+        completeness_score: number;
+        accuracy_score: number;
+        next_steps_score: number;
+        overall_score: number;
+        red_flags: string[];
+        summary: string;
+        reviewed_at: string;
+      };
+      cached: boolean;
+    }>(`/replies/${replyId}/request-revision`);
+    return response.data;
+  },
+
   // Attachment endpoints
   getAttachmentUrl: async (attachmentId: string) => {
     const response = await client.get<{

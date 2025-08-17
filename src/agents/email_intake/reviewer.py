@@ -92,6 +92,178 @@ class EmailReviewer:
         except Exception as e:
             logger.error(f"Error reviewing response: {str(e)}")
             return self._get_default_review()
+
+    
+    def generate_feedback_prompt(self, review: Dict[str, Any], original_response: str, conversation_context: Dict[str, Any] = None) -> str:
+        """
+        Generate precise, actionable feedback for response improvement.
+        
+        Args:
+            review: Review results from review_response()
+            original_response: The original email response text
+            conversation_context: Optional conversation context for better feedback
+            
+        Returns:
+            Precise feedback prompt focusing on specific changes needed
+        """
+        try:
+            # Identify low-scoring dimensions (< 4)
+            low_scores = []
+            feedback_points = []
+            
+            if review.get("relevance_score", 5) < 4:
+                low_scores.append(("RELEVANCE", review.get("relevance_score", 0)))
+                feedback_points.append(self._generate_relevance_feedback(original_response, conversation_context))
+            
+            if review.get("completeness_score", 5) < 4:
+                low_scores.append(("COMPLETENESS", review.get("completeness_score", 0)))
+                feedback_points.append(self._generate_completeness_feedback(original_response, conversation_context))
+            
+            if review.get("accuracy_score", 5) < 4:
+                low_scores.append(("ACCURACY", review.get("accuracy_score", 0)))
+                feedback_points.append(self._generate_accuracy_feedback(original_response))
+            
+            if review.get("next_steps_score", 5) < 4:
+                low_scores.append(("NEXT STEPS", review.get("next_steps_score", 0)))
+                feedback_points.append(self._generate_next_steps_feedback(original_response))
+            
+            # Handle red flags
+            red_flags = review.get("red_flags", [])
+            if red_flags:
+                feedback_points.append(self._generate_red_flag_feedback(original_response, red_flags))
+            
+            # If no specific issues found but overall score is low, generate general feedback
+            if not feedback_points and review.get("overall_score", 5) < 4:
+                feedback_points.append("GENERAL: The response needs improvement. Review for clarity, completeness, and professionalism.")
+            
+            # Build the feedback prompt
+            if not feedback_points:
+                return "No specific improvements needed. The response meets quality standards."
+            
+            feedback_text = "\n\n".join([point for point in feedback_points if point])
+            
+            return f"""REQUIRED CHANGES (make only these specific edits):
+
+{feedback_text}
+
+IMPORTANT INSTRUCTIONS:
+- Make ONLY the changes listed above
+- Keep everything else exactly as written
+- Maintain the same tone and style
+- Do not add greeting or signature (already handled)
+- Do not rewrite entire sections unless specifically requested"""
+
+        except Exception as e:
+            logger.error(f"Error generating feedback prompt: {str(e)}")
+            return "Unable to generate specific feedback. Please review manually for improvements."
+    
+    def _generate_relevance_feedback(self, response: str, context: Dict[str, Any] = None) -> str:
+        """Generate feedback for improving relevance to client's questions."""
+        if not context:
+            return "1. RELEVANCE: Response doesn't fully address the client's specific questions or concerns. Add direct responses to their main points."
+        
+        # Try to identify what the client asked about
+        latest_email = context.get("email_history", [])
+        if latest_email:
+            client_email = latest_email[-1].get("body", "") if latest_email[-1].get("direction") == "inbound" else ""
+            
+            # Look for question words or request indicators
+            questions = []
+            if "budget" in client_email.lower() and "budget" not in response.lower():
+                questions.append("budget requirements")
+            if "timeline" in client_email.lower() and "timeline" not in response.lower():
+                questions.append("timeline expectations")
+            if "?" in client_email:
+                questions.append("their specific questions")
+            
+            if questions:
+                return f"1. RELEVANCE (Score: {context.get('relevance_score', 0)}/5): Missing response to {', '.join(questions)}. Add direct answers to what they asked about."
+        
+        return "1. RELEVANCE: Ensure response directly addresses the client's main questions and concerns mentioned in their email."
+    
+    def _generate_completeness_feedback(self, response: str, context: Dict[str, Any] = None) -> str:
+        """Generate feedback for improving completeness."""
+        missing_elements = []
+        
+        # Check for common missing elements
+        if context:
+            latest_email_body = ""
+            email_history = context.get("email_history", [])
+            if email_history:
+                latest_email_body = email_history[-1].get("body", "").lower()
+            
+            if "cost" in latest_email_body or "price" in latest_email_body:
+                if "cost" not in response.lower() and "price" not in response.lower() and "$" not in response:
+                    missing_elements.append("pricing information")
+            
+            if "when" in latest_email_body or "timeline" in latest_email_body:
+                if "week" not in response.lower() and "day" not in response.lower() and "month" not in response.lower():
+                    missing_elements.append("timeline details")
+            
+            if "how" in latest_email_body and "work" in latest_email_body:
+                if "process" not in response.lower() and "approach" not in response.lower():
+                    missing_elements.append("process explanation")
+        
+        if missing_elements:
+            return f"2. COMPLETENESS: Missing {', '.join(missing_elements)}. Add brief mentions of these topics."
+        
+        return "2. COMPLETENESS: Response needs more detail. Add specific information about process, timeline, or other relevant details."
+    
+    def _generate_accuracy_feedback(self, response: str) -> str:
+        """Generate feedback for improving accuracy."""
+        # Look for potential over-promises or vague claims
+        issues = []
+        
+        response_lower = response.lower()
+        if "definitely" in response_lower or "guaranteed" in response_lower:
+            issues.append("Remove absolute guarantees - use 'plan to' or 'aim for' instead")
+        
+        if "very quick" in response_lower or "super fast" in response_lower:
+            issues.append("Replace vague speed claims with specific timeframes")
+        
+        if "cheap" in response_lower or "low cost" in response_lower:
+            issues.append("Replace subjective cost terms with specific pricing")
+        
+        if issues:
+            return f"3. ACCURACY: {'; '.join(issues)}."
+        
+        return "3. ACCURACY: Review for any overpromises or inaccurate technical claims. Be more specific and realistic."
+    
+    def _generate_next_steps_feedback(self, response: str) -> str:
+        """Generate feedback for improving next steps clarity."""
+        response_lower = response.lower()
+        
+        # Check if response has clear next steps
+        has_action = any(phrase in response_lower for phrase in [
+            "next step", "will send", "i'll prepare", "let me know", "would you like",
+            "i can", "shall i", "ready by", "by tomorrow", "this week"
+        ])
+        
+        if has_action:
+            return "4. NEXT STEPS: Make the action item more specific with timeline. Example: 'I will send you a detailed proposal by end of day tomorrow.'"
+        else:
+            return "4. NEXT STEPS: Add a clear next action. Example: 'Would you like me to prepare a detailed proposal? I can have it ready within 24 hours.'"
+    
+    def _generate_red_flag_feedback(self, response: str, red_flags: List[str]) -> str:
+        """Generate feedback for addressing red flags."""
+        flag_fixes = []
+        
+        for flag in red_flags[:3]:  # Limit to top 3 red flags
+            if "over-promising" in flag.lower():
+                flag_fixes.append("Remove overpromises - be more realistic about timelines and outcomes")
+            elif "pricing" in flag.lower() or "cost" in flag.lower():
+                flag_fixes.append("Clarify pricing - provide ranges or ask about budget first")
+            elif "technical" in flag.lower():
+                flag_fixes.append("Verify technical accuracy - ensure claims are realistic")
+            elif "scope" in flag.lower():
+                flag_fixes.append("Clarify project scope - be specific about what's included")
+            else:
+                flag_fixes.append(f"Address: {flag}")
+        
+        if flag_fixes:
+            return f"RED FLAGS: {'; '.join(flag_fixes)}."
+        
+        return ""
     
     def _build_review_prompt(self, conversation: Dict[str, Any], response_text: str, metadata: Dict[str, Any] = None) -> str:
         """Build the review prompt with conversation context and response."""

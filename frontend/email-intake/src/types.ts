@@ -74,6 +74,7 @@ export interface PendingReply {
   phase: ConversationPhase;
   metadata?: Record<string, any>;
   review?: ReviewResult;
+  revision?: RevisionResult;
 }
 
 export interface ReviewResult {
@@ -85,6 +86,17 @@ export interface ReviewResult {
   red_flags: string[];
   summary: string;
   reviewed_at: string;
+}
+
+export interface RevisionResult {
+  revised_response: string;
+  feedback_prompt: string;
+  revision_prompt: string;
+  revised_at: string;
+  revision_successful: boolean;
+  revised_review?: ReviewResult;
+  revision_error?: string;
+  revision_attempts?: number;
 }
 
 export interface Attachment {

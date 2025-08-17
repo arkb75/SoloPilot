@@ -115,6 +115,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         elif path.startswith("/replies/") and path.endswith("/review") and http_method == "GET":
             reply_id = path_params.get("id")
             response = get_reply_review(reply_id)
+        elif path.startswith("/replies/") and path.endswith("/request-revision") and http_method == "POST":
+            reply_id = path_params.get("id")
+            response = request_reply_revision(reply_id)
         elif path.startswith("/replies/") and http_method == "PATCH":
             reply_id = path_params.get("id")
             response = amend_reply(reply_id, body)
@@ -883,6 +886,151 @@ def get_reply_review(reply_id: str) -> Dict[str, Any]:
             "statusCode": 500, 
             "body": json.dumps({
                 "error": "Failed to get reply review",
+                "details": str(e)
+            })
+        }
+
+def request_reply_revision(reply_id: str) -> Dict[str, Any]:
+    """Request AI revision for a specific reply based on its review feedback."""
+    try:
+        # Get reviewer toggle from environment
+        revision_enabled = os.environ.get("ENABLE_REVISION", "true").lower() == "true"
+        
+        if not revision_enabled:
+            return {
+                "statusCode": 400,
+                "body": json.dumps({
+                    "error": "Revision feature is disabled",
+                    "details": "Set ENABLE_REVISION=true to enable"
+                })
+            }
+        
+        # Search for the reply across all conversations
+        table = dynamodb.Table(TABLE_NAME)
+        
+        # Scan for conversations that might contain this reply
+        response = table.scan(
+            FilterExpression="attribute_exists(pending_replies)",
+            ProjectionExpression="conversation_id, pending_replies, email_history, phase, client_email"
+        )
+        
+        reply_data = None
+        conversation_data = None
+        
+        for item in response['Items']:
+            pending_replies = item.get('pending_replies', [])
+            for reply in pending_replies:
+                if reply.get('reply_id') == reply_id:
+                    reply_data = reply
+                    conversation_data = item
+                    break
+            if reply_data:
+                break
+        
+        if not reply_data:
+            return {
+                "statusCode": 404,
+                "body": json.dumps({"error": "Reply not found"})
+            }
+        
+        # Check if reply already has a revision
+        if 'revision' in reply_data and reply_data['revision']:
+            return {
+                "statusCode": 200,
+                "body": json.dumps({
+                    "reply_id": reply_id,
+                    "revision": reply_data['revision'],
+                    "cached": True
+                }, cls=DecimalEncoder)
+            }
+        
+        # Get or generate review first
+        review = reply_data.get('review')
+        if not review:
+            # Generate review first
+            from reviewer import EmailReviewer
+            reviewer = EmailReviewer()
+            response_text = reply_data.get('llm_response', '')
+            metadata = reply_data.get('metadata', {})
+            review = reviewer.review_response(conversation_data, response_text, metadata)
+        
+        # Generate feedback from review
+        from reviewer import EmailReviewer
+        from response_reviser import ResponseReviser
+        
+        reviewer = EmailReviewer()
+        reviser = ResponseReviser()
+        
+        original_response = reply_data.get('llm_response', '')
+        
+        # Generate feedback prompt
+        feedback = reviewer.generate_feedback_prompt(review, original_response, conversation_data)
+        
+        # Request revision
+        revision_result = reviser.revise_with_retry(
+            original_response, 
+            feedback, 
+            conversation_data,
+            max_attempts=2
+        )
+        
+        # If revision was successful, review the revised response
+        revised_review = None
+        if revision_result.get("revision_successful", False):
+            try:
+                revised_response = revision_result["revised_response"]
+                metadata = reply_data.get('metadata', {})
+                revised_review = reviewer.review_response(conversation_data, revised_response, metadata)
+                revision_result["revised_review"] = revised_review
+                
+                logger.info(f"Revised response scored {revised_review.get('overall_score', 0)} vs original {review.get('overall_score', 0)}")
+                
+            except Exception as e:
+                logger.warning(f"Failed to review revised response: {str(e)}")
+                # Continue without revised review
+        
+        # Cache the revision in DynamoDB
+        try:
+            conversation_id = conversation_data['conversation_id']
+            pending_replies = conversation_data.get('pending_replies', [])
+            
+            # Find and update the specific reply
+            for i, reply in enumerate(pending_replies):
+                if reply.get('reply_id') == reply_id:
+                    pending_replies[i]['revision'] = revision_result
+                    # Also ensure review is cached
+                    if not pending_replies[i].get('review'):
+                        pending_replies[i]['review'] = review
+                    break
+            
+            # Update the conversation with the revision
+            table.update_item(
+                Key={"conversation_id": conversation_id},
+                UpdateExpression="SET pending_replies = :pr",
+                ExpressionAttributeValues={":pr": pending_replies}
+            )
+            
+            logger.info(f"Cached revision for reply {reply_id}. Successful: {revision_result.get('revision_successful', False)}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to cache revision for reply {reply_id}: {str(e)}")
+        
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "reply_id": reply_id,
+                "revision": revision_result,
+                "original_review": review,
+                "cached": False
+            }, cls=DecimalEncoder)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error requesting reply revision: {str(e)}", exc_info=True)
+        return {
+            "statusCode": 500, 
+            "body": json.dumps({
+                "error": "Failed to request reply revision",
                 "details": str(e)
             })
         }

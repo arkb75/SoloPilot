@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { format } from 'date-fns';
-import { Conversation, PendingReply, ReviewResult } from '../types';
+import { Conversation, PendingReply, ReviewResult, RevisionResult } from '../types';
 import api from '../api/client';
 import ReplyEditor from './ReplyEditor';
 import ProposalViewer from './ProposalViewer';
@@ -19,6 +19,9 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
   const [editingReply, setEditingReply] = useState<PendingReply | null>(null);
   const [replyReviews, setReplyReviews] = useState<Record<string, ReviewResult>>({});
   const [loadingReviews, setLoadingReviews] = useState<Set<string>>(new Set());
+  const [revisions, setRevisions] = useState<Record<string, RevisionResult>>({});
+  const [loadingRevisions, setLoadingRevisions] = useState<Set<string>>(new Set());
+  const [selectedVersion, setSelectedVersion] = useState<Record<string, 'original' | 'revised'>>({});
 
   useEffect(() => {
     loadConversationDetails();
@@ -48,8 +51,15 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
     }
   };
 
-  const handleApprove = async (reply: PendingReply) => {
+  const handleApprove = async (reply: PendingReply, version: 'original' | 'revised' = 'original') => {
     try {
+      // Get the content to send based on selected version
+      let replyData = { ...reply };
+      if (version === 'revised' && revisions[reply.reply_id]?.revision_successful) {
+        // Update the reply with revised content
+        replyData.llm_response = revisions[reply.reply_id].revised_response;
+      }
+      
       await api.approveReply(reply.reply_id, conversationId);
       setPendingReplies(prev => prev.filter(r => r.reply_id !== reply.reply_id));
       // Reload to get updated conversation
@@ -143,13 +153,72 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
     }
   }, []);
 
-  // Load reviews when pending replies change
+  const requestRevision = useCallback(async (replyId: string) => {
+    // Check if already loading revision for this reply
+    setLoadingRevisions(prev => {
+      if (prev.has(replyId)) {
+        return prev; // Already loading
+      }
+      return new Set(prev).add(replyId);
+    });
+
+    try {
+      console.log('Requesting revision for reply:', replyId);
+      const data = await api.requestRevision(replyId);
+      console.log('Revision data received:', data);
+      
+      setRevisions(prev => ({
+        ...prev,
+        [replyId]: data.revision
+      }));
+
+      // If revision was successful, auto-select it
+      if (data.revision.revision_successful) {
+        setSelectedVersion(prev => ({
+          ...prev,
+          [replyId]: 'revised'
+        }));
+      }
+
+      // Update the original review if it wasn't cached
+      if (data.original_review) {
+        setReplyReviews(prev => ({
+          ...prev,
+          [replyId]: data.original_review
+        }));
+      }
+
+    } catch (err) {
+      console.error('Failed to request revision for reply', replyId, ':', err);
+      // Set a default error revision
+      setRevisions(prev => ({
+        ...prev,
+        [replyId]: {
+          revised_response: '',
+          feedback_prompt: 'Failed to generate revision',
+          revision_prompt: '',
+          revised_at: new Date().toISOString(),
+          revision_successful: false,
+          revision_error: 'Unable to request revision. Please try again.'
+        }
+      }));
+    } finally {
+      setLoadingRevisions(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(replyId);
+        return newSet;
+      });
+    }
+  }, []);
+
+  // Load reviews and revisions when pending replies change
   useEffect(() => {
     pendingReplies.forEach(reply => {
       if (reply.status !== 'pending') {
         return; // Only review pending replies
       }
       
+      // Load review
       if (reply.review) {
         // Use cached review from reply data
         setReplyReviews(prev => ({
@@ -160,8 +229,24 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
         // Load review from API only if not already loaded or loading
         loadReplyReview(reply.reply_id);
       }
+
+      // Load revision if available
+      if (reply.revision) {
+        setRevisions(prev => ({
+          ...prev,
+          [reply.reply_id]: reply.revision!
+        }));
+        
+        // Auto-select revised version if it's successful and user hasn't selected yet
+        if (reply.revision.revision_successful && !selectedVersion[reply.reply_id]) {
+          setSelectedVersion(prev => ({
+            ...prev,
+            [reply.reply_id]: 'revised'
+          }));
+        }
+      }
     });
-  }, [pendingReplies, loadReplyReview, replyReviews, loadingReviews]);
+  }, [pendingReplies, loadReplyReview, replyReviews, loadingReviews, selectedVersion]);
 
   const getScoreColor = (score: number) => {
     if (score >= 4) return 'text-green-600 bg-green-100';
@@ -205,6 +290,86 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
       )}
 
       <p className="text-xs text-blue-800">{review.summary}</p>
+    </div>
+  );
+
+  const RevisionComparison = ({ 
+    replyId, 
+    original, 
+    originalReview, 
+    revised, 
+    revisedReview,
+    selectedVersion,
+    onSelectVersion 
+  }: {
+    replyId: string;
+    original: string;
+    originalReview?: ReviewResult;
+    revised?: string;
+    revisedReview?: ReviewResult;
+    selectedVersion: 'original' | 'revised';
+    onSelectVersion: (version: 'original' | 'revised') => void;
+  }) => (
+    <div className="mb-4">
+      {revised && (
+        <>
+          {/* Version selector */}
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name={`version-${replyId}`}
+                  value="original"
+                  checked={selectedVersion === 'original'}
+                  onChange={() => onSelectVersion('original')}
+                  className="mr-2"
+                />
+                <span className="text-sm font-medium">
+                  Original {originalReview && `(${originalReview.overall_score}/5)`}
+                </span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name={`version-${replyId}`}
+                  value="revised"
+                  checked={selectedVersion === 'revised'}
+                  onChange={() => onSelectVersion('revised')}
+                  className="mr-2"
+                />
+                <span className="text-sm font-medium">
+                  Revised {revisedReview && `(${revisedReview.overall_score}/5)`}
+                  {revisedReview && originalReview && revisedReview.overall_score > originalReview.overall_score && (
+                    <span className="ml-1 text-green-600">⬆️</span>
+                  )}
+                </span>
+              </label>
+            </div>
+          </div>
+
+          {/* Side-by-side comparison */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            {/* Original */}
+            <div className={`border rounded-lg p-3 ${selectedVersion === 'original' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
+              <h5 className="text-sm font-medium text-gray-700 mb-2">Original Response</h5>
+              <div className="text-sm text-gray-900 whitespace-pre-wrap mb-2 max-h-40 overflow-y-auto">
+                {original}
+              </div>
+              {originalReview && <ReviewDisplay review={originalReview} />}
+            </div>
+
+            {/* Revised */}
+            <div className={`border rounded-lg p-3 ${selectedVersion === 'revised' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
+              <h5 className="text-sm font-medium text-gray-700 mb-2">Revised Response</h5>
+              <div className="text-sm text-gray-900 whitespace-pre-wrap mb-2 max-h-40 overflow-y-auto">
+                {revised}
+              </div>
+              {revisedReview && <ReviewDisplay review={revisedReview} />}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 
@@ -355,36 +520,88 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
                 />
               ) : (
                 <>
-                  <div className="mb-4 p-3 bg-gray-50 rounded whitespace-pre-wrap">
-                    {reply.llm_response}
-                  </div>
-
-                  {/* AI Review */}
-                  {replyReviews[reply.reply_id] ? (
-                    <ReviewDisplay review={replyReviews[reply.reply_id]} />
-                  ) : loadingReviews.has(reply.reply_id) ? (
-                    <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-                      <div className="text-sm text-gray-500">Loading AI review...</div>
-                    </div>
+                  {/* Show revision comparison if available, otherwise show single response */}
+                  {revisions[reply.reply_id]?.revision_successful ? (
+                    <RevisionComparison
+                      replyId={reply.reply_id}
+                      original={reply.llm_response}
+                      originalReview={replyReviews[reply.reply_id]}
+                      revised={revisions[reply.reply_id].revised_response}
+                      revisedReview={revisions[reply.reply_id].revised_review}
+                      selectedVersion={selectedVersion[reply.reply_id] || 'original'}
+                      onSelectVersion={(version) => setSelectedVersion(prev => ({
+                        ...prev,
+                        [reply.reply_id]: version
+                      }))}
+                    />
                   ) : (
-                    <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-                      <div className="text-sm text-gray-500">AI review unavailable</div>
+                    <>
+                      <div className="mb-4 p-3 bg-gray-50 rounded whitespace-pre-wrap">
+                        {reply.llm_response}
+                      </div>
+
+                      {/* AI Review */}
+                      {replyReviews[reply.reply_id] ? (
+                        <ReviewDisplay review={replyReviews[reply.reply_id]} />
+                      ) : loadingReviews.has(reply.reply_id) ? (
+                        <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                          <div className="text-sm text-gray-500">Loading AI review...</div>
+                        </div>
+                      ) : (
+                        <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                          <div className="text-sm text-gray-500">AI review unavailable</div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* Revision Controls */}
+                  {revisions[reply.reply_id]?.revision_error && (
+                    <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                      <div className="text-sm text-red-700">
+                        Revision failed: {revisions[reply.reply_id].revision_error}
+                      </div>
                     </div>
                   )}
 
-                  <div className="flex space-x-2">
+                  <div className="flex space-x-2 flex-wrap">
+                    {/* Revision Button */}
+                    {!revisions[reply.reply_id] && !loadingRevisions.has(reply.reply_id) && (
+                      <button
+                        onClick={() => requestRevision(reply.reply_id)}
+                        className="inline-flex items-center px-3 py-2 border border-purple-300 text-sm leading-4 font-medium rounded-md text-purple-700 bg-white hover:bg-purple-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+                        title={replyReviews[reply.reply_id]?.overall_score < 4 ? 'Low score detected - revision recommended' : 'Request AI revision based on review feedback'}
+                      >
+                        🔄 Request AI Revision
+                        {replyReviews[reply.reply_id]?.overall_score < 4 && (
+                          <span className="ml-1 text-xs bg-yellow-100 text-yellow-800 px-1 rounded">Recommended</span>
+                        )}
+                      </button>
+                    )}
+
+                    {loadingRevisions.has(reply.reply_id) && (
+                      <div className="inline-flex items-center px-3 py-2 text-sm text-gray-500">
+                        🔄 Generating revision...
+                      </div>
+                    )}
+
+                    {/* Approve Button */}
                     <button
-                      onClick={() => handleApprove(reply)}
+                      onClick={() => handleApprove(reply, selectedVersion[reply.reply_id] || 'original')}
                       className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                     >
-                      Approve & Send
+                      Approve & Send {selectedVersion[reply.reply_id] === 'revised' ? '(Revised)' : '(Original)'}
                     </button>
+
+                    {/* Edit Button */}
                     <button
                       onClick={() => setEditingReply(reply)}
                       className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                     >
                       Edit
                     </button>
+
+                    {/* Reject Button */}
                     <button
                       onClick={() => {
                         const reason = prompt('Rejection reason:');
