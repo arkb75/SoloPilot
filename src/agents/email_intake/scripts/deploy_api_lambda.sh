@@ -15,11 +15,13 @@ EMAIL_INTAKE_DIR="$REPO_ROOT/src/agents/email_intake"
 # Create deployment package with proper directory structure
 echo "📦 Creating deployment package..."
 rm -rf /tmp/api_lambda_deploy
+mkdir -p /tmp/api_lambda_deploy/api
 mkdir -p /tmp/api_lambda_deploy/src/agents/email_intake
 mkdir -p /tmp/api_lambda_deploy/src/storage
 
-# Copy the main handler file to root
-cp "$EMAIL_INTAKE_DIR/api/lambda_api.py" /tmp/api_lambda_deploy/
+# Copy the main handler file to api/ directory to match the handler path
+cp "$EMAIL_INTAKE_DIR/api/lambda_api.py" /tmp/api_lambda_deploy/api/
+cp "$EMAIL_INTAKE_DIR/api/__init__.py" /tmp/api_lambda_deploy/api/ 2>/dev/null || true
 
 # Copy all required modules to preserve src structure
 cp "$EMAIL_INTAKE_DIR/email_sender.py" /tmp/api_lambda_deploy/src/agents/email_intake/
@@ -32,6 +34,7 @@ cp "$EMAIL_INTAKE_DIR/proposal_mapper.py" /tmp/api_lambda_deploy/src/agents/emai
 cp -r "$REPO_ROOT/src/storage/"*.py /tmp/api_lambda_deploy/src/storage/
 
 # Also copy email_sender and other deps to root for backward compatibility
+# (These are needed in case lambda_api.py uses relative imports)
 cp "$EMAIL_INTAKE_DIR/email_sender.py" /tmp/api_lambda_deploy/
 cp "$EMAIL_INTAKE_DIR/conversation_state.py" /tmp/api_lambda_deploy/
 cp "$EMAIL_INTAKE_DIR/utils.py" /tmp/api_lambda_deploy/
