@@ -97,6 +97,24 @@ export const api = {
     return response.data;
   },
 
+  getReplyReview: async (replyId: string) => {
+    const response = await client.get<{
+      reply_id: string;
+      review: {
+        relevance_score: number;
+        completeness_score: number;
+        accuracy_score: number;
+        next_steps_score: number;
+        overall_score: number;
+        red_flags: string[];
+        summary: string;
+        reviewed_at: string;
+      };
+      cached: boolean;
+    }>(`/replies/${replyId}/review`);
+    return response.data;
+  },
+
   // Attachment endpoints
   getAttachmentUrl: async (attachmentId: string) => {
     const response = await client.get<{

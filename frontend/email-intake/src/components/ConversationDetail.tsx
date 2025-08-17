@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { format } from 'date-fns';
-import { Conversation, PendingReply } from '../types';
+import { Conversation, PendingReply, ReviewResult } from '../types';
 import api from '../api/client';
 import ReplyEditor from './ReplyEditor';
 import ProposalViewer from './ProposalViewer';
@@ -17,6 +17,8 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
   const [error, setError] = useState<string | null>(null);
   const [showPrompt, setShowPrompt] = useState<string | null>(null);
   const [editingReply, setEditingReply] = useState<PendingReply | null>(null);
+  const [replyReviews, setReplyReviews] = useState<Record<string, ReviewResult>>({});
+  const [loadingReviews, setLoadingReviews] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadConversationDetails();
@@ -98,6 +100,113 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
       console.error('Failed to get prompt:', err);
     }
   };
+
+  const loadReplyReview = useCallback(async (replyId: string) => {
+    // Check if already loading this specific review
+    setLoadingReviews(prev => {
+      if (prev.has(replyId)) {
+        return prev; // Already loading
+      }
+      return new Set(prev).add(replyId);
+    });
+
+    try {
+      console.log('Loading review for reply:', replyId);
+      const data = await api.getReplyReview(replyId);
+      console.log('Review loaded:', data);
+      setReplyReviews(prev => ({
+        ...prev,
+        [replyId]: data.review
+      }));
+    } catch (err) {
+      console.error('Failed to get review for reply', replyId, ':', err);
+      // Set a default error review so we don't keep retrying
+      setReplyReviews(prev => ({
+        ...prev,
+        [replyId]: {
+          relevance_score: 0,
+          completeness_score: 0,
+          accuracy_score: 0,
+          next_steps_score: 0,
+          overall_score: 0,
+          red_flags: ['Review failed to load'],
+          summary: 'Unable to load AI review. Please review manually.',
+          reviewed_at: new Date().toISOString()
+        }
+      }));
+    } finally {
+      setLoadingReviews(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(replyId);
+        return newSet;
+      });
+    }
+  }, []);
+
+  // Load reviews when pending replies change
+  useEffect(() => {
+    pendingReplies.forEach(reply => {
+      if (reply.status !== 'pending') {
+        return; // Only review pending replies
+      }
+      
+      if (reply.review) {
+        // Use cached review from reply data
+        setReplyReviews(prev => ({
+          ...prev,
+          [reply.reply_id]: reply.review!
+        }));
+      } else if (!replyReviews[reply.reply_id] && !loadingReviews.has(reply.reply_id)) {
+        // Load review from API only if not already loaded or loading
+        loadReplyReview(reply.reply_id);
+      }
+    });
+  }, [pendingReplies, loadReplyReview, replyReviews, loadingReviews]);
+
+  const getScoreColor = (score: number) => {
+    if (score >= 4) return 'text-green-600 bg-green-100';
+    if (score >= 3) return 'text-yellow-600 bg-yellow-100';
+    return 'text-red-600 bg-red-100';
+  };
+
+  const ReviewDisplay = ({ review }: { review: ReviewResult }) => (
+    <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+      <div className="flex items-center justify-between mb-2">
+        <h4 className="text-sm font-medium text-blue-900">AI Review</h4>
+        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getScoreColor(review.overall_score)}`}>
+          Overall: {review.overall_score}/5
+        </span>
+      </div>
+      
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+        <div className={`px-2 py-1 text-xs rounded ${getScoreColor(review.relevance_score)}`}>
+          Relevance: {review.relevance_score}/5
+        </div>
+        <div className={`px-2 py-1 text-xs rounded ${getScoreColor(review.completeness_score)}`}>
+          Complete: {review.completeness_score}/5
+        </div>
+        <div className={`px-2 py-1 text-xs rounded ${getScoreColor(review.accuracy_score)}`}>
+          Accuracy: {review.accuracy_score}/5
+        </div>
+        <div className={`px-2 py-1 text-xs rounded ${getScoreColor(review.next_steps_score)}`}>
+          Next Steps: {review.next_steps_score}/5
+        </div>
+      </div>
+
+      {review.red_flags.length > 0 && (
+        <div className="mb-2">
+          <div className="text-xs font-medium text-red-700 mb-1">⚠️ Red Flags:</div>
+          <ul className="text-xs text-red-600">
+            {review.red_flags.map((flag, index) => (
+              <li key={index} className="ml-2">• {flag}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <p className="text-xs text-blue-800">{review.summary}</p>
+    </div>
+  );
 
   if (loading) {
     return (
@@ -249,6 +358,20 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
                   <div className="mb-4 p-3 bg-gray-50 rounded whitespace-pre-wrap">
                     {reply.llm_response}
                   </div>
+
+                  {/* AI Review */}
+                  {replyReviews[reply.reply_id] ? (
+                    <ReviewDisplay review={replyReviews[reply.reply_id]} />
+                  ) : loadingReviews.has(reply.reply_id) ? (
+                    <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                      <div className="text-sm text-gray-500">Loading AI review...</div>
+                    </div>
+                  ) : (
+                    <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                      <div className="text-sm text-gray-500">AI review unavailable</div>
+                    </div>
+                  )}
+
                   <div className="flex space-x-2">
                     <button
                       onClick={() => handleApprove(reply)}

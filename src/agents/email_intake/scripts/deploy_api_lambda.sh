@@ -29,6 +29,7 @@ cp "$EMAIL_INTAKE_DIR/conversation_state.py" /tmp/api_lambda_deploy/src/agents/e
 cp "$EMAIL_INTAKE_DIR/utils.py" /tmp/api_lambda_deploy/src/agents/email_intake/
 cp "$EMAIL_INTAKE_DIR/pdf_generator.py" /tmp/api_lambda_deploy/src/agents/email_intake/
 cp "$EMAIL_INTAKE_DIR/proposal_mapper.py" /tmp/api_lambda_deploy/src/agents/email_intake/
+cp "$EMAIL_INTAKE_DIR/reviewer.py" /tmp/api_lambda_deploy/src/agents/email_intake/
 
 # Copy storage module
 cp -r "$REPO_ROOT/src/storage/"*.py /tmp/api_lambda_deploy/src/storage/
@@ -40,6 +41,7 @@ cp "$EMAIL_INTAKE_DIR/conversation_state.py" /tmp/api_lambda_deploy/
 cp "$EMAIL_INTAKE_DIR/utils.py" /tmp/api_lambda_deploy/
 cp "$EMAIL_INTAKE_DIR/pdf_generator.py" /tmp/api_lambda_deploy/
 cp "$EMAIL_INTAKE_DIR/proposal_mapper.py" /tmp/api_lambda_deploy/
+cp "$EMAIL_INTAKE_DIR/reviewer.py" /tmp/api_lambda_deploy/
 
 # Create zip file
 cd /tmp/api_lambda_deploy

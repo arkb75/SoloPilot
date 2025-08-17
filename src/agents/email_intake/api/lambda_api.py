@@ -16,6 +16,16 @@ import boto3
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
 
+# Custom JSON encoder for Decimal types from DynamoDB
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            if obj % 1 == 0:
+                return int(obj)
+            else:
+                return float(obj)
+        return super(DecimalEncoder, self).default(obj)
+
 from conversation_state import (  # Needed to append sent email to history
     ConversationStateManager,
 )
@@ -102,6 +112,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         elif path.startswith("/replies/") and path.endswith("/prompt") and http_method == "GET":
             reply_id = path_params.get("id")
             response = get_reply_prompt(reply_id)
+        elif path.startswith("/replies/") and path.endswith("/review") and http_method == "GET":
+            reply_id = path_params.get("id")
+            response = get_reply_review(reply_id)
         elif path.startswith("/replies/") and http_method == "PATCH":
             reply_id = path_params.get("id")
             response = amend_reply(reply_id, body)
@@ -756,6 +769,123 @@ def get_reply_prompt(reply_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error getting reply prompt: {str(e)}")
         return {"statusCode": 500, "body": json.dumps({"error": "Failed to get reply prompt"})}
+
+
+def get_reply_review(reply_id: str) -> Dict[str, Any]:
+    """Get or generate AI review for a specific reply."""
+    try:
+        # Get reviewer toggle from environment
+        reviewer_enabled = os.environ.get("ENABLE_REVIEWER", "true").lower() == "true"
+        
+        if not reviewer_enabled:
+            return {
+                "statusCode": 200,
+                "body": json.dumps({
+                    "reply_id": reply_id,
+                    "review": {
+                        "relevance_score": 5,
+                        "completeness_score": 5,
+                        "accuracy_score": 5,
+                        "next_steps_score": 5,
+                        "overall_score": 5,
+                        "red_flags": [],
+                        "summary": "AI review is disabled",
+                        "reviewed_at": datetime.now(timezone.utc).isoformat()
+                    },
+                    "cached": False
+                }, cls=DecimalEncoder)
+            }
+        
+        # Search for the reply across all conversations
+        table = dynamodb.Table(TABLE_NAME)
+        
+        # Scan for conversations that might contain this reply
+        response = table.scan(
+            FilterExpression="attribute_exists(pending_replies)",
+            ProjectionExpression="conversation_id, pending_replies, email_history, phase, client_email"
+        )
+        
+        reply_data = None
+        conversation_data = None
+        
+        for item in response['Items']:
+            pending_replies = item.get('pending_replies', [])
+            for reply in pending_replies:
+                if reply.get('reply_id') == reply_id:
+                    reply_data = reply
+                    conversation_data = item
+                    break
+            if reply_data:
+                break
+        
+        if not reply_data:
+            return {
+                "statusCode": 404,
+                "body": json.dumps({"error": "Reply not found"})
+            }
+        
+        # Check if review is already cached (and not null)
+        if 'review' in reply_data and reply_data['review'] is not None:
+            return {
+                "statusCode": 200,
+                "body": json.dumps({
+                    "reply_id": reply_id,
+                    "review": reply_data['review'],
+                    "cached": True
+                }, cls=DecimalEncoder)
+            }
+        
+        # Generate new review
+        from reviewer import EmailReviewer
+        
+        reviewer = EmailReviewer()
+        response_text = reply_data.get('llm_response', '')
+        metadata = reply_data.get('metadata', {})
+        
+        review = reviewer.review_response(conversation_data, response_text, metadata)
+        
+        # Cache the review in DynamoDB
+        try:
+            # Update the specific reply with review data
+            conversation_id = conversation_data['conversation_id']
+            pending_replies = conversation_data.get('pending_replies', [])
+            
+            # Find and update the specific reply
+            for i, reply in enumerate(pending_replies):
+                if reply.get('reply_id') == reply_id:
+                    pending_replies[i]['review'] = review
+                    break
+            
+            # Update the conversation with the new review
+            table.update_item(
+                Key={"conversation_id": conversation_id},
+                UpdateExpression="SET pending_replies = :pr",
+                ExpressionAttributeValues={":pr": pending_replies}
+            )
+            
+            logger.info(f"Cached review for reply {reply_id} with overall score: {review.get('overall_score', 0)}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to cache review for reply {reply_id}: {str(e)}")
+        
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "reply_id": reply_id,
+                "review": review,
+                "cached": False
+            }, cls=DecimalEncoder)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting reply review: {str(e)}", exc_info=True)
+        return {
+            "statusCode": 500, 
+            "body": json.dumps({
+                "error": "Failed to get reply review",
+                "details": str(e)
+            })
+        }
 
 
 def get_attachment_url(attachment_id: str) -> Dict[str, Any]:

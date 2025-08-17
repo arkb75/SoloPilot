@@ -27,8 +27,10 @@ export interface ExtractedMetadata {
   project_type?: string;
   current_phase?: string;
   should_attach_pdf?: boolean;
+  should_send_pdf?: boolean;
   meeting_requested?: boolean;
   revision_requested?: boolean;
+  proposal_explicitly_requested?: boolean;
   feedback_sentiment?: string;
   key_topics?: string[];
   action_required?: string;
@@ -71,6 +73,18 @@ export interface PendingReply {
   message_id?: string;
   phase: ConversationPhase;
   metadata?: Record<string, any>;
+  review?: ReviewResult;
+}
+
+export interface ReviewResult {
+  relevance_score: number;
+  completeness_score: number;
+  accuracy_score: number;
+  next_steps_score: number;
+  overall_score: number;
+  red_flags: string[];
+  summary: string;
+  reviewed_at: string;
 }
 
 export interface Attachment {
