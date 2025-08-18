@@ -556,7 +556,12 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         if ses_message_id:
             try:
                 # Import canonicalization function
-                from utils import EmailThreadingUtils
+                try:
+                    # For Lambda runtime (when imported as api.lambda_api)
+                    from utils import EmailThreadingUtils
+                except ImportError:
+                    # For local development/testing
+                    from ..utils import EmailThreadingUtils
 
                 message_map_table = dynamodb.Table("email_message_map")
                 # Store the SES Message-ID in the format email clients will use
@@ -727,9 +732,26 @@ def amend_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
                         "body": json.dumps({"error": f"Reply is already {reply.get('status')}"}),
                     }
 
-                pending_replies[i]["amended_content"] = amended_content
+                # Ensure metadata exists
+                if "metadata" not in pending_replies[i]:
+                    pending_replies[i]["metadata"] = {}
+                
+                # Store original email_body for audit trail (only if not already stored)
+                if "original_email_body" not in pending_replies[i]["metadata"]:
+                    original_body = pending_replies[i]["metadata"].get("email_body", "")
+                    if original_body:  # Only store if there's an original
+                        pending_replies[i]["metadata"]["original_email_body"] = original_body
+
+                # Update the email_body in metadata directly - this becomes the source of truth
+                pending_replies[i]["metadata"]["email_body"] = amended_content
+                
+                # Track amendment details for audit trail
                 pending_replies[i]["amended_at"] = datetime.now(timezone.utc).isoformat()
                 pending_replies[i]["amended_by"] = body.get("amended_by", "admin")
+                
+                # Log the amendment for debugging
+                logger.info(f"Amended reply {reply_id}: updated metadata.email_body with {len(amended_content)} characters")
+                
                 reply_found = True
                 break
 

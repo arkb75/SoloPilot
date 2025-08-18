@@ -9,7 +9,12 @@ from uuid import uuid4
 import boto3
 from botocore.exceptions import ClientError
 
-from utils import EmailThreadingUtils
+try:
+    # For Lambda runtime
+    from utils import EmailThreadingUtils
+except ImportError:
+    # For local development/testing
+    from .utils import EmailThreadingUtils
 
 logger = logging.getLogger(__name__)
 

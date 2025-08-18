@@ -247,10 +247,16 @@ def extract_email_metadata(pending_reply: Dict[str, Any]) -> Dict[str, Any]:
     """
     metadata = pending_reply.get("metadata", {})
 
-    # Always use email_body from metadata - it should always be present
+    # Primary source: email_body from metadata (may be edited via amend_reply)
     email_body = metadata.get("email_body", "")
 
-    # Log error if email_body is missing (this should never happen with standardized data model)
+    # Backward compatibility: Check for legacy amended_content field
+    # This handles existing data where edits were stored separately
+    if not email_body and pending_reply.get("amended_content"):
+        email_body = pending_reply["amended_content"]
+        logger.info(f"Using legacy amended_content for reply {pending_reply.get('reply_id', 'unknown')}")
+    
+    # Log error if email_body is still missing (this should never happen with standardized data model)
     if not email_body:
         logger.error(
             f"Missing email_body in metadata for reply {pending_reply.get('reply_id', 'unknown')}"
