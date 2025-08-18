@@ -93,13 +93,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             conversation_id, original_message_id, parsed_email
         )
 
-        # Check if this is an automated response
-        if EmailThreadingUtils.is_automated_response(parsed_email["body"], parsed_email["subject"]):
-            logger.info(f"Skipping automated response for conversation {conversation_id}")
-            return {
-                "statusCode": 200,
-                "body": json.dumps({"message": "Automated response ignored"}),
-            }
 
         # Append email with retry for concurrent access
         conversation = state_manager.append_email_with_retry(

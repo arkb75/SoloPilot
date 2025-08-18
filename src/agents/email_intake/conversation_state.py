@@ -502,10 +502,6 @@ class ConversationStateManager:
             email_data.get("body", "")
         )
 
-        # Check if automated
-        is_automated = EmailThreadingUtils.is_automated_response(
-            email_data.get("body", ""), email_data.get("subject", "")
-        )
 
         entry = {
             "email_id": email_id,
@@ -520,7 +516,6 @@ class ConversationStateManager:
             "new_content": new_content,
             "timestamp": email_data.get("timestamp", datetime.now(timezone.utc).isoformat()),
             "direction": email_data.get("direction", "inbound"),
-            "is_automated": is_automated,
             "attachments": email_data.get("attachments", []),
             "metadata": email_data.get("metadata", {}),
         }

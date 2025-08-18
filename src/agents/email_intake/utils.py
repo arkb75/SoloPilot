@@ -275,37 +275,6 @@ class EmailThreadingUtils:
         expiry_time = datetime.now(timezone.utc).timestamp() + (days * 86400)
         return int(expiry_time)
 
-    @staticmethod
-    def is_automated_response(email_body: str, subject: str) -> bool:
-        """Detect if email is an automated response.
-
-        Args:
-            email_body: Email body content
-            subject: Email subject
-
-        Returns:
-            True if likely automated
-        """
-        auto_patterns = [
-            r"auto.?reply",
-            r"out of (the )?office",
-            r"vacation",
-            r"away from (my )?desk",
-            r"automatic response",
-            r"delivery status notification",
-            r"mail delivery subsystem",
-            r"undeliverable",
-            r"bounce",
-        ]
-
-        combined_text = f"{subject} {email_body}".lower()
-
-        for pattern in auto_patterns:
-            if re.search(pattern, combined_text, re.IGNORECASE):
-                logger.info(f"Detected automated response: pattern={pattern}")
-                return True
-
-        return False
 
     @staticmethod
     def extract_quoted_text(email_body: str) -> Tuple[str, str]:
