@@ -83,71 +83,82 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 if len(parts) >= 3:
                     path_params["id"] = parts[2]
 
-        # Route request
-        if path == "/conversations" and http_method == "GET":
-            response = list_conversations(query_params)
-        elif (
-            path.startswith("/conversations/") and path.endswith("/mode") and http_method == "PATCH"
-        ):
-            conversation_id = path_params.get("id")
-            response = update_conversation_mode(conversation_id, body)
-        elif (
-            path.startswith("/conversations/")
-            and path.endswith("/pending-replies")
-            and http_method == "GET"
-        ):
-            conversation_id = path_params.get("id")
-            response = get_pending_replies(conversation_id)
-        elif path.startswith("/conversations/") and http_method == "GET":
-            conversation_id = path_params.get("id")
-            response = get_conversation_detail(conversation_id)
-        elif path.startswith("/conversations/") and http_method == "DELETE":
-            conversation_id = path_params.get("id")
-            response = delete_conversation(conversation_id)
-        elif path.startswith("/replies/") and path.endswith("/approve") and http_method == "POST":
-            reply_id = path_params.get("id")
-            response = approve_reply(reply_id, body)
-        elif path.startswith("/replies/") and path.endswith("/reject") and http_method == "POST":
-            reply_id = path_params.get("id")
-            response = reject_reply(reply_id, body)
-        elif path.startswith("/replies/") and path.endswith("/prompt") and http_method == "GET":
-            reply_id = path_params.get("id")
-            response = get_reply_prompt(reply_id)
-        elif path.startswith("/replies/") and path.endswith("/review") and http_method == "GET":
-            reply_id = path_params.get("id")
-            response = get_reply_review(reply_id)
-        elif path.startswith("/replies/") and path.endswith("/request-revision") and http_method == "POST":
-            reply_id = path_params.get("id")
-            response = request_reply_revision(reply_id)
-        elif path.startswith("/replies/") and http_method == "PATCH":
-            reply_id = path_params.get("id")
-            response = amend_reply(reply_id, body)
-        elif path.startswith("/attachments/") and http_method == "GET":
-            attachment_id = path_params.get("id")
-            response = get_attachment_url(attachment_id)
-        elif (
-            path.startswith("/conversations/")
-            and path.endswith("/proposals")
-            and http_method == "GET"
-        ):
-            # Extract conversation_id from path like /conversations/{id}/proposals
-            parts = path.split("/")
-            if len(parts) >= 3:
-                conversation_id = parts[2]
-                response = list_proposals(conversation_id)
-            else:
-                response = {"statusCode": 400, "body": json.dumps({"error": "Invalid path format"})}
-        elif path.startswith("/conversations/") and "/proposals/" in path and http_method == "GET":
-            # Extract conversation_id and version from path like /conversations/{id}/proposals/{version}
-            parts = path.split("/")
-            if len(parts) >= 5:
-                conversation_id = parts[2]
-                version = parts[4]
-                response = get_proposal_url(conversation_id, version)
-            else:
-                response = {"statusCode": 400, "body": json.dumps({"error": "Invalid path format"})}
+        # Prefer routing by resource (stage-agnostic). Fallback to path if resource missing.
+        resource = event.get("resource", "")
+
+        def route_by_resource(res: str) -> Dict[str, Any]:
+            if res == "/conversations" and http_method == "GET":
+                return list_conversations(query_params)
+            if res == "/conversations/{id}/mode" and http_method == "PATCH":
+                return update_conversation_mode(path_params.get("id"), body)
+            if res == "/conversations/{id}/pending-replies" and http_method == "GET":
+                return get_pending_replies(path_params.get("id"))
+            if res == "/conversations/{id}" and http_method == "GET":
+                return get_conversation_detail(path_params.get("id"))
+            if res == "/conversations/{id}" and http_method == "DELETE":
+                return delete_conversation(path_params.get("id"))
+            if res == "/replies/{id}/approve" and http_method == "POST":
+                return approve_reply(path_params.get("id"), body)
+            if res == "/replies/{id}/reject" and http_method == "POST":
+                return reject_reply(path_params.get("id"), body)
+            if res == "/replies/{id}/prompt" and http_method == "GET":
+                return get_reply_prompt(path_params.get("id"))
+            if res == "/replies/{id}/review" and http_method == "GET":
+                return get_reply_review(path_params.get("id"))
+            if res == "/replies/{id}/request-revision" and http_method == "POST":
+                return request_reply_revision(path_params.get("id"))
+            if res == "/replies/{id}" and http_method == "PATCH":
+                return amend_reply(path_params.get("id"), body)
+            if res == "/attachments/{id}" and http_method == "GET":
+                return get_attachment_url(path_params.get("id"))
+            if res == "/conversations/{id}/proposals" and http_method == "GET":
+                return list_proposals(path_params.get("id"))
+            if res == "/conversations/{id}/proposals/{version}" and http_method == "GET":
+                conv_id = path_params.get("id")
+                version = path_params.get("version") or ""
+                return get_proposal_url(conv_id, version)
+            return {"statusCode": 404, "body": json.dumps({"error": "Not found"})}
+
+        if resource:
+            response = route_by_resource(resource)
         else:
-            response = {"statusCode": 404, "body": json.dumps({"error": "Not found"})}
+            # Fallback: attempt to strip stage from path and match
+            stage = (event.get("requestContext") or {}).get("stage")
+            normalized_path = path or ""
+            if stage and normalized_path.startswith(f"/{stage}/"):
+                normalized_path = normalized_path[len(stage) + 1 :]
+            elif stage and normalized_path == f"/{stage}":
+                normalized_path = "/"
+
+            # Minimal fallback for proposals routes
+            if normalized_path == "/conversations" and http_method == "GET":
+                response = list_conversations(query_params)
+            elif normalized_path.endswith("/proposals") and http_method == "GET":
+                parts = [s for s in normalized_path.split("/") if s]
+                if "conversations" in parts:
+                    idx = parts.index("conversations")
+                    conversation_id = parts[idx + 1] if idx + 1 < len(parts) else None
+                    if conversation_id:
+                        response = list_proposals(conversation_id)
+                    else:
+                        response = {"statusCode": 400, "body": json.dumps({"error": "Invalid path format"})}
+                else:
+                    response = {"statusCode": 404, "body": json.dumps({"error": "Not found"})}
+            elif "/proposals/" in normalized_path and http_method == "GET":
+                parts = [s for s in normalized_path.split("/") if s]
+                if "conversations" in parts and "proposals" in parts:
+                    ci = parts.index("conversations")
+                    pi = parts.index("proposals")
+                    conversation_id = parts[ci + 1] if ci + 1 < len(parts) else None
+                    version = parts[pi + 1] if pi + 1 < len(parts) else None
+                    if conversation_id and version:
+                        response = get_proposal_url(conversation_id, version)
+                    else:
+                        response = {"statusCode": 400, "body": json.dumps({"error": "Invalid path format"})}
+                else:
+                    response = {"statusCode": 404, "body": json.dumps({"error": "Not found"})}
+            else:
+                response = {"statusCode": 404, "body": json.dumps({"error": "Not found"})}
 
         # Add CORS headers
         if "statusCode" in response:
@@ -1114,44 +1125,42 @@ def list_proposals(conversation_id: str) -> Dict[str, Any]:
         API response with list of proposals
     """
     try:
-        # Check if storage module is available
-        try:
-            from storage import ProposalVersionIndex
+        # Canonical import path for Lambda package layout
+        from src.storage import ProposalVersionIndex  # type: ignore
 
-            version_index = ProposalVersionIndex()
-            proposals = version_index.list_versions(conversation_id)
+        version_index = ProposalVersionIndex()
+        proposals = version_index.list_versions(conversation_id)
 
-            # Convert to API response format
-            proposal_list = []
-            for proposal in proposals:
-                proposal_list.append(
-                    {
-                        "version": proposal.version,
-                        "created_at": proposal.created_at,
-                        "file_size": proposal.file_size,
-                        "budget": proposal.budget,
-                        "has_revisions": proposal.has_revisions,
-                    }
-                )
+        # Convert to API response format
+        proposal_list = []
+        for proposal in proposals:
+            proposal_list.append(
+                {
+                    "version": proposal.version,
+                    "created_at": proposal.created_at,
+                    "file_size": proposal.file_size,
+                    "budget": proposal.budget,
+                    "has_revisions": proposal.has_revisions,
+                }
+            )
 
-            return {
-                "statusCode": 200,
-                "body": json.dumps(
-                    {
-                        "conversation_id": conversation_id,
-                        "proposals": proposal_list,
-                        "count": len(proposal_list),
-                    }
-                ),
-            }
+        return {
+            "statusCode": 200,
+            "body": json.dumps(
+                {
+                    "conversation_id": conversation_id,
+                    "proposals": proposal_list,
+                    "count": len(proposal_list),
+                }
+            ),
+        }
 
-        except ImportError:
-            logger.warning("Storage module not available")
-            return {
-                "statusCode": 501,
-                "body": json.dumps({"error": "Proposal storage not implemented"}),
-            }
-
+    except ImportError:
+        logger.warning("Storage module not available")
+        return {
+            "statusCode": 501,
+            "body": json.dumps({"error": "Proposal storage not implemented"}),
+        }
     except Exception as e:
         logger.error(f"Error listing proposals: {str(e)}")
         return {"statusCode": 500, "body": json.dumps({"error": "Failed to list proposals"})}
@@ -1177,46 +1186,45 @@ def get_proposal_url(conversation_id: str, version: str) -> Dict[str, Any]:
                 "body": json.dumps({"error": "Invalid version number"}),
             }
 
-        # Check if storage module is available
-        try:
-            from storage import S3ProposalStore
+        # Canonical import path for Lambda package layout
+        from src.storage import S3ProposalStore  # type: ignore
 
-            s3_store = S3ProposalStore(
-                bucket_name=os.environ.get("DOCUMENT_BUCKET") or os.environ.get("ATTACHMENTS_BUCKET", "solopilot-attachments")
-            )
+        s3_store = S3ProposalStore(
+            bucket_name=os.environ.get("DOCUMENT_BUCKET")
+            or os.environ.get("ATTACHMENTS_BUCKET", "solopilot-attachments")
+        )
 
-            # Generate presigned URL
-            url = s3_store.generate_presigned_url(conversation_id, version_num)
+        # Generate presigned URL
+        url = s3_store.generate_presigned_url(conversation_id, version_num)
 
-            if not url:
-                return {
-                    "statusCode": 404,
-                    "body": json.dumps({"error": "Proposal not found"}),
+        if not url:
+            return {
+                "statusCode": 404,
+                "body": json.dumps({"error": "Proposal not found"}),
+            }
+
+        # Get metadata if available
+        metadata = s3_store.get_proposal_metadata(conversation_id, version_num)
+
+        return {
+            "statusCode": 200,
+            "body": json.dumps(
+                {
+                    "conversation_id": conversation_id,
+                    "version": version_num,
+                    "url": url,
+                    "expires_in": 3600,
+                    "metadata": metadata,
                 }
+            ),
+        }
 
-            # Get metadata if available
-            metadata = s3_store.get_proposal_metadata(conversation_id, version_num)
-
-            return {
-                "statusCode": 200,
-                "body": json.dumps(
-                    {
-                        "conversation_id": conversation_id,
-                        "version": version_num,
-                        "url": url,
-                        "expires_in": 3600,
-                        "metadata": metadata,
-                    }
-                ),
-            }
-
-        except ImportError:
-            logger.warning("Storage module not available")
-            return {
-                "statusCode": 501,
-                "body": json.dumps({"error": "Proposal storage not implemented"}),
-            }
-
+    except ImportError:
+        logger.warning("Storage module not available")
+        return {
+            "statusCode": 501,
+            "body": json.dumps({"error": "Proposal storage not implemented"}),
+        }
     except Exception as e:
         logger.error(f"Error getting proposal URL: {str(e)}")
         return {"statusCode": 500, "body": json.dumps({"error": "Failed to get proposal URL"})}
