@@ -57,9 +57,9 @@ const s3Helper = new S3DocumentHelper(process.env.DOCUMENT_BUCKET);
 const downloadUrl = await s3Helper.getSignedDownloadUrl('path/to/document.pdf');
 
 // Upload a document
-const key = s3Helper.generateDocumentKey('client123', 'invoice', 'invoice-001.pdf');
+const key = s3Helper.generateDocumentKey('conv-123', 'invoice', 'invoice-001.pdf');
 await s3Helper.uploadDocument(key, pdfBuffer, 'application/pdf', {
-  clientId: 'client123',
+  conversationId: 'conv-123',
   invoiceNumber: '001'
 });
 

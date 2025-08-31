@@ -135,12 +135,12 @@ describe('S3DocumentHelper', () => {
       global.Date.now = jest.fn(() => mockDate.getTime());
 
       const key = s3Helper.generateDocumentKey(
-        'client123',
+        'conv-123',
         'invoice',
         'invoice-001.pdf'
       );
 
-      expect(key).toMatch(/^client123\/2025\/01\/invoice\/\d+-invoice-001\.pdf$/);
+      expect(key).toMatch(/^conv-123\/2025\/01\/invoice\/\d+-invoice-001\.pdf$/);
 
       // Restore original Date
       global.Date = originalDate;
@@ -148,12 +148,12 @@ describe('S3DocumentHelper', () => {
 
     it('should handle different document types', () => {
       const key = s3Helper.generateDocumentKey(
-        'client456',
+        'conv-456',
         'report',
         'monthly-report.pdf'
       );
 
-      expect(key).toMatch(/^client456\/\d{4}\/\d{2}\/report\/\d+-monthly-report\.pdf$/);
+      expect(key).toMatch(/^conv-456\/\d{4}\/\d{2}\/report\/\d+-monthly-report\.pdf$/);
     });
   });
 

@@ -76,8 +76,8 @@ const validateInput = (body) => {
   // Check if this is a template-based request
   if (body.template) {
     // Template-based validation
-    if (!body.clientId || typeof body.clientId !== 'string') {
-      errors.push('clientId is required and must be a string');
+    if (!body.conversationId || typeof body.conversationId !== 'string') {
+      errors.push('conversationId is required and must be a string');
     }
 
     // Validate template exists
@@ -93,8 +93,8 @@ const validateInput = (body) => {
     }
   } else {
     // Markdown-based validation (existing)
-    if (!body.clientId || typeof body.clientId !== 'string') {
-      errors.push('clientId is required and must be a string');
+    if (!body.conversationId || typeof body.conversationId !== 'string') {
+      errors.push('conversationId is required and must be a string');
     }
 
     if (!body.docType || typeof body.docType !== 'string') {
@@ -267,13 +267,13 @@ exports.handler = async (event, context) => {
     // Parse request body
     const body = event.body ? JSON.parse(event.body) : event;
 
-    // Add clientId to logger context
-    if (body.clientId) {
-      logger.setContext({ clientId: body.clientId });
+    // Add conversationId to logger context
+    if (body.conversationId) {
+      logger.setContext({ conversationId: body.conversationId });
     }
 
     logger.info('Processing document generation request', {
-      clientId: body.clientId,
+      conversationId: body.conversationId,
       docType: body.docType,
       filename: body.filename,
       template: body.template,
@@ -334,7 +334,7 @@ exports.handler = async (event, context) => {
     // Generate S3 key
     const docType = body.docType || (body.template ? 'template' : 'document');
     const s3Key = s3Helper.generateDocumentKey(
-      body.clientId,
+      body.conversationId,
       docType,
       sanitizedFilename
     );
@@ -353,7 +353,7 @@ exports.handler = async (event, context) => {
       pdfBuffer,
       'application/pdf',
       sanitizeMetadata({
-        clientId: body.clientId,
+        conversationId: body.conversationId,
         docType: body.docType,
         originalFilename: body.filename,
         isError: isError.toString(),
@@ -369,15 +369,15 @@ exports.handler = async (event, context) => {
     if (body.createInvoice && !isError) {
       try {
         logger.info('Creating Stripe invoice', {
-          clientId: body.clientId,
+          conversationId: body.conversationId,
           customerEmail: body.customerEmail
         });
 
         // Create or get customer
         const customer = await stripeHelper.createOrGetCustomer({
-          clientId: body.clientId,
+          clientId: body.conversationId,
           email: body.customerEmail,
-          name: body.customerName || body.clientId
+          name: body.customerName || body.conversationId
         });
 
         // Parse line items from markdown
@@ -389,7 +389,7 @@ exports.handler = async (event, context) => {
           lineItems,
           description: body.invoiceDescription || `Document: ${body.filename}`,
           metadata: {
-            clientId: body.clientId,
+            conversationId: body.conversationId,
             docType: body.docType,
             s3Key,
             documentUrl: signedUrl

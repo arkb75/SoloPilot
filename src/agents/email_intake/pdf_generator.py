@@ -55,14 +55,14 @@ class ProposalPDFGenerator:
                 self.s3_store = None
 
     def generate_proposal_pdf_from_data(
-        self, proposal_data: Dict, client_id: str, timeout: int = 5
+        self, proposal_data: Dict, conversation_id: str, timeout: int = 5
     ) -> Tuple[Optional[bytes], Optional[str]]:
         """
         Generate a proposal PDF from pre-extracted proposal data.
         
         Args:
             proposal_data: Formatted proposal data (from ProposalDataMapper)
-            client_id: Client identifier for the PDF
+            conversation_id: Conversation identifier for S3 keying and traceability
             timeout: Lambda invocation timeout in seconds
             
         Returns:
@@ -73,13 +73,13 @@ class ProposalPDFGenerator:
             payload = {
                 "template": "glassmorphic-proposal",
                 "data": proposal_data,
-                "clientId": client_id,
+                "conversationId": conversation_id,
                 "docType": "proposal",
                 "filename": "project-proposal.pdf",
             }
 
             logger.info(
-                f"Generating proposal PDF for {proposal_data['clientName']} with clientId: {client_id}"
+                f"Generating proposal PDF for {proposal_data['clientName']} with conversationId: {conversation_id}"
             )
             logger.info(
                 f"Payload keys: {list(payload.keys())}, data keys: {list(payload['data'].keys())}"
@@ -547,16 +547,13 @@ class ProposalPDFGenerator:
         mapper = ProposalDataMapper()
         proposal_data = mapper.map_requirements_to_proposal_data(requirements)
         
-        # Extract clientId from email (required by document Lambda)
-        client_id = (
-            conversation.get("client_email", "unknown-client")
-            .split("@")[0]
-            .replace(".", "-")
-            .replace("_", "-")
-        )
+        # Use conversation_id for document Lambda
+        conversation_id = conversation.get("conversation_id")
+        if not conversation_id:
+            return None, "Missing conversation_id in conversation"
         
         # Use the new method
-        return self.generate_proposal_pdf_from_data(proposal_data, client_id, timeout)
+        return self.generate_proposal_pdf_from_data(proposal_data, conversation_id, timeout)
 
     def generate_and_store_proposal_pdf(
         self, conversation: Dict, timeout: int = 5
@@ -584,16 +581,13 @@ class ProposalPDFGenerator:
         mapper = ProposalDataMapper()
         proposal_data = mapper.map_requirements_to_proposal_data(requirements)
         
-        # Extract clientId
-        client_id = (
-            conversation.get("client_email", "unknown-client")
-            .split("@")[0]
-            .replace(".", "-")
-            .replace("_", "-")
-        )
+        # Use conversation_id
+        conversation_id = conversation.get("conversation_id")
+        if not conversation_id:
+            return None, "Missing conversation_id in conversation", None
         
         # Generate the PDF
-        pdf_bytes, error = self.generate_proposal_pdf_from_data(proposal_data, client_id, timeout)
+        pdf_bytes, error = self.generate_proposal_pdf_from_data(proposal_data, conversation_id, timeout)
 
         if not pdf_bytes or error:
             return pdf_bytes, error, None

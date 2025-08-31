@@ -109,18 +109,18 @@ class S3DocumentHelper {
 
   /**
    * Generate document key with proper structure
-   * @param {string} clientId - Client identifier
+   * @param {string} conversationId - Conversation identifier
    * @param {string} docType - Document type (invoice, report, etc.)
    * @param {string} filename - Original filename
    * @returns {string} Structured S3 key
    */
-  generateDocumentKey(clientId, docType, filename) {
+  generateDocumentKey(conversationId, docType, filename) {
     const date = new Date();
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const timestamp = Date.now();
 
-    return `${clientId}/${year}/${month}/${docType}/${timestamp}-${filename}`;
+    return `${conversationId}/${year}/${month}/${docType}/${timestamp}-${filename}`;
   }
 }
 

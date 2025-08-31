@@ -28,7 +28,7 @@ describe('Lambda Handler', () => {
   });
 
   describe('Input Validation', () => {
-    it('should reject missing clientId', async () => {
+    it('should reject missing conversationId', async () => {
       const event = {
         body: JSON.stringify({
           docType: 'invoice',
@@ -42,13 +42,13 @@ describe('Lambda Handler', () => {
 
       expect(result.statusCode).toBe(400);
       expect(body.success).toBe(false);
-      expect(body.errors).toContain('clientId is required and must be a string');
+      expect(body.errors).toContain('conversationId is required and must be a string');
     });
 
     it('should reject missing docType', async () => {
       const event = {
         body: JSON.stringify({
-          clientId: 'client123',
+          conversationId: 'conv-123',
           filename: 'test.pdf',
           markdown: '# Test'
         })
@@ -64,7 +64,7 @@ describe('Lambda Handler', () => {
     it('should reject missing filename', async () => {
       const event = {
         body: JSON.stringify({
-          clientId: 'client123',
+          conversationId: 'conv-123',
           docType: 'invoice',
           markdown: '# Test'
         })
@@ -80,7 +80,7 @@ describe('Lambda Handler', () => {
     it('should reject missing markdown', async () => {
       const event = {
         body: JSON.stringify({
-          clientId: 'client123',
+          conversationId: 'conv-123',
           docType: 'invoice',
           filename: 'test.pdf'
         })
@@ -97,7 +97,7 @@ describe('Lambda Handler', () => {
       const largeMarkdown = '#'.repeat(101 * 1024);
       const event = {
         body: JSON.stringify({
-          clientId: 'client123',
+          conversationId: 'conv-123',
           docType: 'invoice',
           filename: 'test.pdf',
           markdown: largeMarkdown
@@ -128,7 +128,7 @@ describe('Lambda Handler', () => {
     it('should generate PDF and return signed URL', async () => {
       const event = {
         body: JSON.stringify({
-          clientId: 'client123',
+          conversationId: 'conv-123',
           docType: 'invoice',
           filename: 'invoice-001.pdf',
           markdown: '# Invoice 001\n\nThis is a test invoice.'
@@ -141,7 +141,7 @@ describe('Lambda Handler', () => {
       expect(result.statusCode).toBe(200);
       expect(body.success).toBe(true);
       expect(body.documentUrl).toBe('https://test-bucket.s3.amazonaws.com/signed-url');
-      expect(body.s3Key).toMatch(/^client123\/\d{4}\/\d{2}\/invoice\/\d+-invoice-001\.pdf$/);
+      expect(body.s3Key).toMatch(/^conv-123\/\d{4}\/\d{2}\/invoice\/\d+-invoice-001\.pdf$/);
       expect(body.pdfSize).toBeGreaterThan(0);
       expect(body.isError).toBe(false);
       expect(body.metrics.requestId).toBe('test-request-id');
@@ -150,7 +150,7 @@ describe('Lambda Handler', () => {
     it('should sanitize filename', async () => {
       const event = {
         body: JSON.stringify({
-          clientId: 'client123',
+          conversationId: 'conv-123',
           docType: 'invoice',
           filename: '../../../etc/passwd',
           markdown: '# Test'
@@ -161,13 +161,13 @@ describe('Lambda Handler', () => {
       const body = JSON.parse(result.body);
 
       expect(result.statusCode).toBe(200);
-      expect(body.s3Key).toMatch(/^client123\/\d{4}\/\d{2}\/invoice\/\d+-___etc_passwd\.pdf$/);
+      expect(body.s3Key).toMatch(/^conv-123\/\d{4}\/\d{2}\/invoice\/\d+-___etc_passwd\.pdf$/);
     });
 
     it('should add .pdf extension if missing', async () => {
       const event = {
         body: JSON.stringify({
-          clientId: 'client123',
+          conversationId: 'conv-123',
           docType: 'invoice',
           filename: 'invoice-001',
           markdown: '# Test'
@@ -178,7 +178,7 @@ describe('Lambda Handler', () => {
       const body = JSON.parse(result.body);
 
       expect(result.statusCode).toBe(200);
-      expect(body.s3Key).toMatch(/^client123\/\d{4}\/\d{2}\/invoice\/\d+-invoice-001\.pdf$/);
+      expect(body.s3Key).toMatch(/^conv-123\/\d{4}\/\d{2}\/invoice\/\d+-invoice-001\.pdf$/);
     });
   });
 
@@ -195,7 +195,7 @@ describe('Lambda Handler', () => {
 
       const event = {
         body: JSON.stringify({
-          clientId: 'client123',
+          conversationId: 'conv-123',
           docType: 'invoice',
           filename: 'test.pdf',
           markdown: null
@@ -218,7 +218,7 @@ describe('Lambda Handler', () => {
 
       const event = {
         body: JSON.stringify({
-          clientId: 'client123',
+          conversationId: 'conv-123',
           docType: 'invoice',
           filename: 'test.pdf',
           markdown: '# Test'
@@ -246,7 +246,7 @@ describe('Lambda Handler', () => {
       });
 
       const event = {
-        clientId: 'client123',
+        conversationId: 'conv-123',
         docType: 'invoice',
         filename: 'test.pdf',
         markdown: '# Test'

@@ -12,7 +12,7 @@ Full-featured Lambda function that converts Markdown to PDF, stores in S3, and o
 ✅ **Line item parsing** from markdown content
 ✅ **Input validation** with 100KB markdown limit
 ✅ **Filename sanitization** to prevent path traversal
-✅ **CloudWatch logging** with clientId context
+✅ **CloudWatch logging** with conversationId context
 ✅ **Error handling** with fallback PDF generation
 ✅ **Unit tests** with mocked AWS SDK and Stripe
 
@@ -22,7 +22,7 @@ Full-featured Lambda function that converts Markdown to PDF, stores in S3, and o
 
 ```json
 {
-  "clientId": "client123",
+  "conversationId": "conv-123",
   "docType": "invoice",
   "filename": "invoice-001.pdf",
   "markdown": "# Invoice\n\nContent here...",
@@ -42,7 +42,7 @@ Full-featured Lambda function that converts Markdown to PDF, stores in S3, and o
 {
   "success": true,
   "documentUrl": "https://bucket.s3.amazonaws.com/signed-url",
-  "s3Key": "client123/2025/01/invoice/1234567890-invoice-001.pdf",
+  "s3Key": "conv-123/2025/01/invoice/1234567890-invoice-001.pdf",
   "pdfSize": 2500,
   "isError": false,
   "invoice": {
@@ -71,7 +71,7 @@ Full-featured Lambda function that converts Markdown to PDF, stores in S3, and o
 {
   "success": false,
   "errors": [
-    "clientId is required and must be a string",
+    "conversationId is required and must be a string",
     "markdown exceeds 100KB limit"
   ]
 }
@@ -164,14 +164,14 @@ ls -lh function.zip
 Documents are stored with the following key structure:
 
 ```
-{clientId}/{year}/{month}/{docType}/{timestamp}-{filename}
+{conversationId}/{year}/{month}/{docType}/{timestamp}-{filename}
 ```
 
-Example: `client123/2025/01/invoice/1704123456789-invoice-001.pdf`
+Example: `conv-123/2025/01/invoice/1704123456789-invoice-001.pdf`
 
 ## Input Validation
 
-- **clientId**: Required string
+- **conversationId**: Required string
 - **docType**: Required string
 - **filename**: Required string (sanitized automatically)
 - **markdown**: Required string, max 100KB
@@ -181,8 +181,8 @@ Example: `client123/2025/01/invoice/1704123456789-invoice-001.pdf`
 When `createInvoice: true` is set:
 
 1. **Customer Management**:
-   - Creates new Stripe customer or finds existing by clientId
-   - Stores clientId in customer metadata for future lookups
+   - Creates new Stripe customer or finds existing by conversationId
+   - Stores conversationId in customer metadata for future lookups
 
 2. **Line Item Parsing**:
    - Automatically extracts prices from markdown (e.g., `- Service: $1,000`)
@@ -211,7 +211,7 @@ When `createInvoice: true` is set:
 - Filename sanitization prevents path traversal
 - Signed URLs expire after 24 hours
 - All documents encrypted at rest (S3 default)
-- CloudWatch logs include clientId for audit trail
+- CloudWatch logs include conversationId for audit trail
 
 ## Error Handling
 
