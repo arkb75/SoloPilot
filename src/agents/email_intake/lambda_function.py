@@ -244,6 +244,34 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             metadata_to_store["client_name"] = client_name
             metadata_to_store["sender_name"] = responder.sender_name
             
+            # If we plan to send a proposal, pre-generate and store it now so it appears in UI
+            if should_send_pdf:
+                try:
+                    from pdf_generator import ProposalPDFGenerator  # Lazy import to avoid cold start cost
+
+                    pdf_lambda_arn = os.environ.get("PDF_LAMBDA_ARN", "")
+                    if not pdf_lambda_arn:
+                        logger.warning("PDF_LAMBDA_ARN not configured; skipping pre-generation of proposal PDF")
+                    else:
+                        pdf_generator = ProposalPDFGenerator(pdf_lambda_arn)
+                        # Generate and store proposal (records version + S3 key)
+                        pdf_bytes, pdf_error, storage_info = pdf_generator.generate_and_store_proposal_pdf(conversation)
+
+                        if pdf_bytes and storage_info:
+                            # Stash version info on the pending reply metadata so approval can reuse it
+                            metadata_to_store["proposal_version"] = storage_info.get("version")
+                            metadata_to_store["s3_key"] = storage_info.get("s3_key")
+                            logger.info(
+                                f"Pre-generated proposal v{storage_info.get('version')} for conversation {conversation_id}"
+                            )
+                        elif pdf_error:
+                            logger.warning(f"Pre-generation of proposal PDF failed: {pdf_error}")
+                        else:
+                            logger.warning("Pre-generation of proposal PDF produced no bytes and no error")
+                except Exception as e:
+                    # Do not block reply creation if pre-generation fails; approval path will retry
+                    logger.warning(f"Exception during proposal pre-generation (non-fatal): {str(e)}", exc_info=True)
+
             # Store the extracted metadata for frontend display
             if "extracted_metadata" in response_metadata:
                 extracted = response_metadata["extracted_metadata"]

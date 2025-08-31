@@ -418,74 +418,61 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
 
         # Check if we should send a PDF proposal
         if email_meta.get("should_send_pdf") and email_meta.get("phase") in ["proposal_draft", "proposal_feedback"]:
-            # Generate PDF proposal
-            try:
-                from pdf_generator import ProposalPDFGenerator
+            # Prefer reusing a pre-generated proposal stored during pending-creation
+            pregen_version = (
+                (reply_data or {}).get("proposal_version")
+                or (reply_data or {}).get("metadata", {}).get("proposal_version")
+            )
+            pregen_pdf_bytes = None
+            storage_info = None
 
-                # Get PDF Lambda ARN from environment
-                pdf_lambda_arn = os.environ.get("PDF_LAMBDA_ARN", "")
-                if not pdf_lambda_arn:
-                    # FAIL LOUDLY - no fallback email
-                    error_details = {
-                        "error": "PDF_LAMBDA_ARN not configured",
-                        "error_type": "ConfigurationError",
-                        "conversation_id": conversation_id,
-                        "client_email": email_meta["recipient"],
-                    }
-                    logger.error(f"PDF_GENERATION_FAILED: {json.dumps(error_details)}")
-
-                    return {
-                        "statusCode": 500,
-                        "body": json.dumps(
-                            {
-                                "error": "PDF generation service not configured",
-                                "details": error_details,
-                                "message": "Please configure PDF_LAMBDA_ARN environment variable",
-                            }
-                        ),
-                    }
-                else:
-                    # Initialize PDF generator
-                    pdf_generator = ProposalPDFGenerator(pdf_lambda_arn)
-
-                    # Generate PDF and store in S3
-                    pdf_bytes, pdf_error, storage_info = (
-                        pdf_generator.generate_and_store_proposal_pdf(conversation)
+            if pregen_version:
+                try:
+                    from src.storage import S3ProposalStore  # type: ignore
+                    s3_store = S3ProposalStore(
+                        bucket_name=os.environ.get("DOCUMENT_BUCKET")
+                        or os.environ.get("ATTACHMENTS_BUCKET", "solopilot-attachments")
+                    )
+                    pregen_pdf_bytes = s3_store.get_proposal_pdf(conversation_id, int(pregen_version))
+                    if pregen_pdf_bytes:
+                        storage_info = {"version": int(pregen_version)}
+                        logger.info(
+                            f"Using pre-generated proposal v{pregen_version} for conversation {conversation_id}"
+                        )
+                except Exception as fetch_e:
+                    logger.warning(
+                        f"Failed to fetch pre-generated proposal v{pregen_version}: {str(fetch_e)}"
                     )
 
-                    if pdf_bytes:
-                        # Extract client name and project title from requirements
-                        requirements = conversation.get("requirements", {})
-                        client_name = requirements.get("client_name", "Client")
-                        # Use title from requirements, fallback to generic
-                        project_title = requirements.get("title", "Your Project")
+            if pregen_pdf_bytes is None:
+                # Fall back to generating now
+                try:
+                    from pdf_generator import ProposalPDFGenerator
 
-                        # Use the actual LLM-generated email body from metadata
-                        # This ensures what the user sees in frontend is what gets sent
-                        email_body_to_send = email_meta.get("body", "")
-
-                        # Fallback to formatted template only if no body exists (shouldn't happen)
-                        if not email_body_to_send:
-                            logger.warning("No email body in metadata, using template fallback")
-                            email_body_to_send = format_proposal_email_body(
-                                client_name=client_name,
-                                project_title=project_title,
-                                conversation_id=conversation_id,
-                            )
-
-                        # Send email with PDF attachment
-                        success, ses_message_id, error_msg = send_proposal_email(
-                            to_email=email_meta["recipient"],
-                            subject=email_meta["subject"],
-                            body=email_body_to_send,
-                            conversation_id=conversation_id,
-                            pdf_content=pdf_bytes,
-                            pdf_filename=f"{client_name.replace(' ', '_')}_proposal.pdf",
-                            in_reply_to=email_meta.get("in_reply_to"),
-                            references=email_meta.get("references", []),
-                        )
-                    else:
-                        # PDF generation failed - FAIL LOUDLY
+                    pdf_lambda_arn = os.environ.get("PDF_LAMBDA_ARN", "")
+                    if not pdf_lambda_arn:
+                        error_details = {
+                            "error": "PDF_LAMBDA_ARN not configured",
+                            "error_type": "ConfigurationError",
+                            "conversation_id": conversation_id,
+                            "client_email": email_meta["recipient"],
+                        }
+                        logger.error(f"PDF_GENERATION_FAILED: {json.dumps(error_details)}")
+                        return {
+                            "statusCode": 500,
+                            "body": json.dumps(
+                                {
+                                    "error": "PDF generation service not configured",
+                                    "details": error_details,
+                                    "message": "Please configure PDF_LAMBDA_ARN environment variable",
+                                }
+                            ),
+                        }
+                    pdf_generator = ProposalPDFGenerator(pdf_lambda_arn)
+                    pregen_pdf_bytes, pdf_error, storage_info = (
+                        pdf_generator.generate_and_store_proposal_pdf(conversation)
+                    )
+                    if not pregen_pdf_bytes:
                         error_details = {
                             "error": "PDF generation failed",
                             "error_type": "PdfGenerationError",
@@ -494,9 +481,6 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
                             "pdf_error": pdf_error,
                         }
                         logger.error(f"PDF_GENERATION_FAILED: {json.dumps(error_details)}")
-
-                        # DO NOT update conversation state
-                        # DO NOT send any emails
                         return {
                             "statusCode": 500,
                             "body": json.dumps(
@@ -507,29 +491,52 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
                                 }
                             ),
                         }
-            except Exception as pdf_e:
-                # Any exception during PDF generation - FAIL LOUDLY
-                error_details = {
-                    "error": "PDF generation exception",
-                    "error_type": "PdfGenerationException",
-                    "conversation_id": conversation_id,
-                    "client_email": email_meta["recipient"],
-                    "exception": str(pdf_e),
-                }
-                logger.error(f"PDF_GENERATION_FAILED: {json.dumps(error_details)}", exc_info=True)
+                except Exception as pdf_e:
+                    error_details = {
+                        "error": "PDF generation exception",
+                        "error_type": "PdfGenerationException",
+                        "conversation_id": conversation_id,
+                        "client_email": email_meta["recipient"],
+                        "exception": str(pdf_e),
+                    }
+                    logger.error(
+                        f"PDF_GENERATION_FAILED: {json.dumps(error_details)}", exc_info=True
+                    )
+                    return {
+                        "statusCode": 500,
+                        "body": json.dumps(
+                            {
+                                "error": "PDF generation service error",
+                                "details": error_details,
+                                "message": "An error occurred during PDF generation. Please check logs and retry.",
+                            }
+                        ),
+                    }
 
-                # DO NOT update conversation state
-                # DO NOT send any emails
-                return {
-                    "statusCode": 500,
-                    "body": json.dumps(
-                        {
-                            "error": "PDF generation service error",
-                            "details": error_details,
-                            "message": "An error occurred during PDF generation. Please check logs and retry.",
-                        }
-                    ),
-                }
+            # Prepare email body
+            requirements = conversation.get("requirements", {})
+            client_name = requirements.get("client_name", "Client")
+            project_title = requirements.get("title", "Your Project")
+            email_body_to_send = email_meta.get("body", "")
+            if not email_body_to_send:
+                logger.warning("No email body in metadata, using template fallback")
+                email_body_to_send = format_proposal_email_body(
+                    client_name=client_name,
+                    project_title=project_title,
+                    conversation_id=conversation_id,
+                )
+
+            # Send email with PDF attachment
+            success, ses_message_id, error_msg = send_proposal_email(
+                to_email=email_meta["recipient"],
+                subject=email_meta["subject"],
+                body=email_body_to_send,
+                conversation_id=conversation_id,
+                pdf_content=pregen_pdf_bytes,
+                pdf_filename=f"{client_name.replace(' ', '_')}_proposal.pdf",
+                in_reply_to=email_meta.get("in_reply_to"),
+                references=email_meta.get("references", []),
+            )
         else:
             # Send regular text email
             success, ses_message_id, error_msg = send_reply_email(
@@ -556,12 +563,24 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         pending_replies[reply_index]["ses_message_id"] = ses_message_id
 
         # Store S3 storage info if available
-        if storage_info:
+        if storage_info and storage_info.get("version") is not None:
             pending_replies[reply_index]["proposal_version"] = storage_info.get("version")
-            pending_replies[reply_index]["s3_key"] = storage_info.get("s3_key")
+            if storage_info.get("s3_key"):
+                pending_replies[reply_index]["s3_key"] = storage_info.get("s3_key")
             logger.info(
                 f"Stored proposal version {storage_info.get('version')} info in pending reply"
             )
+        else:
+            # If we reused a pre-generated version, persist that version number
+            pregen_version_to_keep = (
+                (reply_data or {}).get("proposal_version")
+                or (reply_data or {}).get("metadata", {}).get("proposal_version")
+            )
+            if pregen_version_to_keep:
+                pending_replies[reply_index]["proposal_version"] = int(pregen_version_to_keep)
+                logger.info(
+                    f"Kept pre-generated proposal version {pregen_version_to_keep} on pending reply"
+                )
 
         # Store message ID mapping for proper threading
         # SES uses the MessageId as the actual Message-ID in format: <MessageId@us-east-2.amazonses.com>
