@@ -42,7 +42,8 @@ s3 = boto3.client("s3")
 
 # Configuration
 TABLE_NAME = os.environ.get("CONVERSATIONS_TABLE", "conversations")
-S3_BUCKET = os.environ.get("ATTACHMENTS_BUCKET", "solopilot-attachments")
+# Unified bucket: prefer DOCUMENT_BUCKET; keep legacy fallback for now
+S3_BUCKET = os.environ.get("DOCUMENT_BUCKET") or os.environ.get("ATTACHMENTS_BUCKET", "solopilot-attachments")
 CORS_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
 
 logger = logging.getLogger()
@@ -1181,7 +1182,7 @@ def get_proposal_url(conversation_id: str, version: str) -> Dict[str, Any]:
             from storage import S3ProposalStore
 
             s3_store = S3ProposalStore(
-                bucket_name=os.environ.get("ATTACHMENTS_BUCKET", "solopilot-attachments")
+                bucket_name=os.environ.get("DOCUMENT_BUCKET") or os.environ.get("ATTACHMENTS_BUCKET", "solopilot-attachments")
             )
 
             # Generate presigned URL

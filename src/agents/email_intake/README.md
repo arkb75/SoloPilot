@@ -46,7 +46,7 @@ SENDER_EMAIL=abdul@solopilot.com
 SENDER_NAME=Abdul
 CALENDLY_LINK=https://calendly.com/your-link
 PDF_LAMBDA_ARN=arn:aws:lambda:region:account:function:doc-gen
-ATTACHMENTS_BUCKET=your-attachments-bucket
+DOCUMENT_BUCKET=solopilot-dev-documents
 
 # Frontend Environment
 VITE_API_URL=https://your-api-gateway-url.execute-api.region.amazonaws.com/prod

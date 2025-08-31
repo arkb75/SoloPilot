@@ -42,7 +42,8 @@ class ProposalPDFGenerator:
             s3_bucket: S3 bucket name for storing proposals (optional)
         """
         self.pdf_lambda_arn = pdf_lambda_arn
-        self.s3_bucket = s3_bucket or os.environ.get("ATTACHMENTS_BUCKET")
+        # Prefer unified DOCUMENT_BUCKET; fallback for legacy env var
+        self.s3_bucket = s3_bucket or os.environ.get("DOCUMENT_BUCKET") or os.environ.get("ATTACHMENTS_BUCKET")
 
         # Initialize S3 store if available and bucket is configured
         self.s3_store = None
