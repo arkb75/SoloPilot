@@ -331,13 +331,27 @@ exports.handler = async (event, context) => {
       isError = result.isError;
     }
 
-    // Generate S3 key
+    // Determine S3 key: allow caller to provide explicit target key
     const docType = body.docType || (body.template ? 'template' : 'document');
-    const s3Key = s3Helper.generateDocumentKey(
-      body.conversationId,
-      docType,
-      sanitizedFilename
-    );
+    let s3Key;
+    if (body.s3Key && typeof body.s3Key === 'string' && body.s3Key.trim()) {
+      // Basic safety checks: strip leading slashes and forbid path traversal
+      const provided = body.s3Key.replace(/^\/+/, '');
+      if (provided.includes('..')) {
+        return {
+          statusCode: 400,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ success: false, error: 'Invalid s3Key' })
+        };
+      }
+      s3Key = provided;
+    } else {
+      s3Key = s3Helper.generateDocumentKey(
+        body.conversationId,
+        docType,
+        sanitizedFilename
+      );
+    }
 
     logger.info('Generated PDF', { s3Key, size: pdfBuffer.length, isError });
 

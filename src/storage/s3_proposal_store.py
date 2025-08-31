@@ -45,7 +45,18 @@ class S3ProposalStore:
             SHA256 hash of requirements
         """
         # Sort keys for consistent hashing
-        sorted_req = json.dumps(requirements, sort_keys=True)
+        def _default(o):
+            # Convert Decimal to string to get stable hash across environments
+            try:
+                from decimal import Decimal  # local import to avoid global dependency
+                if isinstance(o, Decimal):
+                    # Preserve numeric intent while avoiding float rounding
+                    return str(o)
+            except Exception:
+                pass
+            return str(o)
+
+        sorted_req = json.dumps(requirements, sort_keys=True, default=_default)
         return hashlib.sha256(sorted_req.encode()).hexdigest()[:16]
 
     def store_proposal(

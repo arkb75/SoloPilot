@@ -604,15 +604,78 @@ class ProposalPDFGenerator:
                 logger.warning("No conversation_id found, skipping S3 storage")
                 return pdf_bytes, error, None
 
-            # Store in S3
-            proposal_version, s3_key = self.s3_store.store_proposal(
-                conversation_id=conversation_id,
-                pdf_bytes=pdf_bytes,
-                proposal_data=proposal_data,
-                requirements=requirements,
-                revised_requirements=None,  # No longer using revised_requirements
-                generated_by=conversation.get("phase", "proposal_draft"),
+            # Allocate version and compute target key to avoid double-writes
+            proposal_version_number = self.s3_store.version_index.allocate_next_version(conversation_id)
+            s3_key_prefix = f"proposals/{conversation_id}/v{proposal_version_number:04d}"
+            target_pdf_key = f"{s3_key_prefix}/proposal.pdf"
+
+            # Ask doc-service to write directly to the target key using the same payload
+            payload = {
+                "template": "glassmorphic-proposal",
+                "data": proposal_data,
+                "conversationId": conversation_id,
+                "docType": "proposal",
+                "filename": "project-proposal.pdf",
+                "s3Key": target_pdf_key,
+            }
+
+            response = lambda_client.invoke(
+                FunctionName=self.pdf_lambda_arn,
+                InvocationType="RequestResponse",
+                Payload=json.dumps(payload),
             )
+
+            raw_response = response["Payload"].read()
+            try:
+                response_payload = json.loads(raw_response)
+            except json.JSONDecodeError:
+                logger.error(f"Doc-service returned non-JSON when writing to {target_pdf_key}: {raw_response[:200]}")
+                return pdf_bytes, "Doc-service response parse error", None
+
+            # Validate result
+            if response_payload.get("statusCode") != 200:
+                logger.error(f"Doc-service write failed for {target_pdf_key}: {response_payload}")
+                return pdf_bytes, "Doc-service write failed", None
+
+            # Store metadata.json in S3 (email-intake owns metadata and index)
+            requirements_hash = self.s3_store._calculate_requirements_hash(requirements)
+            metadata = {
+                "version": proposal_version_number,
+                "created_at": datetime.utcnow().isoformat(),
+                "requirements_hash": requirements_hash,
+                "budget": proposal_data.get("pricing", [{}])[0].get("amount", "").replace("$", "").replace(",", "") or None,
+                "client_name": proposal_data.get("clientName", ""),
+                "project_type": proposal_data.get("projectTitle", ""),
+                "file_size": len(pdf_bytes),
+                "generated_by": conversation.get("phase", "proposal_draft"),
+            }
+
+            try:
+                self.s3_store.s3_client.put_object(
+                    Bucket=self.s3_bucket,
+                    Key=f"{s3_key_prefix}/metadata.json",
+                    Body=json.dumps(metadata, default=str),
+                    ContentType="application/json",
+                )
+            except Exception as meta_err:
+                logger.warning(f"Failed to write metadata.json: {meta_err}")
+
+            # Record in DynamoDB
+            proposal_version = self.s3_store.version_index.record_version(
+                conversation_id=conversation_id,
+                version=proposal_version_number,
+                s3_key=s3_key_prefix,
+                file_size=len(pdf_bytes),
+                requirements_hash=requirements_hash,
+                metadata={
+                    "budget": metadata["budget"],
+                    "client_name": metadata["client_name"],
+                    "project_type": metadata["project_type"],
+                    "has_revisions": False,
+                },
+            )
+
+            s3_key = s3_key_prefix
 
             storage_info = {
                 "version": proposal_version.version,
