@@ -1,301 +1,197 @@
-# 🚀 SoloPilot – End-to-End Freelance Automation Platform
+# SoloPilot — Client Ops Studio for Freelancers
 
-[![CI Status](https://github.com/your-username/SoloPilot/workflows/CI/badge.svg)](https://github.com/your-username/SoloPilot/actions)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=solopilot_ai_automation&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=solopilot_ai_automation)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=solopilot_ai_automation&metric=coverage)](https://sonarcloud.io/summary/new_code?id=solopilot_ai_automation)
-[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=solopilot_ai_automation&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=solopilot_ai_automation)
+SoloPilot is a human-in-the-loop platform that helps solo freelancers move from inbound email to approved proposal to code and deployment with clear guardrails, auditability, and opt-in automation.
 
-**SoloPilot** automates the entire freelance development process from client email to deployed website. Our AI agents handle requirements gathering, development, review, and deployment—delivering professional websites in days, not weeks.
+## Vision
 
-## 🎯 Vision
+Unify the operational flow for one-person teams:
+	-	Intake: triage email threads, capture scope, and propose next steps
+	-	Proposals: generate and revise PDF proposals with markup and approvals
+	-	Build: create issues, plan work, and let a repo-aware agent scaffold code behind CI gates
+	-	Deliver: ship to hosting after human review, collect artifacts for the portfolio
 
-Transform freelance development by automating everything except client relationships:
-- **Email arrives** → Requirements extracted via conversational AI
-- **AI builds** → Code reviewed automatically with quality gates
-- **Deploy happens** → Client gets live site on custom domain
-- **Portfolio grows** → Case studies attract more clients
+SoloPilot assists; you stay in control at every decision point.
 
-### 🛡️ Production-Ready Features
-- **AI Code Review**: Every PR reviewed by AI + SonarCloud
-- **Token Optimization**: Serena LSP reduces costs by 50% (822 avg tokens)
-- **Quality Gates**: Automated testing on Ubuntu/macOS
-- **Cost Control**: <$50/month infrastructure target
+## Key Capabilities
+	-	Email intake console: conversational manager that groups threads, extracts requirements, and prepares draft responses
+	-	Proposal PDFs with versioning: render proposals via React-PDF; annotate directly; each revision is stored as a versioned S3 object for audit and rollback
+	-	Copy evaluator + revisor loop: summarize and score email bodies against a rubric, then generate a higher-scoring alternative for side-by-side selection and edits
+	-	Repo-aware coding and deployment agent: reads the codebase, proposes diffs, opens PRs, and can trigger deploys after checks pass and you approve
+	-	Provider-agnostic LLM layer: swap models behind a unified interface with centralized logging
+	-	Quality gates: CI runs ruff, mypy, bandit, ESLint, and SonarCloud; merges and deploys remain human-approved
+	-	Ops on AWS: S3 (versioned proposals and artifacts), Lambda, SQS, CloudWatch; telemetry and logs for traceability
 
-## 🌟 Current Status (June 2025)
+## Current Status (September 2025)
 
-### ✅ Completed
-- **Sprint 1**: AI provider abstraction, cost telemetry, context engines
-- **Serena Integration**: Symbol-aware context with 2x token efficiency
-- **AI Pair Reviewer**: Automated code review with CI integration
-- **Email Intake Agent**: AWS SES-based requirement extraction
+### Completed
+- Email intake console and conversational manager
+- Proposal PDF rendering, annotation, and S3 versioned storage
+- Evaluator-and-revisor loop for email copy
+- Provider abstraction and centralized LLM logging
+- CI baseline with static analysis and SonarCloud
 
-### 🚧 In Progress
-- **First Client Demo**: End-to-end delivery of real freelance project
-- **Deployment Pipeline**: GitHub → Vercel automation
+### In Progress
+- Planning: issue creation and milestone flows
+- Dev: repo-aware coding agent (PR creation, deploy hooks)
 
-### 📅 Coming Next
-- **Client Communication**: Automated progress updates
-- **Portfolio Generation**: Case studies from completed projects
-- **Billing Integration**: Stripe for payments
+### Next (Planned)
+- Deploy: approved pipeline to Vercel/Netlify
+- Coordination: Notion MCP orchestration for tasks and milestones
+- Lightweight client portal for approvals and file access
+- Multi-channel intake, billing, and portfolio artifact generation
 
-## 🏗️ Architecture
+## Architecture
 
 ```mermaid
 flowchart TD
-    subgraph "Client Acquisition"
-        A[Apollo.io Outreach] --> B[Email Reply]
-        B --> C[AWS SES]
-    end
+  subgraph "Intake"
+    A[Inbound Email] -->|SES| B[Intake Lambda]
+    B --> C[S3 (versioned) : raw messages + attachments]
+    B --> D[DynamoDB : conversation state]
+    D --> E[Conversational Manager]
+  end
 
-    subgraph "Email Processing"
-        C --> D[S3 Storage]
-        D --> E[Lambda: Email Intake Agent]
-        E --> F[DynamoDB: Conversation State]
-        E --> G[Bedrock: Extract Requirements]
-        G --> H[SES: Send Follow-ups]
-        E --> I[SQS: Pipeline Handoff]
-    end
+  subgraph "Proposals"
+    E --> F[React-PDF Builder]
+    F --> G[S3 (versioned) : proposals]
+    G --> H[Human Annotation UI]
+    H --> I[Revision Loop]
+    I -->|Approve| J[Create Plan/Issues]
+  end
 
-    subgraph "Development Pipeline"
-        I --> J[Analyser Agent]
-        J --> K[Planning Agent]
-        K --> L[Dev Agent + Serena LSP]
-        L --> M[AI Reviewer]
-        M --> |Pass| N[Auto Deploy]
-        M --> |Fail| O[Block & Fix]
-    end
+  subgraph "Build"
+    J --> K[Notion MCP : tasks/milestones]
+    J --> L[SQS : work queue]
+    L --> M[Repo-Aware Coding Agent]
+    M --> N[PR to Repo]
+    N --> O[CI: ruff/mypy/bandit/ESLint + SonarCloud]
+  end
 
-    subgraph "Delivery"
-        N --> P[Vercel/Netlify]
-        P --> Q[Custom Domain]
-        Q --> R[Client Notification]
-        R --> S[Portfolio Case Study]
-    end
+  subgraph "Delivery"
+    O -->|Pass + Human Approve| P[Deploy : Vercel/Netlify]
+    P --> Q[Notify Client]
+    Q --> R[Archive Artifacts (S3 versioned)]
+  end
 ```
 
-## 📂 Project Structure
+## Project Structure
 
-```
+```text
 SoloPilot/
-├── src/                          # All source code
-│   ├── agents/                   # Agent implementations
-│   │   ├── analyser/            # Requirements analysis
-│   │   ├── dev/                 # Code generation with context engines
-│   │   ├── email_intake/        # Email processing & client communication
-│   │   ├── marketing/           # Portfolio & case study generation
-│   │   ├── planning/            # Project planning & milestones
-│   │   └── review/              # AI code review & quality gates
-│   ├── providers/               # AI provider implementations
-│   │   ├── base.py             # Abstract base provider
-│   │   ├── bedrock.py          # AWS Bedrock (Claude)
-│   │   ├── openai.py           # OpenAI GPT-4
-│   │   └── fake.py             # Testing provider
-│   ├── common/                  # Shared utilities
-│   │   └── bedrock_client.py   # Centralized Bedrock client
-│   └── utils/                   # General utilities
-│       ├── github_review.py     # GitHub PR integration
-│       ├── linter_integration.py # Code quality tools
-│       └── sonarcloud_integration.py # SonarCloud analysis
-├── frontend/                    # Frontend applications
-│   └── email-intake/           # Email intake dashboard (React)
-├── infrastructure/             # Deployment & IaC
-│   ├── terraform/             # Infrastructure as Code
-│   └── lambda/                # Lambda functions
-├── tests/                     # All test files
-├── examples/                  # Example inputs & demos
-├── scripts/                   # Development & CI scripts
-├── docs/                      # Documentation
-└── pyproject.toml            # Poetry dependency management
+├── src/
+│   ├── agents/
+│   │   ├── email_intake/          # Email console + conversational manager
+│   │   ├── proposals/             # React-PDF rendering + annotation handling
+│   │   ├── dev/                   # Repo-aware coding & deployment agent
+│   │   ├── planning/              # Issue planning and milestones
+│   │   └── review/                # Static analysis and checks
+│   ├── providers/                 # Model/provider abstraction
+│   ├── common/                    # Shared utilities
+│   └── utils/                     # CI, SCM, and telemetry helpers
+├── frontend/                      # Intake dashboard and proposal UI
+├── infrastructure/                # Terraform + Lambda
+├── tests/                         # Unit and integration tests
+└── docs/
 ```
 
-## 📋 Module Overview
+## Module Overview
 
-| Module | Status | Purpose |
-|--------|--------|---------|
-| **email_intake** | ✅ Active | Process client emails, extract requirements |
-| **analyser** | ✅ Active | Parse requirements into structured specs |
-| **planning** | ✅ Active | Convert specs into development roadmaps |
-| **dev** | ✅ Active | Generate code with Serena context engine |
-| **review** | ✅ Active | AI code review + static analysis |
-| **deploy** | 🚧 Building | Automated deployment to hosting platforms |
-| **marketing** | ✅ Active | Generate announcements and case studies |
-| **coordination** | 🔄 Planned | Orchestrate multi-agent workflows |
+| Module       | Status   | Purpose                                           |
+|--------------|----------|---------------------------------------------------|
+| email_intake | ✅ Active | Triage threads and capture requirements           |
+| proposals    | ✅ Active | Render, annotate, and version proposal PDFs       |
+| planning     | 🚧 WIP   | Produce tasks, milestones, and assignments        |
+| dev          | 🚧 WIP   | Repo-aware code generation, PRs, deploy hooks     |
+| review       | 🚧 WIP   | CI quality gates and SonarCloud checks            |
+| deploy       | 🗓️ Planned | Approved deploys to hosting platforms           |
+| coordination | 🗓️ Planned | Notion MCP orchestration                        |
 
-## 🧩 Tech Stack
+Tech Stack
+	-	Core: Python, TypeScript/Next.js, AWS, LangChain
+	-	Quality: GitHub Actions, SonarCloud, ruff, mypy, bandit, ESLint
+	-	Storage: S3 with object versioning for proposals and artifacts
 
-### Core Infrastructure
-- **Cloud**: AWS (SES, Lambda, DynamoDB, SQS, Bedrock)
-- **LLM**: Claude 4 Sonnet via Bedrock (primary), GPT-4 (fallback)
-- **Context**: Serena LSP for symbol-aware code understanding
-- **Deployment**: Vercel/Netlify with GitHub Actions
-
-### Development Stack
-- **Backend**: Python 3.9+, FastAPI, Poetry
-- **Frontend**: Next.js 14, TypeScript, Tailwind CSS
-- **Database**: Supabase (PostgreSQL + Auth)
-- **Payments**: Stripe (planned)
-
-### Quality & Monitoring
-- **CI/CD**: GitHub Actions with matrix testing (Python 3.9-3.12)
-- **Code Quality**: Pre-commit hooks, Black, isort, Ruff, MyPy, Bandit
-- **Static Analysis**: SonarCloud integration
-- **Monitoring**: CloudWatch, custom telemetry
-- **Cost Tracking**: Per-call LLM logging to `logs/llm_calls.log`
-
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
+
 ```bash
-# AWS CLI configured with credentials
-aws configure
-
-# Python 3.9+ and Node.js 18+
-python --version  # 3.9 or higher
-node --version    # 18 or higher
-
-# Install Poetry (dependency management)
-curl -sSL https://install.python-poetry.org | python3 -
+aws configure                # AWS credentials
+python --version             # 3.9+
+node --version               # 18+
 ```
 
 ### Local Development
+
 ```bash
-# Clone and setup
-git clone <repo-url>
-cd SoloPilot
-
-# Install dependencies with Poetry
+git clone <repo-url> && cd SoloPilot
 poetry install
-
-# Install pre-commit hooks
 poetry run pre-commit install
-
-# Run the full pipeline
-poetry run make plan-dev
-
-# With Serena context engine
-CONTEXT_ENGINE=serena poetry run make dev
-
-# Run tests
-poetry run pytest
-
-# Run linting and formatting
+poetry run pytest            # tests
+poetry run make plan-dev     # end-to-end local plan
 poetry run pre-commit run --all-files
 ```
 
-### Email Intake Setup
-```bash
-# 1. Configure AWS SES domain
-# 2. Create S3 bucket for emails
-# 3. Deploy Lambda function
-cd agents/email_intake
-zip -r email-intake.zip .
-# Upload to Lambda
+## Email Intake Setup
 
-# 4. Set environment variables
-REQUIREMENT_QUEUE_URL=<your-sqs-queue>
-SENDER_EMAIL=<your-verified-email>
-DYNAMO_TABLE=conversations
+```bash
+# 1) Verify domain in SES
+# 2) Create S3 bucket with versioning enabled
+# 3) Deploy the intake Lambda
+cd src/agents/email_intake && zip -r email-intake.zip .
+# Upload to Lambda and set:
+export REQUIREMENT_QUEUE_URL=<SQS URL>
+export SENDER_EMAIL=<verified SES sender>
+export DYNAMO_TABLE=conversations
 ```
 
-## ⚙️ Configuration
+## Configuration
 
-### Environment Variables
+### Providers
+	-	AI_PROVIDER = bedrock | openai | fake
+	-	NO_NETWORK = 1 for offline tests
 
-**AI Provider Settings:**
-- `AI_PROVIDER`: bedrock (default) | fake | openai
-- `BEDROCK_IP_ARN`: Claude 4 Sonnet inference profile
-- `NO_NETWORK`: Force offline mode for testing
+### Context & Telemetry
+	-	CONTEXT_ENGINE = serena | legacy
+	-	SERENA_TELEMETRY_ENABLED = 1 to record usage
 
-**Context Engine Settings:**
-- `CONTEXT_ENGINE`: serena (recommended) | legacy | lc_chroma
-- `SERENA_BALANCED_TARGET`: Token budget (default: 1500)
-- `SERENA_TELEMETRY_ENABLED`: Production monitoring
+### SCM/CI
+	-	GITHUB_TOKEN, SONAR_TOKEN
 
-**Deployment Settings:**
-- `VERCEL_TOKEN`: For automated deployments
-- `GITHUB_TOKEN`: For PR reviews
-- `SONAR_TOKEN`: For code quality analysis
+### Deploy
+	-	VERCEL_TOKEN or platform specific token
 
-## 📋 Development Workflow
+## Development Workflow
 
-### Standard Commands
 ```bash
-# Activate environment
-source .venv/bin/activate
-
-# Run tests
-make test
-
-# Lint and format
-make lint
-
-# Full pipeline test
-make plan-dev
-
-# Deploy to production
-make deploy
+make test        # run tests
+make lint        # lint and static checks
+make plan-dev    # intake → proposal → plan
+make review      # run AI/static review on PRs
+make deploy      # deploy after human approval
 ```
 
-### AI Review Workflow
-```bash
-# Review current code
-make review
+Quality Assurance
+	-	PRs must pass ruff, mypy, bandit, ESLint and SonarCloud
+	-	Human review gates merges and deploys
+	-	Proposal revisions and artifacts are traceable via S3 object versions
 
-# If review passes, promote to staging
-make promote
+Metrics & Monitoring
+	-	Centralized LLM call logs and CI artifacts
+	-	CloudWatch alarms for Lambdas and queue backlogs
+	-	Proposal and email copy revisions tracked via S3 versions and audit logs
 
-# Generate marketing announcement
-make announce
-```
+## Roadmap
 
-## 🔍 Quality Assurance
+### Phase 1: MVP
+	-	✅ Intake console, proposal PDFs with annotations and S3 versioning
+	-	✅ Evaluator-revisor loop for email copy
+	-	✅ Repo-aware coding agent with PRs
 
-### Automated Checks
-1. **AI Code Review**: Every PR reviewed for bugs, security, performance
-2. **Static Analysis**: Ruff, MyPy, Black formatting
-3. **SonarCloud**: Security vulnerabilities and code smells
-4. **Token Validation**: CI enforces <2000 tokens per call
+### Phase 2: Delivery
+	-	🚧 Approved deploy pipeline to Vercel/Netlify
+	-	🚧 Notion MCP task coordination
+	-	🚧 Client portal for approvals
 
-### Manual Verification
-- Review `logs/llm_calls.log` for cost monitoring
-- Check `serena_telemetry.jsonl` for performance metrics
-- Verify deployment smoke tests pass
-
-## 📈 Metrics & Monitoring
-
-### Key Performance Indicators
-- **Token Usage**: 822 avg per context (target: <1500)
-- **Response Time**: <3s for email processing
-- **Pipeline Duration**: <10 mins from email to deployed site
-- **Cost per Project**: <$5 in LLM calls
-
-### Telemetry
-When `SERENA_TELEMETRY_ENABLED=1`:
-- Token usage per request
-- Symbol lookup performance
-- Budget violations
-- Response times
-
-## 🎯 Roadmap
-
-### Phase 1: MVP (Current)
-- ✅ Core agent pipeline
-- ✅ Email intake system
-- 🚧 Deployment automation
-- 🚧 First client demo
-
-### Phase 2: Scale (July 2025)
-- Multi-channel intake (SMS, chat)
-- Payment automation
-- Client portal
-- Advanced project types
-
-### Phase 3: Growth (August 2025)
-- Team collaboration features
-- White-label options
-- API for integrations
-- Global deployment regions
-
-## 📝 License
-
-Proprietary - SoloPilot AI Automation
+### Phase 3: Growth
+	-	Multi-channel intake, billing, and portfolio automation
