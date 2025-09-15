@@ -188,6 +188,27 @@ export const api = {
     }>(`/conversations/${conversationId}/proposals/${version}`);
     return response.data;
   },
+
+  // Vision annotate endpoint (page screenshot based)
+  annotateProposalVision: async (
+    conversationId: string,
+    baseVersion: number,
+    payload: {
+      pages: Array<{ pageIndex: number; imageBase64: string }>;
+      prompt?: string;
+    }
+  ) => {
+    const response = await client.post<{
+      success: boolean;
+      conversation_id: string;
+      base_version: number;
+      new_version: number;
+      applied_fields?: string[];
+      vision_used: boolean;
+      fallback_llm_used: boolean;
+    }>(`/conversations/${conversationId}/proposals/${baseVersion}/annotate-vision`, payload);
+    return response.data;
+  },
 };
 
 export default api;

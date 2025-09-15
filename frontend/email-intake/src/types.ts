@@ -108,3 +108,22 @@ export interface Attachment {
   direction: 'inbound' | 'outbound';
   url?: string;
 }
+
+// Annotation types for PDF editor
+export type PdfAnnotationType = 'highlight' | 'note';
+
+export interface PdfAnnotation {
+  pageIndex: number;
+  x: number; // normalized 0..1
+  y: number; // normalized 0..1
+  width: number; // normalized 0..1
+  height: number; // normalized 0..1
+  type: PdfAnnotationType;
+  comment?: string;
+  color?: string;
+  opacity?: number;
+  selectedText?: string;
+  surroundingText?: string;
+  zone?: 'title' | 'subtitle' | 'body';
+  imageData?: string; // base64 crop used for vision if needed
+}

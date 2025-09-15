@@ -17,17 +17,12 @@ from typing import Any, Dict, List, Optional, Tuple
 import boto3
 from botocore.exceptions import ClientError
 
-# Import modules using absolute imports for Lambda
-from conversation_state import ConversationStateManager
-from conversational_responder import ConversationalResponder
-from email_parser import EmailParser
-from requirement_extractor import RequirementExtractor
-try:
-    # For Lambda runtime
-    from utils import EmailThreadingUtils
-except ImportError:
-    # For local development/testing
-    from .utils import EmailThreadingUtils
+# Import modules using package imports for Lambda
+from src.agents.email_intake.conversation_state import ConversationStateManager
+from src.agents.email_intake.conversational_responder import ConversationalResponder
+from src.agents.email_intake.email_parser import EmailParser
+from src.agents.email_intake.requirement_extractor import RequirementExtractor
+from src.agents.email_intake.utils import EmailThreadingUtils
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

@@ -537,7 +537,7 @@ class ProposalPDFGenerator:
         logger.warning("DEPRECATED: generate_proposal_pdf called. Consider using generate_proposal_pdf_from_data.")
         
         # Import mapper here to avoid circular imports
-        from proposal_mapper import ProposalDataMapper
+        from src.agents.email_intake.proposal_mapper import ProposalDataMapper
         
         # Extract requirements
         requirements = conversation.get("requirements", {})
@@ -571,7 +571,7 @@ class ProposalPDFGenerator:
             storage_info contains version and s3_key if stored
         """
         # Import mapper here to avoid circular imports
-        from proposal_mapper import ProposalDataMapper
+        from src.agents.email_intake.proposal_mapper import ProposalDataMapper
         
         # Extract requirements
         requirements = conversation.get("requirements", {})

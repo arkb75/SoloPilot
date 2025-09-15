@@ -16,38 +16,84 @@ EMAIL_INTAKE_DIR="$REPO_ROOT/src/agents/email_intake"
 echo "📦 Creating deployment package..."
 rm -rf /tmp/api_lambda_deploy
 mkdir -p /tmp/api_lambda_deploy/api
-mkdir -p /tmp/api_lambda_deploy/src/agents/email_intake
-mkdir -p /tmp/api_lambda_deploy/src/storage
+mkdir -p /tmp/api_lambda_deploy/src
 
 # Copy the main handler file to api/ directory to match the handler path
 cp "$EMAIL_INTAKE_DIR/api/lambda_api.py" /tmp/api_lambda_deploy/api/
 cp "$EMAIL_INTAKE_DIR/api/__init__.py" /tmp/api_lambda_deploy/api/ 2>/dev/null || true
 
-# Copy all required modules to preserve src structure
-cp "$EMAIL_INTAKE_DIR/email_sender.py" /tmp/api_lambda_deploy/src/agents/email_intake/
-cp "$EMAIL_INTAKE_DIR/conversation_state.py" /tmp/api_lambda_deploy/src/agents/email_intake/
-cp "$EMAIL_INTAKE_DIR/utils.py" /tmp/api_lambda_deploy/src/agents/email_intake/
-cp "$EMAIL_INTAKE_DIR/pdf_generator.py" /tmp/api_lambda_deploy/src/agents/email_intake/
-cp "$EMAIL_INTAKE_DIR/proposal_mapper.py" /tmp/api_lambda_deploy/src/agents/email_intake/
-cp "$EMAIL_INTAKE_DIR/reviewer.py" /tmp/api_lambda_deploy/src/agents/email_intake/
-cp "$EMAIL_INTAKE_DIR/response_reviser.py" /tmp/api_lambda_deploy/src/agents/email_intake/
+# Copy entire src tree for email_intake and storage to avoid missing modules
+mkdir -p /tmp/api_lambda_deploy/src/agents
+cp -R "$REPO_ROOT/src/agents/email_intake" /tmp/api_lambda_deploy/src/agents/
+cp -R "$REPO_ROOT/src/storage" /tmp/api_lambda_deploy/src/
 
-# Copy storage module
-cp -r "$REPO_ROOT/src/storage/"*.py /tmp/api_lambda_deploy/src/storage/
+# No root-level fallbacks needed; all imports use src.* package paths
 
-# Also copy email_sender and other deps to root for backward compatibility
-# (These are needed in case lambda_api.py uses relative imports)
-cp "$EMAIL_INTAKE_DIR/email_sender.py" /tmp/api_lambda_deploy/
-cp "$EMAIL_INTAKE_DIR/conversation_state.py" /tmp/api_lambda_deploy/
-cp "$EMAIL_INTAKE_DIR/utils.py" /tmp/api_lambda_deploy/
-cp "$EMAIL_INTAKE_DIR/pdf_generator.py" /tmp/api_lambda_deploy/
-cp "$EMAIL_INTAKE_DIR/proposal_mapper.py" /tmp/api_lambda_deploy/
-cp "$EMAIL_INTAKE_DIR/reviewer.py" /tmp/api_lambda_deploy/
-cp "$EMAIL_INTAKE_DIR/response_reviser.py" /tmp/api_lambda_deploy/
+# Preflight import check to fail fast if packaging misses anything
+echo "🔎 Running import preflight..."
+python3 - <<'PY'
+import sys, types
+sys.path.insert(0, '/tmp/api_lambda_deploy')
+
+# Provide lightweight stubs for boto3/botocore to avoid local dependency
+if 'boto3' not in sys.modules:
+    boto3 = types.ModuleType('boto3')
+    def _noop(*a, **k):
+        return None
+    boto3.client = _noop
+    boto3.resource = _noop
+    sys.modules['boto3'] = boto3
+    # DynamoDB stubs used by TypeDeserializer
+    dynamodb = types.ModuleType('boto3.dynamodb')
+    sys.modules['boto3.dynamodb'] = dynamodb
+    dynamodb_types = types.ModuleType('boto3.dynamodb.types')
+    class TypeDeserializer:
+        def deserialize(self, v):
+            return v
+    dynamodb_types.TypeDeserializer = TypeDeserializer
+    sys.modules['boto3.dynamodb.types'] = dynamodb_types
+    dynamodb_conditions = types.ModuleType('boto3.dynamodb.conditions')
+    class Key:
+        def __init__(self, *a, **k):
+            pass
+        def eq(self, *a, **k):
+            return self
+        def gt(self, *a, **k):
+            return self
+        def __and__(self, other):
+            return self
+    dynamodb_conditions.Key = Key
+    sys.modules['boto3.dynamodb.conditions'] = dynamodb_conditions
+
+if 'botocore' not in sys.modules:
+    botocore = types.ModuleType('botocore')
+    sys.modules['botocore'] = botocore
+    exceptions = types.ModuleType('botocore.exceptions')
+    class ClientError(Exception):
+        pass
+    exceptions.ClientError = ClientError
+    sys.modules['botocore.exceptions'] = exceptions
+
+def ok(name):
+    print(f"   ✅ {name}")
+
+try:
+    import api.lambda_api  # noqa: F401
+    ok('api.lambda_api')
+    import src.agents.email_intake.vision_analyzer  # noqa: F401
+    ok('src.agents.email_intake.vision_analyzer')
+    import src.agents.email_intake.patch_builder  # noqa: F401
+    ok('src.agents.email_intake.patch_builder')
+    import src.storage.s3_proposal_store  # noqa: F401
+    ok('src.storage.s3_proposal_store')
+except Exception as e:
+    print("Preflight import failed:", e)
+    sys.exit(1)
+PY
 
 # Create zip file
 cd /tmp/api_lambda_deploy
-zip -r function.zip .
+zip -r function.zip . >/dev/null
 
 # Update Lambda function code
 echo "📤 Updating Lambda function code..."

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
-from metadata_extractor import MetadataExtractor
+from src.agents.email_intake.metadata_extractor import MetadataExtractor
 
 try:
     from src.providers import get_provider

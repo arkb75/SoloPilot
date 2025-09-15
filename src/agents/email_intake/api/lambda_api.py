@@ -10,7 +10,7 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import boto3
 from boto3.dynamodb.types import TypeDeserializer
@@ -26,10 +26,10 @@ class DecimalEncoder(json.JSONEncoder):
                 return float(obj)
         return super(DecimalEncoder, self).default(obj)
 
-from conversation_state import (  # Needed to append sent email to history
+from src.agents.email_intake.conversation_state import (  # Needed to append sent email to history
     ConversationStateManager,
 )
-from email_sender import (
+from src.agents.email_intake.email_sender import (
     extract_email_metadata,
     format_proposal_email_body,
     send_proposal_email,
@@ -117,6 +117,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 conv_id = path_params.get("id")
                 version = path_params.get("version") or ""
                 return get_proposal_url(conv_id, version)
+            if res == "/conversations/{id}/proposals/{version}/annotate-vision" and http_method == "POST":
+                conv_id = path_params.get("id")
+                version = path_params.get("version") or ""
+                return annotate_vision(conv_id, version, body)
             return {"statusCode": 404, "body": json.dumps({"error": "Not found"})}
 
         if resource:
@@ -153,6 +157,19 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     version = parts[pi + 1] if pi + 1 < len(parts) else None
                     if conversation_id and version:
                         response = get_proposal_url(conversation_id, version)
+                    else:
+                        response = {"statusCode": 400, "body": json.dumps({"error": "Invalid path format"})}
+                else:
+                    response = {"statusCode": 404, "body": json.dumps({"error": "Not found"})}
+            elif "/proposals/" in normalized_path and http_method == "POST" and normalized_path.endswith("/annotate-vision"):
+                parts = [s for s in normalized_path.split("/") if s]
+                if "conversations" in parts and "proposals" in parts and "annotate-vision" in parts:
+                    ci = parts.index("conversations")
+                    pi = parts.index("proposals")
+                    conversation_id = parts[ci + 1] if ci + 1 < len(parts) else None
+                    version = parts[pi + 1] if pi + 1 < len(parts) else None
+                    if conversation_id and version:
+                        response = annotate_vision(conversation_id, version)
                     else:
                         response = {"statusCode": 400, "body": json.dumps({"error": "Invalid path format"})}
                 else:
@@ -1247,6 +1264,189 @@ def get_proposal_url(conversation_id: str, version: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error getting proposal URL: {str(e)}")
         return {"statusCode": 500, "body": json.dumps({"error": "Failed to get proposal URL"})}
+
+
+def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Apply edits using a vision model that analyzes annotated page screenshots.
+
+    Expects body = { pages: [{ pageIndex, imageBase64 }], prompt?: string }
+    """
+    try:
+        body = body or {}
+        pages = body.get("pages", [])
+        if not isinstance(pages, list) or not pages:
+            return {"statusCode": 400, "body": json.dumps({"error": "pages array is required"})}
+
+        try:
+            base_version = int(version)
+        except ValueError:
+            return {"statusCode": 400, "body": json.dumps({"error": "Invalid base version"})}
+
+        # Load conversation
+        table = dynamodb.Table(TABLE_NAME)
+        resp = table.get_item(Key={"conversation_id": conversation_id})
+        conv = resp.get("Item")
+        if not conv:
+            return {"statusCode": 404, "body": json.dumps({"error": "Conversation not found"})}
+
+        # Current requirements
+        current_requirements = _convert_decimals(conv.get("requirements", {}))
+        if not current_requirements:
+            current_requirements = {
+                "title": conv.get("project_name") or (conv.get("latest_metadata") or {}).get("project_name") or "Project",
+                "project_type": conv.get("project_type") or (conv.get("latest_metadata") or {}).get("project_type") or "web_app",
+                "client_name": conv.get("client_name") or "Client",
+            }
+
+        # Build synthetic annotations for vision analyzer
+        annotations = []
+        for p in pages:
+            img = (p or {}).get("imageBase64")
+            if img:
+                annotations.append({"pageIndex": p.get("pageIndex", 0), "imageData": img, "comment": "Annotated page screenshot"})
+
+        # Run vision analyzer to get patches
+        from src.agents.email_intake.vision_analyzer import VisionAnalyzer  # type: ignore
+        from src.agents.email_intake.patch_builder import apply_patches  # type: ignore
+        from src.agents.email_intake.proposal_mapper import ProposalDataMapper  # type: ignore
+        from src.storage import S3ProposalStore  # type: ignore
+
+        analyzer = VisionAnalyzer()
+        v_patches = analyzer.analyze(annotations, current_requirements, body.get("prompt"))
+
+        # Apply patches
+        updated_requirements = apply_patches(current_requirements, v_patches)
+
+        # Allocate new version and render PDF to target key
+        s3_store = S3ProposalStore(
+            bucket_name=os.environ.get("DOCUMENT_BUCKET") or os.environ.get("ATTACHMENTS_BUCKET", "solopilot-attachments")
+        )
+        new_version = s3_store.version_index.allocate_next_version(conversation_id)
+        s3_key_prefix = f"proposals/{conversation_id}/v{new_version:04d}"
+        target_pdf_key = f"{s3_key_prefix}/proposal.pdf"
+
+        mapper = ProposalDataMapper()
+        proposal_data = mapper.map_requirements_to_proposal_data(updated_requirements)
+
+        # Call doc-service to write directly
+        lambda_client = boto3.client("lambda")
+        pdf_lambda_arn = os.environ.get("PDF_LAMBDA_ARN", "")
+        if not pdf_lambda_arn:
+            return {"statusCode": 500, "body": json.dumps({"error": "PDF generation service not configured"})}
+        payload = {
+            "template": "glassmorphic-proposal",
+            "data": proposal_data,
+            "conversationId": conversation_id,
+            "docType": "proposal",
+            "filename": "project-proposal.pdf",
+            "s3Key": target_pdf_key,
+        }
+        response = lambda_client.invoke(FunctionName=pdf_lambda_arn, InvocationType="RequestResponse", Payload=json.dumps(payload))
+        raw = response["Payload"].read()
+        try:
+            resp_payload = json.loads(raw)
+        except Exception:
+            logger.error(f"Doc-service returned non-JSON when writing to {target_pdf_key}: {raw[:200]}")
+            return {"statusCode": 502, "body": json.dumps({"error": "Doc-service error"})}
+        if resp_payload.get("statusCode") != 200:
+            logger.error(f"Doc-service write failed for {target_pdf_key}: {resp_payload}")
+            return {"statusCode": 502, "body": json.dumps({"error": "Failed to generate revised PDF"})}
+
+        body_json = {}
+        try:
+            body_json = json.loads(resp_payload.get("body", "{}"))
+        except Exception:
+            pass
+        pdf_size = int(body_json.get("pdfSize") or 0)
+
+        # Metadata and version record
+        base_meta = s3_store.get_proposal_metadata(conversation_id, int(base_version)) or {}
+        requirements_hash = (base_meta or {}).get("requirements_hash", "")
+        metadata = {
+            "version": new_version,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "requirements_hash": requirements_hash,
+            "budget": proposal_data.get("pricing", [{}])[0].get("amount", "").replace("$", "").replace(",", "") or None,
+            "client_name": proposal_data.get("clientName", ""),
+            "project_type": proposal_data.get("projectTitle", ""),
+            "file_size": pdf_size,
+            "generated_by": "proposal_edit_vision",
+            "requirements_used": updated_requirements,
+            "revised_requirements_used": {
+                "annotation_count": len(annotations),
+                "edit_prompt": body.get("prompt") or "",
+                "base_version": base_version,
+                "feedback_items": [],
+                "applied_patches": v_patches,
+                "vision_used": True,
+                "fallback_llm_used": False,
+            },
+        }
+        try:
+            s3_store.s3_client.put_object(
+                Bucket=s3_store.bucket_name,
+                Key=f"{s3_key_prefix}/metadata.json",
+                Body=json.dumps(metadata, default=str),
+                ContentType="application/json",
+            )
+        except Exception as meta_err:
+            logger.warning(f"Failed to write metadata.json for edited version: {meta_err}")
+
+        s3_store.version_index.record_version(
+            conversation_id=conversation_id,
+            version=new_version,
+            s3_key=s3_key_prefix,
+            file_size=pdf_size,
+            requirements_hash=requirements_hash or "",
+            metadata={
+                "budget": metadata.get("budget"),
+                "client_name": metadata.get("client_name"),
+                "project_type": metadata.get("project_type"),
+                "revised_requirements_used": metadata["revised_requirements_used"],
+            },
+        )
+
+        # Persist updated requirements and update pending reply
+        try:
+            table.update_item(
+                Key={"conversation_id": conversation_id},
+                UpdateExpression="SET #req = :req, updated_at = :ts",
+                ExpressionAttributeNames={"#req": "requirements"},
+                ExpressionAttributeValues={
+                    ":req": updated_requirements,
+                    ":ts": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            pending_replies = conv.get("pending_replies", [])
+            for r in pending_replies:
+                if r.get("status") == "pending":
+                    r["proposal_version"] = new_version
+            table.update_item(
+                Key={"conversation_id": conversation_id},
+                UpdateExpression="SET pending_replies = :pr",
+                ExpressionAttributeValues={":pr": pending_replies},
+            )
+        except Exception as upd_err:
+            logger.warning(f"Failed to persist vision changes: {upd_err}")
+
+        return {
+            "statusCode": 200,
+            "body": json.dumps(
+                {
+                    "success": True,
+                    "conversation_id": conversation_id,
+                    "base_version": base_version,
+                    "new_version": new_version,
+                    "applied_fields": [p.get("path") for p in v_patches],
+                    "vision_used": True,
+                    "fallback_llm_used": False,
+                }
+            ),
+        }
+
+    except Exception as e:
+        logger.error(f"Error in annotate_vision: {str(e)}", exc_info=True)
+        return {"statusCode": 500, "body": json.dumps({"error": "Failed to annotate with vision"})}
 
 def delete_conversation(conversation_id: str) -> Dict[str, Any]:
     """Delete a conversation and all its related data."""

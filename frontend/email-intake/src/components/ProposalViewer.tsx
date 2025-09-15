@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import api from '../api/client';
+import PDFAnnotator from './PDFAnnotator';
 
 interface ProposalViewerProps {
   conversationId: string;
@@ -19,6 +20,8 @@ const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloadingVersion, setDownloadingVersion] = useState<number | null>(null);
+  const [editingVersion, setEditingVersion] = useState<number | null>(null);
+  const [editorUrl, setEditorUrl] = useState<string | null>(null);
 
   useEffect(() => {
     loadProposals();
@@ -49,6 +52,34 @@ const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId }) => {
       setError('Failed to download proposal');
     } finally {
       setDownloadingVersion(null);
+    }
+  };
+
+  const openEditor = async (version: number) => {
+    try {
+      setDownloadingVersion(version);
+      const data = await api.getProposalUrl(conversationId, version);
+      setEditorUrl(data.url);
+      setEditingVersion(version);
+    } catch (err) {
+      console.error('Failed to open editor:', err);
+      setError('Failed to open editor');
+    } finally {
+      setDownloadingVersion(null);
+    }
+  };
+
+  const handleVisionSubmit = async ({ pageImageBase64, prompt }: { pageImageBase64: string; prompt: string; }) => {
+    if (!editingVersion) return;
+    try {
+      const payload = { pages: [{ pageIndex: 0, imageBase64: pageImageBase64 }], prompt };
+      await api.annotateProposalVision(conversationId, editingVersion, payload);
+      setEditingVersion(null);
+      setEditorUrl(null);
+      await loadProposals();
+    } catch (err: any) {
+      console.error('Failed to save with vision:', err);
+      alert(err?.response?.data?.error || 'Failed to save vision edits');
     }
   };
 
@@ -109,10 +140,11 @@ const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId }) => {
                   {proposal.budget && ` • Budget: $${proposal.budget}`}
                 </div>
               </div>
+              <div className="flex items-center gap-2 ml-4">
               <button
                 onClick={() => handleDownload(proposal.version)}
                 disabled={downloadingVersion === proposal.version}
-                className="ml-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {downloadingVersion === proposal.version ? (
                   <span className="flex items-center gap-2">
@@ -138,10 +170,21 @@ const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId }) => {
                   'View PDF'
                 )}
               </button>
+              {proposals[0]?.version === proposal.version && (
+                <button onClick={() => openEditor(proposal.version)} className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600">Edit</button>
+              )}
+              </div>
             </div>
           </div>
         ))}
       </div>
+      {editingVersion && editorUrl && (
+        <PDFAnnotator
+          fileUrl={editorUrl}
+          onCancel={() => { setEditingVersion(null); setEditorUrl(null); }}
+          onSubmitVision={handleVisionSubmit}
+        />
+      )}
     </div>
   );
 };
