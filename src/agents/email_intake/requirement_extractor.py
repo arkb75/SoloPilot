@@ -40,7 +40,7 @@ class RequirementExtractor:
                 "bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-2")
             )
             self.model_id = os.environ.get(
-                "BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+                "BEDROCK_MODEL_ID", "us.anthropic.claude-4-5-haiku-20241022-v1:0"
             )
 
     def extract(

@@ -5,7 +5,7 @@
       "endTime": "2025-06-10T03:00:00.000Z",
       "actualEndTime": "2025-06-10T01:36:11.972Z",
       "perModelStats": {
-        "claude-sonnet-4-20250514": {
+        "claude-sonnet-4-5-20250514": {
           "tokenCounts": {
             "inputTokens": 5348,
             "outputTokens": 42453,
@@ -41,7 +41,7 @@
       "endTime": "2025-06-12T03:00:00.000Z",
       "actualEndTime": "2025-06-12T02:22:38.955Z",
       "perModelStats": {
-        "claude-sonnet-4-20250514": {
+        "claude-sonnet-4-5-20250514": {
           "tokenCounts": {
             "inputTokens": 1191,
             "outputTokens": 18968,
@@ -71,7 +71,7 @@
       "endTime": "2025-06-15T09:00:00.000Z",
       "actualEndTime": "2025-06-15T08:59:07.838Z",
       "perModelStats": {
-        "claude-sonnet-4-20250514": {
+        "claude-sonnet-4-5-20250514": {
           "tokenCounts": {
             "inputTokens": 342,
             "outputTokens": 7900,
@@ -101,7 +101,7 @@
       "endTime": "2025-06-16T01:00:00.000Z",
       "actualEndTime": "2025-06-15T23:04:24.493Z",
       "perModelStats": {
-        "claude-sonnet-4-20250514": {
+        "claude-sonnet-4-5-20250514": {
           "tokenCounts": {
             "inputTokens": 99,
             "outputTokens": 5071,
@@ -131,7 +131,7 @@
       "endTime": "2025-06-16T13:00:00.000Z",
       "actualEndTime": "2025-06-16T09:03:15.913Z",
       "perModelStats": {
-        "claude-sonnet-4-20250514": {
+        "claude-sonnet-4-5-20250514": {
           "tokenCounts": {
             "inputTokens": 8717,
             "outputTokens": 1778,
@@ -161,7 +161,7 @@
       "endTime": "2025-06-17T03:00:00.000Z",
       "actualEndTime": "2025-06-16T23:17:16.571Z",
       "perModelStats": {
-        "claude-sonnet-4-20250514": {
+        "claude-sonnet-4-5-20250514": {
           "tokenCounts": {
             "inputTokens": 80,
             "outputTokens": 3299,

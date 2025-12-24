@@ -1,7 +1,7 @@
 # LLM Model Switch Recommendation for Metadata Extraction
 
 ## Current State
-- **Model**: Claude 3.5 Haiku (via AWS Bedrock)
+- **Model**: Claude 4.5 Haiku (via AWS Bedrock)
 - **Cost**: $0.25/$1.25 per million tokens (input/output)
 - **Latency**: 0.52 seconds
 - **Integration**: Already implemented in `metadata_extractor.py`

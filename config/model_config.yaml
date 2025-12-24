@@ -9,7 +9,7 @@ llm:
   # AWS Bedrock Configuration (Inference Profile ARNs required)
   bedrock:
     # Primary inference profile ARN (Claude 4 Sonnet - Production)
-    inference_profile_arn: "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"
+    inference_profile_arn: "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-5-20250514-v1:0"
     region: "us-east-2"
     timeout: 180  # seconds
     model_kwargs:
@@ -18,7 +18,7 @@ llm:
       max_tokens: 2048
 
     # Alternative inference profile ARNs (comment/uncomment as needed):
-    # inference_profile_arn: "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0"  # Claude 3.5 Haiku (LEGACY)
+    # inference_profile_arn: "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-4-5-haiku-20241022-v1:0"  # Claude 4.5 Haiku (LEGACY)
     # inference_profile_arn: "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-sonnet-20240620-v1:0"  # Claude 3.5 Sonnet v1
     # inference_profile_arn: "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-sonnet-20241022-v2:0"  # Claude 3.5 Sonnet v2
 

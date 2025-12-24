@@ -47,7 +47,7 @@ class ReviewerAgent:
                 "bedrock": {
                     "inference_profile_arn": os.getenv(
                         "BEDROCK_IP_ARN",
-                        "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0",
+                        "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-5-20250514-v1:0",
                     ),
                     "region": "us-east-2",
                     "model_kwargs": {"temperature": 0.1, "max_tokens": 4096},

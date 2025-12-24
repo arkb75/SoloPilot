@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import api from '../api/client';
 import PDFAnnotator from './PDFAnnotator';
@@ -22,10 +22,29 @@ const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId }) => {
   const [downloadingVersion, setDownloadingVersion] = useState<number | null>(null);
   const [editingVersion, setEditingVersion] = useState<number | null>(null);
   const [editorUrl, setEditorUrl] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
+  const submitInFlightRef = useRef(false);
+  const toastTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     loadProposals();
   }, [conversationId]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
+
+  const showToast = (message: string, tone: 'info' | 'success' | 'error' = 'info') => {
+    setToast({ message, tone });
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 4000);
+  };
 
   const loadProposals = async () => {
     try {
@@ -69,17 +88,18 @@ const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId }) => {
     }
   };
 
-  const handleVisionSubmit = async ({ pageImageBase64, annotations, prompt }: { pageImageBase64: string; annotations: any[]; prompt: string; }) => {
-    if (!editingVersion) return;
+  const handleVisionSubmit = async (baseVersion: number | null, { pageImageBase64, annotations, prompt }: { pageImageBase64: string; annotations: any[]; prompt: string; }) => {
+    if (!baseVersion) return;
     try {
       const payload = { pages: [{ pageIndex: 0, imageBase64: pageImageBase64 }], annotations, prompt };
-      await api.annotateProposalVision(conversationId, editingVersion, payload);
-      setEditingVersion(null);
-      setEditorUrl(null);
+      await api.annotateProposalVision(conversationId, baseVersion, payload);
       await loadProposals();
+      showToast('Edits saved. New version is ready.', 'success');
     } catch (err: any) {
       console.error('Failed to save with vision:', err);
-      alert(err?.response?.data?.error || 'Failed to save vision edits');
+      showToast(err?.response?.data?.error || 'Failed to save vision edits', 'error');
+    } finally {
+      submitInFlightRef.current = false;
     }
   };
 
@@ -181,9 +201,36 @@ const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId }) => {
       {editingVersion && editorUrl && (
         <PDFAnnotator
           fileUrl={editorUrl}
-          onCancel={() => { setEditingVersion(null); setEditorUrl(null); }}
-          onSubmitVision={handleVisionSubmit}
+          onCancel={() => {
+            setEditingVersion(null);
+            setEditorUrl(null);
+            submitInFlightRef.current = false;
+          }}
+          onSubmitStart={() => {
+            if (submitInFlightRef.current) return false;
+            submitInFlightRef.current = true;
+            setEditingVersion(null);
+            setEditorUrl(null);
+            showToast('Edits submitted. Generating updated PDF...', 'info');
+            return true;
+          }}
+          onSubmitVision={(payload) => handleVisionSubmit(editingVersion, payload)}
         />
+      )}
+      {toast && (
+        <div className="fixed bottom-4 right-4 z-50">
+          <div
+            className={`px-4 py-3 rounded shadow-lg text-sm text-white ${
+              toast.tone === 'success'
+                ? 'bg-green-600'
+                : toast.tone === 'error'
+                ? 'bg-red-600'
+                : 'bg-blue-600'
+            }`}
+          >
+            {toast.message}
+          </div>
+        </div>
       )}
     </div>
   );

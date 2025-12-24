@@ -36,7 +36,7 @@ class MetadataExtractor:
     def __init__(self):
         """Initialize the metadata extractor with Claude Haiku model."""
         # Use Haiku for fast extraction
-        self.model = "us.anthropic.claude-3-5-haiku-20241022-v1:0"  # Bedrock model ID
+        self.model = "us.anthropic.claude-4-5-haiku-20241022-v1:0"  # Bedrock model ID
         self.anthropic_model = "claude-3-haiku-20240307"  # For AI provider
         
         if USE_AI_PROVIDER:

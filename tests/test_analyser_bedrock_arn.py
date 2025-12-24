@@ -25,7 +25,7 @@ def test_analyser_uses_bedrock_arn():
         "llm": {
             "primary": "bedrock",
             "bedrock": {
-                "inference_profile_arn": "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0",
+                "inference_profile_arn": "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-5-20250514-v1:0",
                 "region": "us-east-2",
             },
         }
@@ -53,7 +53,7 @@ def test_analyser_uses_bedrock_arn():
                 config_arg = mock_create_client.call_args[0][0]
                 assert (
                     config_arg["llm"]["bedrock"]["inference_profile_arn"]
-                    == "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"
+                    == "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-5-20250514-v1:0"
                 )
 
                 # Verify the parser has the standardized client initialized
@@ -69,7 +69,7 @@ def test_analyser_respects_no_network():
         "llm": {
             "primary": "bedrock",
             "bedrock": {
-                "inference_profile_arn": "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0",
+                "inference_profile_arn": "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-5-20250514-v1:0",
                 "region": "us-east-2",
             },
         }
@@ -118,7 +118,7 @@ def test_analyser_fallback_config():
             config_arg = mock_create_client.call_args[0][0]
             assert (
                 config_arg["llm"]["bedrock"]["inference_profile_arn"]
-                == "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"
+                == "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-5-20250514-v1:0"
             )
 
 

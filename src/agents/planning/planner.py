@@ -65,7 +65,7 @@ class ProjectPlanner:
                 "primary": "bedrock",
                 "fallback": "openai",
                 "bedrock": {
-                    "model_id": "us.anthropic.claude-sonnet-4-20250514-v1:0",
+                    "model_id": "us.anthropic.claude-sonnet-4-5-20250514-v1:0",
                     "region": "us-east-2",
                 },
                 "openai": {"model": "gpt-4o-mini"},
@@ -86,7 +86,7 @@ class ProjectPlanner:
                 bedrock_config = self.config["llm"].get("bedrock", {})
                 self.primary_llm = ChatBedrock(
                     model_id=bedrock_config.get(
-                        "model_id", "us.anthropic.claude-sonnet-4-20250514-v1:0"
+                        "model_id", "us.anthropic.claude-sonnet-4-5-20250514-v1:0"
                     ),
                     region_name=bedrock_config.get("region", "us-east-2"),
                     model_kwargs={"temperature": 0.1, "max_tokens": 4096},

@@ -1,7 +1,7 @@
 """
 Email Response Reviewer
 
-This module uses Claude 3.5 Haiku to review email responses before they are sent.
+This module uses Claude 4.5 Haiku to review email responses before they are sent.
 It analyzes the response against conversation context and provides a quality assessment.
 """
 
@@ -45,13 +45,13 @@ if not USE_AI_PROVIDER:
 
 
 class EmailReviewer:
-    """Reviews email responses using Claude 3.5 Haiku for quality assessment."""
+    """Reviews email responses using Claude 4.5 Haiku for quality assessment."""
     
     def __init__(self):
-        """Initialize the email reviewer with Claude 3.5 Haiku model."""
+        """Initialize the email reviewer with Claude 4.5 Haiku model."""
         # Use Haiku for fast, cost-effective review
-        self.model = "us.anthropic.claude-3-5-haiku-20241022-v1:0"  # Bedrock model ID
-        self.anthropic_model = "claude-3-5-haiku-20241022"  # For AI provider
+        self.model = "us.anthropic.claude-4-5-haiku-20241022-v1:0"  # Bedrock model ID
+        self.anthropic_model = "claude-4-5-haiku-20241022"  # For AI provider
         
         if USE_AI_PROVIDER:
             self.provider = get_provider(os.environ.get("AI_PROVIDER", "bedrock"))
@@ -340,7 +340,7 @@ Provide ONLY the JSON object:
         return prompt
     
     def _call_haiku(self, prompt: str) -> str:
-        """Call Claude 3.5 Haiku model for review."""
+        """Call Claude 4.5 Haiku model for review."""
         try:
             if USE_AI_PROVIDER:
                 # Use the AI provider framework

@@ -5,6 +5,7 @@ This provides REST API endpoints for managing conversations,
 approving/rejecting replies, and viewing conversation history.
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -1434,10 +1435,78 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
             except RequirementEditError as edit_err:
                 raise RequirementUpdateError(str(edit_err)) from edit_err
 
+        def _build_idempotency_key(
+            base_version_value: int,
+            annotations_value: List[Dict[str, Any]],
+            prompt_value: Optional[str],
+        ) -> str:
+            normalized_annotations = []
+            for ann in annotations_value or []:
+                if not isinstance(ann, dict):
+                    continue
+                normalized_annotations.append(
+                    {
+                        "pageIndex": ann.get("pageIndex"),
+                        "x": ann.get("x"),
+                        "y": ann.get("y"),
+                        "width": ann.get("width"),
+                        "height": ann.get("height"),
+                        "type": ann.get("type"),
+                        "comment": ann.get("comment") or "",
+                        "selectedText": ann.get("selectedText"),
+                        "surroundingText": ann.get("surroundingText"),
+                        "zone": ann.get("zone"),
+                    }
+                )
+            payload = {
+                "base_version": base_version_value,
+                "prompt": prompt_value or "",
+                "annotations": normalized_annotations,
+            }
+            encoded = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+            return hashlib.sha256(encoded).hexdigest()
+
         # Allocate new version and render PDF to target key
         s3_store = S3ProposalStore(
-            bucket_name=os.environ.get("DOCUMENT_BUCKET") or os.environ.get("ATTACHMENTS_BUCKET", "solopilot-attachments")
+            bucket_name=os.environ.get("DOCUMENT_BUCKET")
+            or os.environ.get("ATTACHMENTS_BUCKET", "solopilot-attachments")
         )
+        requirements_hash = s3_store._calculate_requirements_hash(updated_requirements) or ""
+        idempotency_key = _build_idempotency_key(base_version, annotations, body.get("prompt"))
+        latest_version = None
+        try:
+            latest_version = s3_store.version_index.get_latest_version(conversation_id)
+        except Exception as latest_err:
+            logger.warning("[VISION][IDEMPOTENCY] Failed to fetch latest version: %s", latest_err)
+
+        if latest_version:
+            latest_meta = latest_version.metadata or {}
+            latest_revised = latest_meta.get("revised_requirements_used", {}) or {}
+            if (
+                latest_version.requirements_hash == requirements_hash
+                and latest_revised.get("idempotency_key") == idempotency_key
+            ):
+                logger.info(
+                    "[VISION][IDEMPOTENT] Returning existing version %s for %s",
+                    latest_version.version,
+                    conversation_id,
+                )
+                return {
+                    "statusCode": 200,
+                    "body": json.dumps(
+                        {
+                            "success": True,
+                            "conversation_id": conversation_id,
+                            "base_version": base_version,
+                            "new_version": latest_version.version,
+                            "vision_used": True,
+                            "fallback_llm_used": False,
+                            "intent": intent_text,
+                            "idempotent": True,
+                        }
+                    ),
+                }
+
         new_version = s3_store.version_index.allocate_next_version(conversation_id)
         s3_key_prefix = f"proposals/{conversation_id}/v{new_version:04d}"
         target_pdf_key = f"{s3_key_prefix}/proposal.pdf"
@@ -1478,7 +1547,6 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
 
         # Metadata and version record
         base_meta = s3_store.get_proposal_metadata(conversation_id, int(base_version)) or {}
-        requirements_hash = s3_store._calculate_requirements_hash(updated_requirements)
         metadata = {
             "version": new_version,
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -1502,6 +1570,7 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
                 "vision_used": True,
                 "intent_text": intent_text,
                 "requirements_diff_applied": True,
+                "idempotency_key": idempotency_key,
             },
         }
         try:

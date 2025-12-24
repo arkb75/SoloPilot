@@ -62,7 +62,7 @@ class ConversationalResponder:
                 "bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-2")
             )
             self.model_id = os.environ.get(
-                "BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0"
+                "BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250514-v1:0"
             )
 
     def generate_response_with_tracking(

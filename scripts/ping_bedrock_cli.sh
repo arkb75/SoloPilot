@@ -6,7 +6,7 @@ set -e
 
 # Configuration
 REGION="us-east-2"
-INFERENCE_PROFILE_ARN="arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0"
+INFERENCE_PROFILE_ARN="arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-4-5-haiku-20241022-v1:0"
 
 # Check for NO_NETWORK
 if [ "$NO_NETWORK" = "1" ]; then

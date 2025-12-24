@@ -1,7 +1,7 @@
 """
 Response Reviser for email intake system.
 
-Handles revising email responses based on AI feedback using Claude Sonnet 4.
+Handles revising email responses based on AI feedback using Claude Sonnet 4/5.
 """
 
 import json
@@ -24,13 +24,13 @@ logger = logging.getLogger(__name__)
 
 
 class ResponseReviser:
-    """Revises email responses using Claude Sonnet 4 based on specific feedback."""
+    """Revises email responses using Claude Sonnet 4/5 based on specific feedback."""
     
     def __init__(self):
-        """Initialize the response reviser with Claude Sonnet 4."""
-        # Use Sonnet 4 (same model as original response generation)
+        """Initialize the response reviser with Claude Sonnet 4/5."""
+        # Use Sonnet 4/5 (same model as original response generation)
         self.model_id = os.environ.get(
-            "BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0"
+            "BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250514-v1:0"
         )
         self.anthropic_model = "claude-3-5-sonnet-20241022"  # For AI provider
         
@@ -58,7 +58,7 @@ class ResponseReviser:
             # Build the revision prompt
             prompt = self._build_revision_prompt(original_response, feedback, conversation_context)
             
-            # Call Sonnet 4 for revision
+            # Call Sonnet 4/5 for revision
             revised_response = self._call_sonnet(prompt)
             
             # Validate the revised response
@@ -101,7 +101,7 @@ class ResponseReviser:
         feedback: str, 
         conversation_context: Dict[str, Any] = None
     ) -> str:
-        """Build the revision prompt for Sonnet 4."""
+        """Build the revision prompt for Sonnet 4/5."""
         
         # Add conversation context if available
         context_text = ""
@@ -142,7 +142,7 @@ Return the revised email response (body only, no greeting/signature):"""
         return prompt
     
     def _call_sonnet(self, prompt: str) -> str:
-        """Call Claude Sonnet 4 model for revision."""
+        """Call Claude Sonnet 4/5 model for revision."""
         try:
             if USE_AI_PROVIDER:
                 # Use the AI provider framework

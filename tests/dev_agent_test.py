@@ -662,7 +662,7 @@ describe('SmokeTestImplementation', () => {
 llm:
   primary: "bedrock"
   bedrock:
-    inference_profile_arn: "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"
+    inference_profile_arn: "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-5-20250514-v1:0"
     region: "us-east-2"
     model_kwargs:
       temperature: 0.1
@@ -703,7 +703,7 @@ llm:
 llm:
   primary: "bedrock"
   bedrock:
-    inference_profile_arn: "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"
+    inference_profile_arn: "arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-5-20250514-v1:0"
     region: "us-east-2"
     model_kwargs:
       temperature: 0.1

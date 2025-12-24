@@ -12,6 +12,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 interface PDFAnnotatorProps {
   fileUrl: string;
   onCancel: () => void;
+  onSubmitStart?: () => boolean | void;
   onSubmitVision: (payload: { pageImageBase64: string; annotations: PdfAnnotation[]; prompt: string }) => Promise<void> | void;
 }
 
@@ -20,7 +21,7 @@ const toolColors: Record<string, string> = {
   note: '#4CAF50',
 };
 
-const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmitVision }) => {
+const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmitStart, onSubmitVision }) => {
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [annotations, setAnnotations] = useState<PdfAnnotation[]>([]);
@@ -203,6 +204,10 @@ const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmit
   };
 
   const submit = async () => {
+    const shouldProceed = onSubmitStart?.();
+    if (shouldProceed === false) {
+      return;
+    }
     const pageImageBase64 = buildPageComposite();
     await onSubmitVision({ pageImageBase64: pageImageBase64 || '', annotations, prompt });
   };

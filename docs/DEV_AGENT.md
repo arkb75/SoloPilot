@@ -100,7 +100,7 @@ Uses the same `config/model_config.yaml` as other agents:
 ```yaml
 llm:
   bedrock:
-    inference_profile_arn: "${BEDROCK_IP_ARN:-arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0}"
+    inference_profile_arn: "${BEDROCK_IP_ARN:-arn:aws:bedrock:us-east-2:392894085110:inference-profile/us.anthropic.claude-sonnet-4-5-20250514-v1:0}"
     region: "${BEDROCK_REGION:-us-east-2}"
     model_kwargs:
       temperature: 0.1
