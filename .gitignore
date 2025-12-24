@@ -126,3 +126,4 @@ chroma_db/
 
 # Serena
 .serena/
+frontend/email-intake/yarn.lock

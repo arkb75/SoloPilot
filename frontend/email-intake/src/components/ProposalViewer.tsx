@@ -88,10 +88,12 @@ const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId }) => {
     }
   };
 
-  const handleVisionSubmit = async (baseVersion: number | null, { pageImageBase64, annotations, prompt }: { pageImageBase64: string; annotations: any[]; prompt: string; }) => {
+  const handleVisionSubmit = async (
+    baseVersion: number | null,
+    payload: { pages: { pageIndex: number; imageBase64: string }[]; annotations: any[]; prompt: string },
+  ) => {
     if (!baseVersion) return;
     try {
-      const payload = { pages: [{ pageIndex: 0, imageBase64: pageImageBase64 }], annotations, prompt };
       await api.annotateProposalVision(conversationId, baseVersion, payload);
       await loadProposals();
       showToast('Edits saved. New version is ready.', 'success');
@@ -100,6 +102,8 @@ const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId }) => {
       showToast(err?.response?.data?.error || 'Failed to save vision edits', 'error');
     } finally {
       submitInFlightRef.current = false;
+      setEditingVersion(null);
+      setEditorUrl(null);
     }
   };
 
@@ -209,8 +213,6 @@ const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId }) => {
           onSubmitStart={() => {
             if (submitInFlightRef.current) return false;
             submitInFlightRef.current = true;
-            setEditingVersion(null);
-            setEditorUrl(null);
             showToast('Edits submitted. Generating updated PDF...', 'info');
             return true;
           }}

@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import html2canvas from 'html2canvas';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -13,7 +14,7 @@ interface PDFAnnotatorProps {
   fileUrl: string;
   onCancel: () => void;
   onSubmitStart?: () => boolean | void;
-  onSubmitVision: (payload: { pageImageBase64: string; annotations: PdfAnnotation[]; prompt: string }) => Promise<void> | void;
+  onSubmitVision: (payload: { pages: { pageIndex: number; imageBase64: string }[]; annotations: PdfAnnotation[]; prompt: string }) => Promise<void> | void;
 }
 
 const toolColors: Record<string, string> = {
@@ -21,19 +22,44 @@ const toolColors: Record<string, string> = {
   note: '#4CAF50',
 };
 
+type DisplayAnnotation = PdfAnnotation & { _idx: number; _displayIndex: number };
+
+const buildDisplayAnnotations = (annotations: PdfAnnotation[], pageIndex: number): DisplayAnnotation[] => {
+  const filtered = annotations
+    .map((a, i) => ({ ...a, _idx: i }))
+    .filter((a) => a.pageIndex === pageIndex);
+  return filtered.map((a, i) => ({ ...a, _displayIndex: i + 1 }));
+};
+
 const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmitStart, onSubmitVision }) => {
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [annotations, setAnnotations] = useState<PdfAnnotation[]>([]);
   const [prompt, setPrompt] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [activeTool, setActiveTool] = useState<'highlight' | 'note'>('highlight');
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [startPt, setStartPt] = useState<{ x: number; y: number } | null>(null);
   const pageContainerRef = useRef<HTMLDivElement | null>(null);
+  const pageNumberRef = useRef<number>(pageNumber);
+  const lastRenderedPageRef = useRef<number | null>(null);
+  const renderTargetRef = useRef<number | null>(null);
+  const renderResolveRef = useRef<(() => void) | null>(null);
+
+  pageNumberRef.current = pageNumber;
 
   const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
     setPageNumber(1);
+  }, []);
+
+  const handlePageRenderSuccess = useCallback(() => {
+    lastRenderedPageRef.current = pageNumberRef.current;
+    if (renderTargetRef.current === pageNumberRef.current) {
+      renderResolveRef.current?.();
+      renderResolveRef.current = null;
+      renderTargetRef.current = null;
+    }
   }, []);
 
   const getZone = (ny: number): 'title' | 'subtitle' | 'body' => {
@@ -161,59 +187,168 @@ const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmit
     // Optional: implement visual preview
   };
 
-  const pageAnnotations = useMemo(() => annotations.map((a, i) => ({ ...a, _idx: i })).filter(a => a.pageIndex === pageNumber - 1), [annotations, pageNumber]);
+  const pageAnnotations = useMemo(() => {
+    return buildDisplayAnnotations(annotations, pageNumber - 1);
+  }, [annotations, pageNumber]);
 
-  const buildPageComposite = (): string | undefined => {
-    if (!pageContainerRef.current) return undefined;
-    const canvas = pageContainerRef.current.querySelector('canvas') as HTMLCanvasElement | null;
-    if (!canvas) return undefined;
-    const cw = canvas.width;
-    const ch = canvas.height;
-    const off = document.createElement('canvas');
-    off.width = cw;
-    off.height = ch;
-    const ctx = off.getContext('2d');
-    if (!ctx) return undefined;
-    ctx.drawImage(canvas, 0, 0);
-    // draw overlays for current page annotations
-    const anns = annotations.filter(a => a.pageIndex === pageNumber - 1);
-    anns.forEach(a => {
-      ctx.save();
-      const color = a.color || (a.type === 'highlight' ? '#FFEB3B' : '#4CAF50');
-      const x = a.x * cw;
-      const y = a.y * ch;
-      const w = a.width * cw;
-      const h = a.height * ch;
-      if (a.type === 'highlight') {
-        ctx.fillStyle = color;
-        ctx.globalAlpha = a.opacity ?? 0.3;
-        ctx.fillRect(x, y, w, h);
-      } else {
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 3;
-        ctx.strokeRect(x, y, w, h);
-      }
-      ctx.restore();
+  const waitForPageRender = (targetPage: number) => {
+    if (lastRenderedPageRef.current === targetPage) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      renderTargetRef.current = targetPage;
+      renderResolveRef.current = resolve;
     });
+  };
+
+  const waitForPaint = () => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+
+  const buildPageComposite = async (keyAnnotations: DisplayAnnotation[]): Promise<string | undefined> => {
+    if (!pageContainerRef.current) return undefined;
     try {
-      const dataUrl = off.toDataURL('image/png');
+      const container = pageContainerRef.current;
+      const composite = await html2canvas(container, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        useCORS: true,
+      });
+      const scale = composite.width / container.clientWidth;
+      const keyWidth = Math.round(260 * scale);
+      const margin = Math.round(12 * scale);
+      const titleSize = Math.round(14 * scale);
+      const textSize = Math.round(12 * scale);
+      const lineHeight = Math.round(16 * scale);
+
+      const out = document.createElement('canvas');
+      out.width = composite.width + keyWidth;
+      out.height = composite.height;
+      const ctx = out.getContext('2d');
+      if (!ctx) return undefined;
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, out.width, out.height);
+      ctx.drawImage(composite, 0, 0);
+
+      ctx.strokeStyle = '#e5e7eb';
+      ctx.lineWidth = Math.max(1, Math.round(1 * scale));
+      ctx.beginPath();
+      ctx.moveTo(composite.width + 0.5, margin);
+      ctx.lineTo(composite.width + 0.5, out.height - margin);
+      ctx.stroke();
+
+      const keyX = composite.width + margin;
+      let cursorY = margin + titleSize;
+      ctx.fillStyle = '#111827';
+      ctx.font = `600 ${titleSize}px sans-serif`;
+      ctx.fillText('Annotations', keyX, cursorY);
+      cursorY += margin + lineHeight;
+
+      const wrapText = (text: string, x: number, y: number, maxWidth: number, height: number) => {
+        const words = text.split(/\s+/);
+        let line = '';
+        let lineY = y;
+        for (let i = 0; i < words.length; i += 1) {
+          const word = words[i];
+          const testLine = line ? `${line} ${word}` : word;
+          const metrics = ctx.measureText(testLine);
+          if (metrics.width > maxWidth && line) {
+            ctx.fillText(line, x, lineY);
+            line = word;
+            lineY += height;
+          } else {
+            line = testLine;
+          }
+        }
+        if (line) {
+          ctx.fillText(line, x, lineY);
+          lineY += height;
+        }
+        return lineY;
+      };
+
+      ctx.font = `${textSize}px sans-serif`;
+      const badgeRadius = Math.round(8 * scale);
+      const badgeDiameter = badgeRadius * 2;
+      const textX = keyX + badgeDiameter + Math.round(6 * scale);
+      const maxTextWidth = keyWidth - (textX - composite.width) - margin;
+
+      keyAnnotations.forEach((a) => {
+        if (cursorY + lineHeight > out.height - margin) {
+          return;
+        }
+        const label = (a.comment || '').trim() || '(no comment)';
+
+        ctx.fillStyle = '#111827';
+        ctx.beginPath();
+        ctx.arc(keyX + badgeRadius, cursorY - badgeRadius + 2, badgeRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(1, Math.round(1 * scale));
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `600 ${Math.round(10 * scale)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(a._displayIndex), keyX + badgeRadius, cursorY - badgeRadius + 2);
+
+        ctx.fillStyle = '#111827';
+        ctx.font = `${textSize}px sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        cursorY = wrapText(label, textX, cursorY, maxTextWidth, lineHeight);
+        cursorY += Math.round(6 * scale);
+      });
+
+      const dataUrl = out.toDataURL('image/png');
       return (dataUrl.split(',')[1] || dataUrl);
     } catch (e) {
       return undefined;
     }
   };
 
+  const buildCompositesForPages = async () => {
+    const annotatedPages = Array.from(new Set(annotations.map((a) => a.pageIndex))).sort((a, b) => a - b);
+    const targetPages = annotatedPages.length > 0 ? annotatedPages : [pageNumberRef.current - 1];
+    const originalPage = pageNumberRef.current;
+    const pages: { pageIndex: number; imageBase64: string }[] = [];
+
+    for (const pageIndex of targetPages) {
+      const targetPage = pageIndex + 1;
+      if (pageNumberRef.current !== targetPage) {
+        setPageNumber(targetPage);
+      }
+      await waitForPageRender(targetPage);
+      await waitForPaint();
+      const keyAnnotations = buildDisplayAnnotations(annotations, pageIndex);
+      const imageBase64 = await buildPageComposite(keyAnnotations);
+      if (imageBase64) {
+        pages.push({ pageIndex, imageBase64 });
+      }
+    }
+
+    if (pageNumberRef.current !== originalPage) {
+      setPageNumber(originalPage);
+    }
+
+    return pages;
+  };
+
   const submit = async () => {
+    setIsSubmitting(true);
     const shouldProceed = onSubmitStart?.();
     if (shouldProceed === false) {
+      setIsSubmitting(false);
       return;
     }
-    const pageImageBase64 = buildPageComposite();
-    await onSubmitVision({ pageImageBase64: pageImageBase64 || '', annotations, prompt });
+    const pages = await buildCompositesForPages();
+    await onSubmitVision({ pages, annotations, prompt });
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
+    <div className={`fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4 ${isSubmitting ? 'opacity-0 pointer-events-none' : ''}`}>
       <div className="bg-white w-full max-w-6xl h-[90vh] rounded-lg shadow-lg flex overflow-hidden">
         <div className="flex-1 flex flex-col border-r">
           <div className="p-3 flex items-center gap-2 border-b">
@@ -234,22 +369,64 @@ const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmit
           <div className="flex-1 overflow-auto flex items-center justify-center bg-gray-50">
             <div ref={pageContainerRef} onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} onMouseMove={handleMouseMove} className="relative" style={{ cursor: isDrawing ? 'crosshair' : 'default' }}>
               <Document file={fileUrl} onLoadSuccess={onDocumentLoadSuccess} loading={<div className="p-4 text-gray-500">Loading PDF…</div>}>
-                <Page pageNumber={pageNumber} renderAnnotationLayer renderTextLayer width={720} />
+                <Page pageNumber={pageNumber} renderAnnotationLayer renderTextLayer width={720} onRenderSuccess={handlePageRenderSuccess} />
               </Document>
-              {pageContainerRef.current && pageAnnotations.map((a: any) => {
+              {pageContainerRef.current && pageAnnotations.map((a) => {
                 const rect = pageContainerRef.current!.getBoundingClientRect();
+                const badgeSize = 12;
+                const badgeOffset = 4;
+                const highlightLeft = a.x * rect.width;
+                const highlightTop = a.y * rect.height;
+                const highlightWidth = a.width * rect.width;
+                const highlightHeight = a.height * rect.height;
                 const style: React.CSSProperties = {
                   position: 'absolute',
-                  left: `${a.x * rect.width}px`,
-                  top: `${a.y * rect.height}px`,
-                  width: `${a.width * rect.width}px`,
-                  height: `${a.height * rect.height}px`,
+                  left: `${highlightLeft}px`,
+                  top: `${highlightTop}px`,
+                  width: `${highlightWidth}px`,
+                  height: `${highlightHeight}px`,
                   backgroundColor: a.type === 'highlight' ? (a.color || '#FFEB3B') : 'transparent',
                   opacity: a.opacity ?? (a.type === 'highlight' ? 0.3 : 1),
                   border: a.type === 'note' ? `2px solid ${a.color || '#4CAF50'}` : 'none',
                   pointerEvents: 'none',
                 };
-                return <div key={a._idx} style={style} title={a.comment || ''} />;
+                const candidates = [
+                  { left: highlightLeft - (badgeSize / 2), top: highlightTop - badgeSize - badgeOffset },
+                  { left: highlightLeft + highlightWidth + badgeOffset, top: highlightTop - (badgeSize / 2) },
+                  { left: highlightLeft - badgeSize - badgeOffset, top: highlightTop - (badgeSize / 2) },
+                  { left: highlightLeft - (badgeSize / 2), top: highlightTop + highlightHeight + badgeOffset },
+                ];
+                const within = (left: number, top: number) => (
+                  left >= 0 && top >= 0 && left + badgeSize <= rect.width && top + badgeSize <= rect.height
+                );
+                const fallbackLeft = Math.min(Math.max(0, highlightLeft), rect.width - badgeSize);
+                const fallbackTop = Math.min(Math.max(0, highlightTop), rect.height - badgeSize);
+                const candidate = candidates.find((pos) => within(pos.left, pos.top));
+                const badgeLeft = candidate ? candidate.left : fallbackLeft;
+                const badgeTop = candidate ? candidate.top : fallbackTop;
+                const badgeStyle: React.CSSProperties = {
+                  position: 'absolute',
+                  left: `${badgeLeft}px`,
+                  top: `${badgeTop}px`,
+                  width: `${badgeSize}px`,
+                  height: `${badgeSize}px`,
+                  backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                  color: '#ffffff',
+                  fontSize: '8px',
+                  fontWeight: 600,
+                  borderRadius: '9999px',
+                  border: '1px solid #ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  pointerEvents: 'none',
+                };
+                return (
+                  <div key={a._idx}>
+                    <div style={style} title={a.comment || ''} />
+                    <div style={badgeStyle}>{a._displayIndex}</div>
+                  </div>
+                );
               })}
             </div>
           </div>
