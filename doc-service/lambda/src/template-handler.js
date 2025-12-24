@@ -2,7 +2,11 @@
  * Template handler for different PDF templates
  */
 const React = require('react');
-const { renderToBuffer } = require('@react-pdf/renderer');
+const ReactPDF = require('@react-pdf/renderer');
+const { renderToBuffer } = ReactPDF;
+const vm = require('vm');
+const fs = require('fs');
+const path = require('path');
 
 // Import templates
 const GlassmorphicProposal = require('./templates/glassmorphic-proposal');
@@ -39,6 +43,48 @@ async function generatePDFFromTemplate(templateName, data) {
   const pdfBuffer = await renderToBuffer(element);
 
   return pdfBuffer;
+}
+
+/**
+ * Generate PDF from a raw template module source string (JS) without redeploy.
+ * Writes to /tmp and requires it dynamically.
+ */
+async function generatePDFFromOverride(templateSource, data) {
+  // Normalize common ESM patterns to CJS for Lambda runtime
+  try {
+    let src = String(templateSource);
+    src = src.replace(/export\s+default\s+/g, 'module.exports = ');
+    src = src.replace(/import\s+React\s+from\s+['"]react['"];?/g, 'const React = require("react");');
+    src = src.replace(/import\s+\{([^}]+)\}\s+from\s+['"]@react-pdf\/(renderer)['"];?/g, 'const {$1} = require("@react-pdf/renderer");');
+    src = src.replace(/import\s+\*\s+as\s+(\w+)\s+from\s+['"]@react-pdf\/renderer['"];?/g, 'const $1 = require("@react-pdf/renderer");');
+
+    const sandbox = {
+      require: (name) => {
+        if (name === 'react') return React;
+        if (name === '@react-pdf/renderer') return ReactPDF;
+        throw new Error(`Unsupported require in override: ${name}`);
+      },
+      module: { exports: {} },
+      exports: {},
+      React,
+      ReactPDF,
+      console,
+    };
+    vm.createContext(sandbox);
+    const script = new vm.Script(src, { filename: 'template-override.js', displayErrors: true });
+    script.runInContext(sandbox, { timeout: 1000 });
+    const mod = sandbox.module.exports || sandbox.exports;
+    const TemplateComponent = mod && mod.default ? mod.default : mod;
+    if (typeof TemplateComponent !== 'function') {
+      throw new Error('Override did not export a component');
+    }
+    const element = React.createElement(TemplateComponent, { data });
+    const pdfBuffer = await renderToBuffer(element);
+    return pdfBuffer;
+  } catch (e) {
+    // Re-throw to caller for fallback/error PDF handling
+    throw e;
+  }
 }
 
 /**
@@ -95,5 +141,6 @@ function getTemplateMetadata(templateName) {
 module.exports = {
   generatePDFFromTemplate,
   validateTemplateData,
-  getTemplateMetadata
+  getTemplateMetadata,
+  generatePDFFromOverride
 };

@@ -69,10 +69,10 @@ const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId }) => {
     }
   };
 
-  const handleVisionSubmit = async ({ pageImageBase64, prompt }: { pageImageBase64: string; prompt: string; }) => {
+  const handleVisionSubmit = async ({ pageImageBase64, annotations, prompt }: { pageImageBase64: string; annotations: any[]; prompt: string; }) => {
     if (!editingVersion) return;
     try {
-      const payload = { pages: [{ pageIndex: 0, imageBase64: pageImageBase64 }], prompt };
+      const payload = { pages: [{ pageIndex: 0, imageBase64: pageImageBase64 }], annotations, prompt };
       await api.annotateProposalVision(conversationId, editingVersion, payload);
       setEditingVersion(null);
       setEditorUrl(null);

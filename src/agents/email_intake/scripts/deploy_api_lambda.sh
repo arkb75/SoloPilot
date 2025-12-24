@@ -27,6 +27,14 @@ mkdir -p /tmp/api_lambda_deploy/src/agents
 cp -R "$REPO_ROOT/src/agents/email_intake" /tmp/api_lambda_deploy/src/agents/
 cp -R "$REPO_ROOT/src/storage" /tmp/api_lambda_deploy/src/
 
+# Include providers and common utilities required by code model
+cp -R "$REPO_ROOT/src/providers" /tmp/api_lambda_deploy/src/
+cp -R "$REPO_ROOT/src/common" /tmp/api_lambda_deploy/src/
+
+# Include minimal dev context utility used by providers
+mkdir -p /tmp/api_lambda_deploy/src/agents/dev
+cp "$REPO_ROOT/src/agents/dev/context_packer.py" /tmp/api_lambda_deploy/src/agents/dev/
+
 # No root-level fallbacks needed; all imports use src.* package paths
 
 # Preflight import check to fail fast if packaging misses anything
@@ -71,7 +79,13 @@ if 'botocore' not in sys.modules:
     exceptions = types.ModuleType('botocore.exceptions')
     class ClientError(Exception):
         pass
+    class BotoCoreError(Exception):
+        pass
+    class ParamValidationError(Exception):
+        pass
     exceptions.ClientError = ClientError
+    exceptions.BotoCoreError = BotoCoreError
+    exceptions.ParamValidationError = ParamValidationError
     sys.modules['botocore.exceptions'] = exceptions
 
 def ok(name):
@@ -80,6 +94,8 @@ def ok(name):
 try:
     import api.lambda_api  # noqa: F401
     ok('api.lambda_api')
+    import src.providers  # noqa: F401
+    ok('src.providers')
     import src.agents.email_intake.vision_analyzer  # noqa: F401
     ok('src.agents.email_intake.vision_analyzer')
     import src.agents.email_intake.patch_builder  # noqa: F401

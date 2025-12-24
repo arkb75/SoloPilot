@@ -215,69 +215,6 @@ John
         assert conversation_state["last_seq"] == 2
         assert conversation_state["requirements_version"] == 2
 
-    @patch("src.agents.email_intake.lambda_function_v2.s3_client")
-    @patch("src.agents.email_intake.lambda_function_v2.boto3.resource")
-    def test_conversation_with_concurrent_emails(self, mock_dynamo, mock_s3):
-        """Test handling concurrent emails in same conversation."""
-        # Mock DynamoDB table
-        mock_table = MagicMock()
-        mock_dynamo.return_value.Table.return_value = mock_table
-
-        # Simulate two emails arriving simultaneously
-        email_a = b"""From: alice@team.com
-To: hello@solopilot.ai
-Subject: Re: Project Update
-Message-ID: <alice1@team.com>
-In-Reply-To: <original@team.com>
-
-Here's my input on the requirements...
-"""
-
-        email_b = b"""From: bob@team.com
-To: hello@solopilot.ai
-Subject: Re: Project Update
-Message-ID: <bob1@team.com>
-In-Reply-To: <original@team.com>
-
-I have some additional requirements...
-"""
-
-        # Both see same initial state
-        initial_state = {
-            "conversation_id": "team_conv",
-            "last_seq": Decimal(3),
-            "email_history": [{"email_id": "existing"}],
-            "participants": {"original@team.com"},
-            "thread_references": ["original@team.com"],
-        }
-
-        # Simulate race condition
-        mock_table.get_item.side_effect = [
-            {"Item": initial_state.copy()},  # Lambda A reads
-            {"Item": initial_state.copy()},  # Lambda B reads
-            {"Item": {**initial_state, "last_seq": Decimal(4)}},  # Lambda B re-reads after conflict
-        ]
-
-        # Lambda A succeeds, Lambda B gets conflict then succeeds
-        from botocore.exceptions import ClientError
-
-        conflict_error = ClientError(
-            {"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem"
-        )
-
-        update_responses = [
-            {"Attributes": {**initial_state, "last_seq": Decimal(4)}},  # A succeeds
-            conflict_error,  # B fails
-            {"Attributes": {**initial_state, "last_seq": Decimal(5)}},  # B retry succeeds
-        ]
-
-        mock_table.update_item.side_effect = update_responses
-
-        # Process both emails - would happen in parallel in real scenario
-        # Here we simulate the effect
-        assert len(update_responses) == 3  # A success, B fail, B retry
-        assert mock_table.get_item.side_effect
-
     def test_email_threading_validation(self):
         """Test email threading follows RFC 5322 correctly."""
         from src.agents.email_intake.email_parser import EmailParser
@@ -330,7 +267,7 @@ Answers to questions...""",
         # Verify references chain
         assert parsed_emails[2]["references"] == "<msg1@example.com> <msg2@solopilot.ai>"
 
-    @patch("src.agents.email_intake.conversation_state_v2.boto3.resource")
+    @patch("src.agents.email_intake.conversation_state.boto3.resource")
     def test_ttl_expiry_behavior(self, mock_boto):
         """Test TTL-based conversation expiry."""
         mock_table = MagicMock()

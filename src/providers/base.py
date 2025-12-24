@@ -67,11 +67,13 @@ def log_call(func):
             if "cost_usd" in metadata:
                 log_entry["cost_usd"] = metadata["cost_usd"]
 
-            # Ensure logs directory exists
-            os.makedirs("logs", exist_ok=True)
+            log_dir = os.path.join(os.getenv("LLM_LOG_DIR", "logs"))
+            if not os.access(log_dir, os.W_OK):
+                log_dir = "/tmp/logs"
+            os.makedirs(log_dir, exist_ok=True)
+            log_path = os.path.join(log_dir, "llm_calls.log")
 
-            # Write to log file
-            with open("logs/llm_calls.log", "a") as f:
+            with open(log_path, "a") as f:
                 f.write(json.dumps(log_entry) + "\n")
 
             return result
@@ -94,8 +96,13 @@ def log_call(func):
                 "status": "failed",
             }
 
-            os.makedirs("logs", exist_ok=True)
-            with open("logs/llm_calls.log", "a") as f:
+            log_dir = os.path.join(os.getenv("LLM_LOG_DIR", "logs"))
+            if not os.access(log_dir, os.W_OK):
+                log_dir = "/tmp/logs"
+            os.makedirs(log_dir, exist_ok=True)
+            log_path = os.path.join(log_dir, "llm_calls.log")
+
+            with open(log_path, "a") as f:
                 f.write(json.dumps(log_entry) + "\n")
 
             raise

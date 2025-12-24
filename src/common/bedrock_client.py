@@ -221,7 +221,12 @@ class StandardizedBedrockClient:
             raise BedrockError(f"❌ Bedrock API error: {last_exception}") from last_exception
 
     def invoke_model_with_metadata(
-        self, messages: list, max_tokens: int = 2048, temperature: float = 0.1, max_retries: int = 3
+        self,
+        messages: list,
+        max_tokens: int = 2048,
+        temperature: float = 0.1,
+        max_retries: int = 3,
+        timeout: Optional[int] = None,
     ) -> tuple[str, dict]:
         """
         Invoke Bedrock model and return both response and metadata for cost tracking.
@@ -313,11 +318,15 @@ class StandardizedBedrockClient:
         return self.invoke_model(messages, max_tokens, temperature)
 
     def simple_invoke_with_metadata(
-        self, prompt: str, max_tokens: int = 2048, temperature: float = 0.1
+        self,
+        prompt: str,
+        max_tokens: int = 2048,
+        temperature: float = 0.1,
+        timeout: Optional[int] = None,
     ) -> tuple[str, dict]:
         """Simple single-message invoke with metadata for cost tracking."""
         messages = [{"role": "user", "content": prompt}]
-        return self.invoke_model_with_metadata(messages, max_tokens, temperature)
+        return self.invoke_model_with_metadata(messages, max_tokens, temperature, timeout=timeout)
 
 
 def create_bedrock_client(config: Dict[str, Any]) -> StandardizedBedrockClient:

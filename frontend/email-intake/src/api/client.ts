@@ -195,6 +195,13 @@ export const api = {
     baseVersion: number,
     payload: {
       pages: Array<{ pageIndex: number; imageBase64: string }>;
+      annotations?: Array<{
+        pageIndex: number;
+        x: number; y: number; width: number; height: number;
+        type: 'highlight' | 'note';
+        color?: string; opacity?: number;
+        comment?: string;
+      }>;
       prompt?: string;
     }
   ) => {

@@ -35,6 +35,8 @@ from src.agents.email_intake.email_sender import (
     send_proposal_email,
     send_reply_email,
 )
+# Uncomment when we revert to code overrides
+# from src.providers import ProviderError, get_provider
 
 # Initialize services
 dynamodb = boto3.resource("dynamodb")
@@ -1266,21 +1268,48 @@ def get_proposal_url(conversation_id: str, version: str) -> Dict[str, Any]:
         return {"statusCode": 500, "body": json.dumps({"error": "Failed to get proposal URL"})}
 
 
-def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Apply edits using a vision model that analyzes annotated page screenshots.
+class VisionProcessingError(Exception):
+    """Raised when the vision stage cannot generate an edit intent."""
 
-    Expects body = { pages: [{ pageIndex, imageBase64 }], prompt?: string }
+
+class RequirementUpdateError(Exception):
+    """Raised when requirement edits cannot be applied."""
+
+
+def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Vision → Code pipeline using annotated page composites.
+
+    Inputs (body): { pages: [{ pageIndex, imageBase64 }], annotations?: [...], prompt?: string }
+    Flow:
+      1) Vision model reads annotated images + base instructions (+ optional prompt) and emits a short "Edit Intent" text.
+      2) Requirement editor applies the intent to the stored requirements JSON.
+      3) Doc-service renders the PDF using the canonical template with the updated requirements and stores to S3 as a new version.
     """
     try:
         body = body or {}
         pages = body.get("pages", [])
         if not isinstance(pages, list) or not pages:
             return {"statusCode": 400, "body": json.dumps({"error": "pages array is required"})}
+        annotations = body.get("annotations", []) or []
 
         try:
             base_version = int(version)
         except ValueError:
             return {"statusCode": 400, "body": json.dumps({"error": "Invalid base version"})}
+
+        debug_trace_id = None
+        debug_dir = None
+        debug_root = os.environ.get("VISION_DEBUG_DIR", "/tmp/vision_debug")
+        try:
+            ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+            safe_conv = conversation_id.replace("/", "_")
+            debug_trace_id = f"{safe_conv}-v{base_version}-{ts}"
+            debug_dir = os.path.join(debug_root, debug_trace_id)
+            os.makedirs(debug_dir, exist_ok=True)
+            logger.info("[VISION_DEBUG][TRACE] trace_id=%s dir=%s", debug_trace_id, debug_dir)
+        except Exception as debug_err:
+            logger.warning("[VISION_DEBUG][TRACE] Failed to init debug dir: %s", debug_err)
+            debug_dir = None
 
         # Load conversation
         table = dynamodb.Table(TABLE_NAME)
@@ -1298,24 +1327,112 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
                 "client_name": conv.get("client_name") or "Client",
             }
 
-        # Build synthetic annotations for vision analyzer
-        annotations = []
-        for p in pages:
-            img = (p or {}).get("imageBase64")
-            if img:
-                annotations.append({"pageIndex": p.get("pageIndex", 0), "imageData": img, "comment": "Annotated page screenshot"})
-
-        # Run vision analyzer to get patches
-        from src.agents.email_intake.vision_analyzer import VisionAnalyzer  # type: ignore
-        from src.agents.email_intake.patch_builder import apply_patches  # type: ignore
+        # Stage 1: Vision model -> Edit Intent (plain text)
+        from src.agents.email_intake.vision_analyzer import VisionAnalyzer, VisionModelError  # type: ignore
+        from src.agents.email_intake.requirement_extractor import RequirementEditError, RequirementExtractor  # type: ignore
+        from src.agents.email_intake.requirement_ops import apply_ops, RequirementOpsError  # type: ignore
         from src.agents.email_intake.proposal_mapper import ProposalDataMapper  # type: ignore
         from src.storage import S3ProposalStore  # type: ignore
 
+        base_instructions = (
+            "You see page images of a PDF proposal with user-made highlight/notes already drawn. "
+            "Describe the requested changes as precise requirement updates (e.g., fields to modify, new copy, numbers). "
+            "Focus on factual updates that can be reflected in the requirements JSON (titles, summaries, scope items, pricing, etc.)."
+        )
         analyzer = VisionAnalyzer()
-        v_patches = analyzer.analyze(annotations, current_requirements, body.get("prompt"))
 
-        # Apply patches
-        updated_requirements = apply_patches(current_requirements, v_patches)
+        # Prefer OPS mode; fall back to intent-based editor if needed
+        use_ops_mode = (os.environ.get("REQUIREMENTS_EDIT_MODE", "ops").lower() == "ops")
+        intent_text = ""
+        updated_requirements = current_requirements
+
+        if use_ops_mode:
+            try:
+                logger.info(
+                    "[VISION_DEBUG][REQ_BEFORE] trace_id=%s %s",
+                    debug_trace_id,
+                    json.dumps(current_requirements, default=str),
+                )
+                if debug_dir:
+                    try:
+                        with open(
+                            os.path.join(debug_dir, "requirements_before.json"),
+                            "w",
+                            encoding="utf-8",
+                        ) as handle:
+                            json.dump(current_requirements, handle, indent=2, default=str)
+                    except Exception as req_err:
+                        logger.warning("[VISION_DEBUG][REQ_BEFORE] Failed to write requirements: %s", req_err)
+                ops_payload = analyzer.generate_ops(
+                    pages,
+                    annotations,
+                    current_requirements,
+                    body.get("prompt"),
+                    debug_dir=debug_dir,
+                    debug_tag="ops",
+                    debug_trace_id=debug_trace_id,
+                )
+                ops = ops_payload.get("ops", []) if isinstance(ops_payload, dict) else []
+                if not isinstance(ops, list):
+                    ops = []
+                strict_title = str(os.environ.get("STRICT_TITLE_EDITS", "true")).lower() == "true"
+                allowed_paths = os.environ.get("ALLOWED_EDIT_PATHS")
+                allowed = (allowed_paths or "/title,/summary,/pricing_breakdown,/timeline_phases").split(
+                    ","
+                )
+                updated_requirements = apply_ops(
+                    current_requirements,
+                    ops,
+                    allowed_paths=allowed,
+                    strict_title=strict_title,
+                )
+                logger.info(
+                    "[VISION_DEBUG][REQ_AFTER] trace_id=%s %s",
+                    debug_trace_id,
+                    json.dumps(updated_requirements, default=str),
+                )
+                if debug_dir:
+                    try:
+                        with open(
+                            os.path.join(debug_dir, "requirements_after.json"),
+                            "w",
+                            encoding="utf-8",
+                        ) as handle:
+                            json.dump(updated_requirements, handle, indent=2, default=str)
+                    except Exception as req_err:
+                        logger.warning("[VISION_DEBUG][REQ_AFTER] Failed to write requirements: %s", req_err)
+                logger.info("[VISION] Applied %d ops to requirements", len(ops))
+            except (VisionModelError, RequirementOpsError) as ops_err:
+                logger.warning(
+                    "[VISION_DEBUG][REQ_OPS_ERROR] trace_id=%s %s",
+                    debug_trace_id,
+                    ops_err,
+                )
+                logger.warning("[VISION] Ops mode failed: %s; falling back to intent editor", ops_err)
+                use_ops_mode = False
+
+        if not use_ops_mode:
+            try:
+                intent_text = analyzer.generate_intent(
+                    pages,
+                    annotations,
+                    base_instructions,
+                    body.get("prompt"),
+                    debug_dir=debug_dir,
+                    debug_tag="intent",
+                    debug_trace_id=debug_trace_id,
+                )
+            except VisionModelError as vision_err:
+                raise VisionProcessingError(str(vision_err)) from vision_err
+
+            logger.info("[VISION] Response intent: %s", intent_text)
+
+            # Apply instructions to requirements via LLM-based editor
+            extractor = RequirementExtractor()
+            try:
+                updated_requirements = extractor.apply_edit_instructions(current_requirements, intent_text)
+            except RequirementEditError as edit_err:
+                raise RequirementUpdateError(str(edit_err)) from edit_err
 
         # Allocate new version and render PDF to target key
         s3_store = S3ProposalStore(
@@ -1361,7 +1478,7 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
 
         # Metadata and version record
         base_meta = s3_store.get_proposal_metadata(conversation_id, int(base_version)) or {}
-        requirements_hash = (base_meta or {}).get("requirements_hash", "")
+        requirements_hash = s3_store._calculate_requirements_hash(updated_requirements)
         metadata = {
             "version": new_version,
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -1370,16 +1487,21 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
             "client_name": proposal_data.get("clientName", ""),
             "project_type": proposal_data.get("projectTitle", ""),
             "file_size": pdf_size,
-            "generated_by": "proposal_edit_vision",
+            "generated_by": (
+                "proposal_edit_vision_ops"
+                if os.environ.get("REQUIREMENTS_EDIT_MODE", "ops").lower() == "ops"
+                else "proposal_edit_vision_requirements"
+            ),
             "requirements_used": updated_requirements,
             "revised_requirements_used": {
-                "annotation_count": len(annotations),
+                "annotation_count": len(annotations or []),
                 "edit_prompt": body.get("prompt") or "",
                 "base_version": base_version,
                 "feedback_items": [],
-                "applied_patches": v_patches,
+                "applied_patches": [],
                 "vision_used": True,
-                "fallback_llm_used": False,
+                "intent_text": intent_text,
+                "requirements_diff_applied": True,
             },
         }
         try:
@@ -1406,16 +1528,12 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
             },
         )
 
-        # Persist updated requirements and update pending reply
+        # Update pending reply with new proposal version (requirements unchanged)
         try:
             table.update_item(
                 Key={"conversation_id": conversation_id},
-                UpdateExpression="SET #req = :req, updated_at = :ts",
-                ExpressionAttributeNames={"#req": "requirements"},
-                ExpressionAttributeValues={
-                    ":req": updated_requirements,
-                    ":ts": datetime.now(timezone.utc).isoformat(),
-                },
+                UpdateExpression="SET updated_at = :ts",
+                ExpressionAttributeValues={":ts": datetime.now(timezone.utc).isoformat()},
             )
             pending_replies = conv.get("pending_replies", [])
             for r in pending_replies:
@@ -1429,6 +1547,19 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
         except Exception as upd_err:
             logger.warning(f"Failed to persist vision changes: {upd_err}")
 
+        # Persist updated requirements
+        try:
+            table.update_item(
+                Key={"conversation_id": conversation_id},
+                UpdateExpression="SET requirements = :req, updated_at = :ts",
+                ExpressionAttributeValues={
+                    ":req": updated_requirements,
+                    ":ts": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+        except Exception as req_err:
+            logger.warning(f"Failed to update requirements in conversation: {req_err}")
+
         return {
             "statusCode": 200,
             "body": json.dumps(
@@ -1437,13 +1568,35 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
                     "conversation_id": conversation_id,
                     "base_version": base_version,
                     "new_version": new_version,
-                    "applied_fields": [p.get("path") for p in v_patches],
                     "vision_used": True,
                     "fallback_llm_used": False,
+                    "intent": intent_text,
                 }
             ),
         }
 
+    except VisionProcessingError as vision_error:
+        logger.error(f"Vision processing failed: {vision_error}")
+        return {
+            "statusCode": 502,
+            "body": json.dumps(
+                {
+                    "error": "Vision model failed to generate edits",
+                    "details": str(vision_error),
+                }
+            ),
+        }
+    except RequirementUpdateError as requirement_error:
+        logger.error(f"Requirement update failed: {requirement_error}")
+        return {
+            "statusCode": 502,
+            "body": json.dumps(
+                {
+                    "error": "Failed to apply requirement edits",
+                    "details": str(requirement_error),
+                }
+            ),
+        }
     except Exception as e:
         logger.error(f"Error in annotate_vision: {str(e)}", exc_info=True)
         return {"statusCode": 500, "body": json.dumps({"error": "Failed to annotate with vision"})}

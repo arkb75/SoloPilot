@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 AI_PROVIDER = os.environ.get("AI_PROVIDER", "bedrock")
 
 
+class RequirementEditError(Exception):
+    """Raised when requirement edits cannot be applied."""
+
+
 class RequirementExtractor:
     """Extracts project requirements from email conversations using LLM."""
 
@@ -69,7 +73,6 @@ class RequirementExtractor:
         def _decimal_safe(obj: Any):
             """Custom JSON encoder for Decimal objects."""
             if isinstance(obj, Decimal):
-                # Preserve integers without .0
                 return int(obj) if obj % 1 == 0 else float(obj)
             raise TypeError
 
@@ -170,6 +173,61 @@ Return ONLY valid JSON, no additional text."""
         except Exception as e:
             logger.error(f"Error extracting requirements: {str(e)}")
             return existing_requirements
+
+    def apply_edit_instructions(self, requirements: Dict[str, Any], instructions: str) -> Dict[str, Any]:
+        """Apply natural language instructions to existing requirements JSON."""
+
+        if not instructions or not instructions.strip():
+            raise RequirementEditError("Empty instruction set provided")
+
+        def _decimal_safe(obj: Any):
+            if isinstance(obj, Decimal):
+                return int(obj) if obj % 1 == 0 else float(obj)
+            raise TypeError
+
+        requirements_json = json.dumps(requirements, indent=2, default=_decimal_safe)
+
+        prompt = f"""You are a senior proposal analyst. Update the JSON requirements to reflect the requested changes exactly.
+
+CURRENT REQUIREMENTS:
+{requirements_json}
+
+CHANGE INSTRUCTIONS:
+{instructions.strip()}
+
+Return ONLY the updated requirements JSON. Do not include explanations, markdown, code fences, or extra text. Preserve all fields from the current payload, updating only where the instructions require changes."""
+
+        try:
+            if USE_AI_PROVIDER:
+                response = self.provider.generate_code(prompt, [])
+                logger.info("Requirement edit model raw response (provider): %s", response)
+                updated = json.loads(response)
+            else:
+                request_body = {
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 4000,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.1,
+                }
+
+                response = self.bedrock_client.invoke_model(
+                    modelId=self.model_id, body=json.dumps(request_body)
+                )
+                body = json.loads(response["body"].read())
+                model_text = body["content"][0]["text"]
+                logger.info("Requirement edit model raw response (bedrock): %s", model_text)
+                updated = json.loads(model_text)
+
+            if not isinstance(updated, dict):
+                raise RequirementEditError("Model returned non-object requirements payload")
+
+            return updated
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse requirement edit response: {e}")
+            raise RequirementEditError("Model returned invalid JSON while applying edits") from e
+        except Exception as e:
+            logger.error(f"Error applying requirement edits: {e}")
+            raise RequirementEditError(str(e)) from e
 
     def is_complete(self, requirements: Dict[str, Any]) -> bool:
         """Check if requirements are complete enough to proceed.

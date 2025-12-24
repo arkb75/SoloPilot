@@ -54,14 +54,8 @@ class ProposalDataMapper:
         title = requirements.get("title", "")
         project_type = requirements.get("project_type", "")
         
-        # Use title if it's descriptive enough
+        # Use provided title verbatim when present
         if title and len(title) > 3:
-            # Clean up common patterns
-            if "dashboard" in title.lower():
-                if "shopify" in title.lower():
-                    return "Shopify Dashboard"
-                else:
-                    return "Internal Dashboard"
             return title
         
         # Fallback to project type

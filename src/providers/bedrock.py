@@ -81,7 +81,7 @@ class BedrockProvider(BaseProvider):
             temperature = model_config.get("temperature", 0.1)
 
             # Set timeout (default 30s, fail fast at 15s for validation)
-            request_timeout = timeout or model_config.get("timeout", 30)
+            request_timeout = timeout or model_config.get("timeout", 120)
 
             # Add performance guard for complex prompts
             prompt_size = len(enhanced_prompt)

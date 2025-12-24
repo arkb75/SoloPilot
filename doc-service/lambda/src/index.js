@@ -20,7 +20,8 @@ const { createLogger } = require('./logger');
 const {
   generatePDFFromTemplate,
   validateTemplateData,
-  getTemplateMetadata
+  getTemplateMetadata,
+  generatePDFFromOverride
 } = require('./template-handler');
 
 const { Document, Page, Text, View, StyleSheet, renderToBuffer } = ReactPDF;
@@ -74,24 +75,24 @@ const validateInput = (body) => {
   const errors = [];
 
   // Check if this is a template-based request
-  if (body.template) {
-    // Template-based validation
-    if (!body.conversationId || typeof body.conversationId !== 'string') {
-      errors.push('conversationId is required and must be a string');
-    }
-
-    // Validate template exists
-    const templateMeta = getTemplateMetadata(body.template);
-    if (!templateMeta) {
-      errors.push(`Unknown template: ${body.template}`);
-    } else {
-      // Validate template data
-      const validation = validateTemplateData(body.template, body.data || {});
-      if (!validation.valid) {
-        errors.push(...validation.errors);
+    if (body.template) {
+      // Template-based validation
+      if (!body.conversationId || typeof body.conversationId !== 'string') {
+        errors.push('conversationId is required and must be a string');
       }
-    }
-  } else {
+
+      // Validate template exists
+      const templateMeta = getTemplateMetadata(body.template);
+      if (!templateMeta) {
+        errors.push(`Unknown template: ${body.template}`);
+      } else {
+        // Validate template data (still applies when overriding source)
+        const validation = validateTemplateData(body.template, body.data || {});
+        if (!validation.valid) {
+          errors.push(...validation.errors);
+        }
+      }
+    } else {
     // Markdown-based validation (existing)
     if (!body.conversationId || typeof body.conversationId !== 'string') {
       errors.push('conversationId is required and must be a string');
@@ -306,8 +307,13 @@ exports.handler = async (event, context) => {
       }
 
       try {
-        logger.info('Generating PDF from template', { template: body.template });
-        pdfBuffer = await generatePDFFromTemplate(body.template, body.data || {});
+        const hasOverride = typeof body.templateOverride === 'string' && body.templateOverride.trim().length > 0;
+        logger.info('Generating PDF from template', { template: body.template, override: hasOverride });
+        if (hasOverride) {
+          pdfBuffer = await generatePDFFromOverride(body.templateOverride, body.data || {});
+        } else {
+          pdfBuffer = await generatePDFFromTemplate(body.template, body.data || {});
+        }
       } catch (templateError) {
         logger.error('Template generation error', {
           error: templateError.message,
