@@ -27,8 +27,10 @@ try:
     bedrock_client = boto3.client(
         "bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-2")
     )
+    s3_client = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "us-east-2"))
 except Exception:  # pragma: no cover
     bedrock_client = None
+    s3_client = None
 
 
 SYSTEM_INSTRUCTIONS = (
@@ -129,6 +131,56 @@ class VisionAnalyzer:
             sanitized.append(slim)
         return sanitized
 
+    def _upload_debug_dir(
+        self,
+        tag_dir: str,
+        *,
+        bucket: str,
+        prefix: str,
+        trace_id: Optional[str],
+        debug_tag: str,
+        include_output_only: bool = False,
+    ) -> None:
+        if not s3_client:
+            logger.warning("[VISION_DEBUG][S3] S3 client unavailable")
+            return
+        if not os.path.isdir(tag_dir):
+            logger.warning("[VISION_DEBUG][S3] Debug dir missing: %s", tag_dir)
+            return
+
+        try:
+            entries = [
+                f for f in os.listdir(tag_dir) if os.path.isfile(os.path.join(tag_dir, f))
+            ]
+        except Exception as err:
+            logger.warning("[VISION_DEBUG][S3] Failed to list %s: %s", tag_dir, err)
+            return
+
+        if include_output_only:
+            entries = [f for f in entries if f == "output.txt"]
+
+        for filename in entries:
+            local_path = os.path.join(tag_dir, filename)
+            key = f"{prefix.rstrip('/')}/{debug_tag}/{filename}"
+            try:
+                s3_client.upload_file(local_path, bucket, key)
+            except Exception as err:
+                logger.warning(
+                    "[VISION_DEBUG][S3] Upload failed trace_id=%s tag=%s file=%s: %s",
+                    trace_id,
+                    debug_tag,
+                    filename,
+                    err,
+                )
+
+        logger.info(
+            "[VISION_DEBUG][S3] trace_id=%s tag=%s bucket=%s prefix=%s",
+            trace_id,
+            debug_tag,
+            bucket,
+            prefix,
+        )
+
     def _emit_debug_input(
         self,
         *,
@@ -139,6 +191,8 @@ class VisionAnalyzer:
         pages: List[Dict[str, Any]],
         annotations: List[Dict[str, Any]],
         user_prompt: Optional[str],
+        debug_s3_bucket: Optional[str],
+        debug_s3_prefix: Optional[str],
     ) -> None:
         if prompt_text:
             logger.info(
@@ -241,6 +295,16 @@ class VisionAnalyzer:
             len(annotations),
         )
 
+        if debug_s3_bucket and debug_s3_prefix:
+            self._upload_debug_dir(
+                tag_dir,
+                bucket=debug_s3_bucket,
+                prefix=f"{debug_s3_prefix.rstrip('/')}/{trace_id or 'unknown'}",
+                trace_id=trace_id,
+                debug_tag=debug_tag,
+                include_output_only=False,
+            )
+
     def _emit_debug_output(
         self,
         *,
@@ -248,6 +312,8 @@ class VisionAnalyzer:
         debug_tag: str,
         trace_id: Optional[str],
         output_text: str,
+        debug_s3_bucket: Optional[str],
+        debug_s3_prefix: Optional[str],
     ) -> None:
         logger.info(
             "[VISION_DEBUG][OUTPUT] trace_id=%s tag=%s %s",
@@ -272,6 +338,16 @@ class VisionAnalyzer:
                 handle.write(output_text or "")
         except Exception as err:
             logger.warning("[VISION_DEBUG][OUTPUT] Failed to write output: %s", err)
+
+        if debug_s3_bucket and debug_s3_prefix:
+            self._upload_debug_dir(
+                tag_dir,
+                bucket=debug_s3_bucket,
+                prefix=f"{debug_s3_prefix.rstrip('/')}/{trace_id or 'unknown'}",
+                trace_id=trace_id,
+                debug_tag=debug_tag,
+                include_output_only=True,
+            )
 
     def build_messages(self, annotations: List[Dict[str, Any]], requirements: Dict[str, Any], user_prompt: Optional[str]) -> List[Dict[str, Any]]:
         content: List[Dict[str, Any]] = [
@@ -340,6 +416,8 @@ class VisionAnalyzer:
         debug_dir: Optional[str] = None,
         debug_tag: str = "intent",
         debug_trace_id: Optional[str] = None,
+        debug_s3_bucket: Optional[str] = None,
+        debug_s3_prefix: Optional[str] = None,
     ) -> str:
         """Generate a concise, human-readable edit intent from annotated page composites.
 
@@ -390,6 +468,8 @@ class VisionAnalyzer:
                 pages=pages,
                 annotations=annotations,
                 user_prompt=user_prompt,
+                debug_s3_bucket=debug_s3_bucket,
+                debug_s3_prefix=debug_s3_prefix,
             )
             request_body = {
                 "anthropic_version": "bedrock-2023-05-31",
@@ -404,6 +484,8 @@ class VisionAnalyzer:
                 debug_tag=debug_tag,
                 trace_id=debug_trace_id,
                 output_text=text or "",
+                debug_s3_bucket=debug_s3_bucket,
+                debug_s3_prefix=debug_s3_prefix,
             )
             cleaned = (text or "").strip()
             if not cleaned:
@@ -428,6 +510,8 @@ class VisionAnalyzer:
         debug_dir: Optional[str] = None,
         debug_tag: str = "ops",
         debug_trace_id: Optional[str] = None,
+        debug_s3_bucket: Optional[str] = None,
+        debug_s3_prefix: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Emit a constrained set of edit operations suitable for deterministic application.
 
@@ -492,6 +576,8 @@ class VisionAnalyzer:
                 pages=pages,
                 annotations=annotations,
                 user_prompt=user_prompt,
+                debug_s3_bucket=debug_s3_bucket,
+                debug_s3_prefix=debug_s3_prefix,
             )
             request_body = {
                 "anthropic_version": "bedrock-2023-05-31",
@@ -507,6 +593,8 @@ class VisionAnalyzer:
                 debug_tag=debug_tag,
                 trace_id=debug_trace_id,
                 output_text=text or "",
+                debug_s3_bucket=debug_s3_bucket,
+                debug_s3_prefix=debug_s3_prefix,
             )
             parsed = json.loads((text or "").strip() or "{}")
 

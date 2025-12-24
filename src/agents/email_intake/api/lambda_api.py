@@ -1301,6 +1301,8 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
         debug_trace_id = None
         debug_dir = None
         debug_root = os.environ.get("VISION_DEBUG_DIR", "/tmp/vision_debug")
+        debug_s3_bucket = os.environ.get("VISION_DEBUG_S3_BUCKET")
+        debug_s3_prefix = os.environ.get("VISION_DEBUG_S3_PREFIX", "vision_debug")
         try:
             ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
             safe_conv = conversation_id.replace("/", "_")
@@ -1308,6 +1310,13 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
             debug_dir = os.path.join(debug_root, debug_trace_id)
             os.makedirs(debug_dir, exist_ok=True)
             logger.info("[VISION_DEBUG][TRACE] trace_id=%s dir=%s", debug_trace_id, debug_dir)
+            if debug_s3_bucket:
+                logger.info(
+                    "[VISION_DEBUG][S3] trace_id=%s bucket=%s prefix=%s",
+                    debug_trace_id,
+                    debug_s3_bucket,
+                    f"{debug_s3_prefix.rstrip('/')}/{debug_trace_id}",
+                )
         except Exception as debug_err:
             logger.warning("[VISION_DEBUG][TRACE] Failed to init debug dir: %s", debug_err)
             debug_dir = None
@@ -1372,6 +1381,8 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
                     debug_dir=debug_dir,
                     debug_tag="ops",
                     debug_trace_id=debug_trace_id,
+                    debug_s3_bucket=debug_s3_bucket,
+                    debug_s3_prefix=debug_s3_prefix,
                 )
                 ops = ops_payload.get("ops", []) if isinstance(ops_payload, dict) else []
                 if not isinstance(ops, list):
@@ -1422,6 +1433,8 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
                     debug_dir=debug_dir,
                     debug_tag="intent",
                     debug_trace_id=debug_trace_id,
+                    debug_s3_bucket=debug_s3_bucket,
+                    debug_s3_prefix=debug_s3_prefix,
                 )
             except VisionModelError as vision_err:
                 raise VisionProcessingError(str(vision_err)) from vision_err
