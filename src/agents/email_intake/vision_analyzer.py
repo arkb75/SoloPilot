@@ -435,15 +435,6 @@ class VisionAnalyzer:
                 {"type": "text", "text": base_instructions.strip()},
             ]
 
-            if annotations:
-                lines = []
-                for i, a in enumerate(annotations):
-                    note = (a.get("comment") or "").strip()
-                    if note:
-                        lines.append(f"[{i+1}] page {a.get('pageIndex', 0)+1}: {note}")
-                if lines:
-                    content.append({"type": "text", "text": "Annotation notes:\n" + "\n".join(lines)})
-
             # Add page composites
             for p in pages:
                 img = (p or {}).get("imageBase64")

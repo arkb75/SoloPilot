@@ -22,6 +22,18 @@ const toolColors: Record<string, string> = {
   note: '#4CAF50',
 };
 
+const applyAlpha = (color: string, alpha: number): string => {
+  if (!color.startsWith('#')) return color;
+  const raw = color.slice(1);
+  const hex = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw;
+  if (hex.length !== 6) return color;
+  const r = Number.parseInt(hex.slice(0, 2), 16);
+  const g = Number.parseInt(hex.slice(2, 4), 16);
+  const b = Number.parseInt(hex.slice(4, 6), 16);
+  const safeAlpha = Math.min(1, Math.max(0, alpha));
+  return `rgba(${r}, ${g}, ${b}, ${safeAlpha})`;
+};
+
 type DisplayAnnotation = PdfAnnotation & { _idx: number; _displayIndex: number };
 
 const buildDisplayAnnotations = (annotations: PdfAnnotation[], pageIndex: number): DisplayAnnotation[] => {
@@ -170,7 +182,7 @@ const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmit
           height: nheight,
           type: activeTool,
           color: toolColors[activeTool],
-          opacity: activeTool === 'highlight' ? 0.3 : 0.8,
+          opacity: activeTool === 'highlight' ? 0.55 : 0.8,
           selectedText,
           surroundingText,
           zone,
@@ -269,7 +281,7 @@ const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmit
       };
 
       ctx.font = `${textSize}px sans-serif`;
-      const badgeRadius = Math.round(8 * scale);
+      const badgeRadius = Math.round(10 * scale);
       const badgeDiameter = badgeRadius * 2;
       const textX = keyX + badgeDiameter + Math.round(6 * scale);
       const maxTextWidth = keyWidth - (textX - composite.width) - margin;
@@ -280,16 +292,16 @@ const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmit
         }
         const label = (a.comment || '').trim() || '(no comment)';
 
-        ctx.fillStyle = '#111827';
+        ctx.fillStyle = '#ffffff';
         ctx.beginPath();
         ctx.arc(keyX + badgeRadius, cursorY - badgeRadius + 2, badgeRadius, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = Math.max(1, Math.round(1 * scale));
+        ctx.strokeStyle = '#111827';
+        ctx.lineWidth = Math.max(2, Math.round(1.5 * scale));
         ctx.stroke();
 
-        ctx.fillStyle = '#ffffff';
-        ctx.font = `600 ${Math.round(10 * scale)}px sans-serif`;
+        ctx.fillStyle = '#111827';
+        ctx.font = `700 ${Math.round(12 * scale)}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(String(a._displayIndex), keyX + badgeRadius, cursorY - badgeRadius + 2);
@@ -373,21 +385,28 @@ const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmit
               </Document>
               {pageContainerRef.current && pageAnnotations.map((a) => {
                 const rect = pageContainerRef.current!.getBoundingClientRect();
-                const badgeSize = 12;
-                const badgeOffset = 4;
+                const badgeSize = 18;
+                const badgeOffset = 6;
                 const highlightLeft = a.x * rect.width;
                 const highlightTop = a.y * rect.height;
                 const highlightWidth = a.width * rect.width;
                 const highlightHeight = a.height * rect.height;
+                const isHighlight = a.type === 'highlight';
+                const fillOpacity = Math.max(a.opacity ?? 0.6, 0.45);
                 const style: React.CSSProperties = {
                   position: 'absolute',
                   left: `${highlightLeft}px`,
                   top: `${highlightTop}px`,
                   width: `${highlightWidth}px`,
                   height: `${highlightHeight}px`,
-                  backgroundColor: a.type === 'highlight' ? (a.color || '#FFEB3B') : 'transparent',
-                  opacity: a.opacity ?? (a.type === 'highlight' ? 0.3 : 1),
-                  border: a.type === 'note' ? `2px solid ${a.color || '#4CAF50'}` : 'none',
+                  backgroundColor: isHighlight
+                    ? applyAlpha(a.color || toolColors.highlight, fillOpacity)
+                    : 'transparent',
+                  opacity: isHighlight ? 1 : a.opacity ?? 1,
+                  border: isHighlight
+                    ? '2px solid rgba(245, 158, 11, 0.9)'
+                    : `2px solid ${a.color || toolColors.note}`,
+                  boxShadow: isHighlight ? '0 0 0 1px rgba(0, 0, 0, 0.08)' : 'none',
                   pointerEvents: 'none',
                 };
                 const candidates = [
@@ -410,12 +429,14 @@ const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmit
                   top: `${badgeTop}px`,
                   width: `${badgeSize}px`,
                   height: `${badgeSize}px`,
-                  backgroundColor: 'rgba(0, 0, 0, 0.85)',
-                  color: '#ffffff',
-                  fontSize: '8px',
-                  fontWeight: 600,
+                  backgroundColor: '#ffffff',
+                  color: '#111827',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  lineHeight: 1,
                   borderRadius: '9999px',
-                  border: '1px solid #ffffff',
+                  border: '2px solid #111827',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.35)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
