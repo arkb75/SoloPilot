@@ -50,7 +50,7 @@ class EmailReviewer:
     def __init__(self):
         """Initialize the email reviewer with Claude 4.5 Haiku model."""
         # Use Haiku for fast, cost-effective review
-        self.model = "us.anthropic.claude-4-5-haiku-20241022-v1:0"  # Bedrock model ID
+        self.model = "anthropic.claude-haiku-4-5-20251001-v1:0"  # Bedrock model ID
         self.anthropic_model = "claude-4-5-haiku-20241022"  # For AI provider
         
         if USE_AI_PROVIDER:

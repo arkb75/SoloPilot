@@ -8,10 +8,19 @@ The metadata is used by the conversational responder to generate natural emails.
 import json
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_json_response(text: Optional[str]) -> str:
+    cleaned = (text or "").strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    return cleaned.strip()
 
 # Try to use the AI provider framework, fallback to Bedrock if not available
 try:
@@ -36,7 +45,13 @@ class MetadataExtractor:
     def __init__(self):
         """Initialize the metadata extractor with Claude Haiku model."""
         # Use Haiku for fast extraction
-        self.model = "us.anthropic.claude-4-5-haiku-20241022-v1:0"  # Bedrock model ID
+        self.model = os.environ.get(
+            "BEDROCK_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0"
+        )  # Bedrock model ID
+        self.inference_profile_arn = (
+            os.environ.get("BEDROCK_IP_ARN")
+            or os.environ.get("VISION_INFERENCE_PROFILE_ARN")
+        )
         self.anthropic_model = "claude-3-haiku-20240307"  # For AI provider
         
         if USE_AI_PROVIDER:
@@ -64,7 +79,7 @@ class MetadataExtractor:
             response = self._call_haiku(prompt)
             
             # Parse and validate the response
-            metadata = json.loads(response)
+            metadata = json.loads(_clean_json_response(response))
             validated_metadata = self._validate_metadata(metadata, current_phase, existing_metadata)
             
             # Log successful extraction
@@ -223,6 +238,18 @@ Think through the client's needs step by step, then provide ONLY the JSON object
             
         return "\n---\n".join(formatted) if formatted else "No conversation history"
     
+    def _invoke_bedrock(self, request_body: Dict[str, Any]) -> Dict[str, Any]:
+        payload = json.dumps(request_body)
+        if self.inference_profile_arn:
+            response = bedrock_client.invoke_model(
+                modelId=self.inference_profile_arn, body=payload, contentType="application/json"
+            )
+            return json.loads(response["body"].read())
+        response = bedrock_client.invoke_model(
+            modelId=self.model, body=payload, contentType="application/json"
+        )
+        return json.loads(response["body"].read())
+
     def _call_haiku(self, prompt: str) -> str:
         """Call Claude Haiku model for extraction."""
         try:
@@ -238,13 +265,7 @@ Think through the client's needs step by step, then provide ONLY the JSON object
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.1,  # Low temperature for consistent extraction
                 }
-                
-                response = bedrock_client.invoke_model(
-                    modelId=self.model,
-                    body=json.dumps(request_body)
-                )
-                
-                response_body = json.loads(response["body"].read())
+                response_body = self._invoke_bedrock(request_body)
                 return response_body["content"][0]["text"].strip()
                 
         except Exception as e:

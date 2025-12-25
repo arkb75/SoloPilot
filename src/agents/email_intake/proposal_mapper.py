@@ -6,6 +6,7 @@ Single responsibility: Transform requirements into proposal data structure.
 """
 
 import logging
+import os
 from datetime import datetime
 from typing import Dict, List, Any
 
@@ -30,10 +31,16 @@ class ProposalDataMapper:
             "clientName": requirements.get("client_name", "Client"),
             "projectTitle": self._get_project_title(requirements),
             "proposalDate": datetime.now().strftime("%B %Y"),
+            "executiveSummaryParagraphs": self._map_executive_summary(requirements),
             "scope": self._map_scope_items(requirements),
             "timeline": self._map_timeline_phases(requirements),
             "pricing": self._map_pricing_breakdown(requirements),
+            "techStackIntro": self._map_tech_stack_intro(requirements),
             "techStack": self._map_tech_stack(requirements),
+            "nextSteps": self._map_next_steps(requirements),
+            "successMetrics": self._map_success_metrics(requirements),
+            "freelancerName": self._get_freelancer_name(requirements),
+            "validityNote": self._map_validity_note(requirements),
         }
         
         # Log the mapping for debugging
@@ -45,9 +52,106 @@ class ProposalDataMapper:
         logger.info(f"  timeline: {len(proposal_data['timeline'])} phases")
         logger.info(f"  pricing: {len(proposal_data['pricing'])} items")
         logger.info(f"  techStack: {len(proposal_data['techStack'])} technologies")
+        logger.info(
+            "  executiveSummaryParagraphs: %d",
+            len(proposal_data["executiveSummaryParagraphs"]),
+        )
+        logger.info("  nextSteps: %d", len(proposal_data["nextSteps"]))
+        logger.info("  successMetrics: %d", len(proposal_data["successMetrics"]))
         logger.info("=" * 80)
         
         return proposal_data
+
+    def _coerce_string_list(self, value: Any) -> List[str]:
+        """Normalize string or list inputs into a clean list of strings."""
+        if isinstance(value, str):
+            return [line.strip() for line in value.splitlines() if line.strip()]
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return []
+
+    def _map_executive_summary(self, requirements: Dict[str, Any]) -> List[str]:
+        """Map executive summary paragraphs from requirements."""
+        raw = (
+            requirements.get("executive_summary")
+            or requirements.get("executive_summary_paragraphs")
+            or requirements.get("executiveSummary")
+        )
+        paragraphs = self._coerce_string_list(raw)
+        if paragraphs:
+            return paragraphs
+
+        summary = str(requirements.get("summary") or "").strip()
+        business_desc = str(requirements.get("business_description") or "").strip()
+        derived: List[str] = []
+        if summary:
+            derived.append(summary)
+        if business_desc and business_desc != summary:
+            derived.append(business_desc)
+        return derived
+
+    def _map_next_steps(self, requirements: Dict[str, Any]) -> List[str]:
+        """Map next steps from requirements or existing scope/timeline data."""
+        raw = requirements.get("next_steps") or requirements.get("nextSteps")
+        steps = self._coerce_string_list(raw)
+        if steps:
+            return steps[:6]
+
+        scope_items = requirements.get("scope_items", []) or []
+        derived = [
+            str(item.get("title", "")).strip()
+            for item in scope_items
+            if str(item.get("title", "")).strip()
+        ]
+        if derived:
+            return derived[:6]
+
+        timeline_phases = requirements.get("timeline_phases", []) or []
+        derived = [
+            str(phase.get("phase", "")).strip()
+            for phase in timeline_phases
+            if str(phase.get("phase", "")).strip()
+        ]
+        return derived[:6]
+
+    def _map_success_metrics(self, requirements: Dict[str, Any]) -> List[str]:
+        """Map success metrics from requirements or derived feature names."""
+        raw = requirements.get("success_metrics") or requirements.get("successMetrics")
+        metrics = self._coerce_string_list(raw)
+        if metrics:
+            return metrics[:6]
+
+        features = requirements.get("features", []) or []
+        derived = [
+            str(feature.get("name", "")).strip()
+            for feature in features
+            if str(feature.get("name", "")).strip()
+        ]
+        if derived:
+            return derived[:6]
+
+        constraints = requirements.get("constraints", []) or []
+        derived = self._coerce_string_list(constraints)
+        return derived[:6]
+
+    def _map_tech_stack_intro(self, requirements: Dict[str, Any]) -> str:
+        """Return optional tech stack intro text from requirements."""
+        intro = requirements.get("tech_stack_overview") or requirements.get("tech_stack_intro")
+        return str(intro).strip() if intro else ""
+
+    def _get_freelancer_name(self, requirements: Dict[str, Any]) -> str:
+        """Return freelancer display name for signature."""
+        name = requirements.get("freelancer_name") or requirements.get("freelancerName")
+        if name:
+            return str(name).strip()
+        return os.environ.get("PROPOSAL_FREELANCER_NAME", "").strip()
+
+    def _map_validity_note(self, requirements: Dict[str, Any]) -> str:
+        """Return the proposal validity note from requirements or environment."""
+        note = requirements.get("validity_note") or requirements.get("validityNote")
+        if note:
+            return str(note).strip()
+        return os.environ.get("PROPOSAL_VALIDITY_NOTE", "").strip()
     
     def _get_project_title(self, requirements: Dict[str, Any]) -> str:
         """Determine project title based on requirements."""

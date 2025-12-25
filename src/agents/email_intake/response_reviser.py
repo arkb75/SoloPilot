@@ -30,7 +30,7 @@ class ResponseReviser:
         """Initialize the response reviser with Claude Sonnet 4/5."""
         # Use Sonnet 4/5 (same model as original response generation)
         self.model_id = os.environ.get(
-            "BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250514-v1:0"
+            "BEDROCK_MODEL_ID", "anthropic.claude-sonnet-4-5-20250929-v1:0"
         )
         self.anthropic_model = "claude-3-5-sonnet-20241022"  # For AI provider
         

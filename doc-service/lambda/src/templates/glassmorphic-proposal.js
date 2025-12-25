@@ -349,38 +349,19 @@ const LogoPlaceholder = () => React.createElement(
 // Main proposal template component
 const GlassmorphicProposal = ({ data = {} }) => {
   const {
-    clientName = 'Tesla Motors',
-    projectTitle = 'Next-Generation Web Platform',
-    proposalDate = 'January 2025',
-    scope = [
-      {
-        title: 'Discovery & Research',
-        description: 'Deep dive into user needs, competitive analysis, and technical requirements. Stakeholder interviews and journey mapping.',
-      },
-      {
-        title: 'Design & Prototyping',
-        description: 'Create high-fidelity designs with interactive prototypes. Establish design system and component library.',
-      },
-      {
-        title: 'Development & Testing',
-        description: 'Build responsive web application with modern tech stack. Implement CI/CD pipeline and comprehensive testing.',
-      },
-    ],
-    timeline = [
-      { phase: 'Discovery', duration: '2 weeks' },
-      { phase: 'Design', duration: '3 weeks' },
-      { phase: 'Development', duration: '8 weeks' },
-      { phase: 'Testing', duration: '2 weeks' },
-      { phase: 'Launch', duration: '1 week' },
-    ],
-    pricing = [
-      { item: 'Discovery & Research', amount: '$1,500' },
-      { item: 'Design & Prototyping', amount: '$3,500' },
-      { item: 'Development', amount: '$12,000' },
-      { item: 'Testing & QA', amount: '$2,000' },
-      { item: 'Launch Support', amount: '$1,000' },
-    ],
-    techStack = ['React', 'Next.js', 'TypeScript', 'GraphQL', 'Node.js', 'PostgreSQL', 'Redis', 'Docker', 'AWS'],
+    clientName = '',
+    projectTitle = '',
+    proposalDate = '',
+    executiveSummaryParagraphs = [],
+    scope = [],
+    timeline = [],
+    pricing = [],
+    techStackIntro = '',
+    techStack = [],
+    nextSteps = [],
+    successMetrics = [],
+    freelancerName = '',
+    validityNote = '',
   } = data;
 
   // Calculate total from pricing items
@@ -417,15 +398,12 @@ const GlassmorphicProposal = ({ data = {} }) => {
       React.createElement(
         View,
         { style: styles.glassPanel },
-        React.createElement(
-          Text,
-          { style: styles.body },
-          "This proposal outlines our approach to designing and developing a next-generation web platform that embodies the principles of minimalist design, exceptional user experience, and cutting-edge technology."
-        ),
-        React.createElement(
-          Text,
-          { style: [styles.body, { marginTop: 15 }] },
-          "Our solution will deliver a seamless, performant, and visually stunning digital experience that sets new standards in the industry while meeting all technical and business requirements."
+        ...executiveSummaryParagraphs.map((paragraph, index) =>
+          React.createElement(
+            Text,
+            { key: `summary-${index}`, style: [styles.body, index > 0 ? { marginTop: 15 } : null] },
+            paragraph
+          )
         )
       ),
       React.createElement(GradientBar),
@@ -517,11 +495,13 @@ const GlassmorphicProposal = ({ data = {} }) => {
       React.createElement(
         View,
         { style: styles.glassPanel },
-        React.createElement(
-          Text,
-          { style: styles.body },
-          "We've carefully selected a modern, scalable technology stack that ensures performance, maintainability, and future growth."
-        ),
+        techStackIntro
+          ? React.createElement(
+              Text,
+              { style: styles.body },
+              techStackIntro
+            )
+          : null,
         React.createElement(
           View,
           { style: styles.techStack },
@@ -547,19 +527,25 @@ const GlassmorphicProposal = ({ data = {} }) => {
         View,
         { style: styles.glassPanel },
         React.createElement(Text, { style: styles.h2 }, "Immediate Actions"),
-        React.createElement(Text, { style: styles.body }, "1. Schedule kickoff meeting to align on project vision"),
-        React.createElement(Text, { style: styles.body }, "2. Finalize project timeline and milestones"),
-        React.createElement(Text, { style: styles.body }, "3. Set up communication channels and project tools"),
-        React.createElement(Text, { style: styles.body }, "4. Begin discovery phase with stakeholder interviews")
+        ...nextSteps.map((step, index) =>
+          React.createElement(
+            Text,
+            { key: `next-${index}`, style: styles.body },
+            `${index + 1}. ${step}`
+          )
+        )
       ),
       React.createElement(
         View,
         { style: [styles.glassPanel, { marginTop: 30 }] },
         React.createElement(Text, { style: styles.h2 }, "Success Metrics"),
-        React.createElement(Text, { style: styles.body }, "• Page load time under 2 seconds"),
-        React.createElement(Text, { style: styles.body }, "• Mobile-first responsive design"),
-        React.createElement(Text, { style: styles.body }, "• 95+ Lighthouse performance score"),
-        React.createElement(Text, { style: styles.body }, "• WCAG 2.1 AA accessibility compliance")
+        ...successMetrics.map((metric, index) =>
+          React.createElement(
+            Text,
+            { key: `metric-${index}`, style: styles.body },
+            `• ${metric}`
+          )
+        )
       ),
       React.createElement(Text, { style: styles.pageNumber }, "7")
     ),
@@ -590,7 +576,7 @@ const GlassmorphicProposal = ({ data = {} }) => {
           { style: styles.signatureColumn },
           React.createElement(Text, { style: styles.signatureLabel }, "FREELANCER"),
           React.createElement(View, { style: styles.signatureLine }),
-          React.createElement(Text, { style: styles.bodyLight }, "[Your Name]"),
+          React.createElement(Text, { style: styles.bodyLight }, freelancerName),
           React.createElement(
             View,
             { style: { marginTop: 20 } },
@@ -600,11 +586,13 @@ const GlassmorphicProposal = ({ data = {} }) => {
         )
       ),
       React.createElement(GradientBar),
-      React.createElement(
-        Text,
-        { style: [styles.body, { marginTop: 30, textAlign: 'center', fontSize: 12 }] },
-        "This proposal is valid for 30 days from the date of issue."
-      ),
+      validityNote
+        ? React.createElement(
+            Text,
+            { style: [styles.body, { marginTop: 30, textAlign: 'center', fontSize: 12 }] },
+            validityNote
+          )
+        : null,
       React.createElement(Text, { style: styles.pageNumber }, "8")
     )
   );

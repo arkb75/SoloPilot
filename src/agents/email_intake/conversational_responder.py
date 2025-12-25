@@ -61,8 +61,12 @@ class ConversationalResponder:
             self.bedrock_client = boto3.client(
                 "bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-2")
             )
+            self.inference_profile_arn = (
+                os.environ.get("BEDROCK_IP_ARN")
+                or os.environ.get("VISION_INFERENCE_PROFILE_ARN")
+            )
             self.model_id = os.environ.get(
-                "BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250514-v1:0"
+                "BEDROCK_MODEL_ID", "anthropic.claude-sonnet-4-5-20250929-v1:0"
             )
 
     def generate_response_with_tracking(
@@ -351,11 +355,19 @@ CONSTRAINTS:
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.7,
                 }
-
-                response = self.bedrock_client.invoke_model(
-                    modelId=self.model_id, body=json.dumps(request_body)
-                )
-
+                payload = json.dumps(request_body)
+                if self.inference_profile_arn:
+                    response = self.bedrock_client.invoke_model(
+                        modelId=self.inference_profile_arn,
+                        body=payload,
+                        contentType="application/json",
+                    )
+                else:
+                    response = self.bedrock_client.invoke_model(
+                        modelId=self.model_id,
+                        body=payload,
+                        contentType="application/json",
+                    )
                 response_body = json.loads(response["body"].read())
                 content = response_body["content"][0]["text"]
                 return content.strip()

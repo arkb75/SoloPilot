@@ -3,8 +3,9 @@
 import json
 import logging
 import os
+import re
 from decimal import Decimal  # Added for Decimal handling
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 try:
     from src.providers import get_provider
@@ -23,6 +24,26 @@ logger = logging.getLogger(__name__)
 AI_PROVIDER = os.environ.get("AI_PROVIDER", "bedrock")
 
 
+def _clean_json_response(text: Optional[str]) -> str:
+    cleaned = (text or "").strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    return cleaned.strip()
+
+
+def _parse_json_response(text: Optional[str]) -> Any:
+    cleaned = _clean_json_response(text)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(cleaned[start : end + 1])
+        raise
+
+
 class RequirementEditError(Exception):
     """Raised when requirement edits cannot be applied."""
 
@@ -39,9 +60,28 @@ class RequirementExtractor:
             self.bedrock_client = boto3.client(
                 "bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-2")
             )
+            self.inference_profile_arn = self._resolve_inference_profile()
             self.model_id = os.environ.get(
-                "BEDROCK_MODEL_ID", "us.anthropic.claude-4-5-haiku-20241022-v1:0"
+                "BEDROCK_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0"
             )
+
+    def _resolve_inference_profile(self) -> Optional[str]:
+        return (
+            os.environ.get("BEDROCK_IP_ARN")
+            or os.environ.get("VISION_INFERENCE_PROFILE_ARN")
+        )
+
+    def _invoke_bedrock(self, request_body: Dict[str, Any]) -> Dict[str, Any]:
+        payload = json.dumps(request_body)
+        if self.inference_profile_arn:
+            response = self.bedrock_client.invoke_model(
+                modelId=self.inference_profile_arn, body=payload, contentType="application/json"
+            )
+            return json.loads(response["body"].read())
+        response = self.bedrock_client.invoke_model(
+            modelId=self.model_id, body=payload, contentType="application/json"
+        )
+        return json.loads(response["body"].read())
 
     def extract(
         self, email_history: List[Dict[str, Any]], existing_requirements: Dict[str, Any]
@@ -115,12 +155,21 @@ Extract and return a JSON object with these fields:"""
 - scope_items: Array of {{"title": "Scope Title", "description": "Detailed description"}} for proposal sections
 - timeline_phases: Array of {{"phase": "Phase Name", "duration": "X weeks"}} for project phases
 - pricing_breakdown: Array of {{"item": "Line Item", "amount": numeric_amount}} that adds up to budget_amount
+- executive_summary: 1-3 short paragraphs (string with newlines) summarizing the proposal
+- executive_summary_paragraphs: Optional array of paragraphs if you can separate them
+- tech_stack_overview: Short paragraph explaining the technology stack choices
+- next_steps: Array of immediate action steps (3-6 items)
+- success_metrics: Array of measurable outcomes (3-6 items)
+- freelancer_name: Name of the provider if explicitly mentioned
+- validity_note: Short proposal validity note if provided
 
 For scope_items, timeline_phases, and pricing_breakdown:
 - If project mentions "dashboard", include appropriate dashboard-specific items
 - If "Shopify" is mentioned with dashboard, include Shopify integration
 - Timeline should typically have Discovery, Design/Development, Testing, Launch phases
 - Pricing should be realistic and add up to the budget_amount
+
+If the conversation does not mention a field (e.g., freelancer_name, validity_note), omit it or return an empty list.
 
 Return ONLY valid JSON, no additional text."""
 
@@ -135,8 +184,9 @@ Return ONLY valid JSON, no additional text."""
             if USE_AI_PROVIDER:
                 # Use provider to extract requirements
                 response = self.provider.generate_code(prompt, [])
+                llm_response = response
                 # Parse JSON response
-                requirements = json.loads(response)
+                requirements = _parse_json_response(response)
             else:
                 # Call Bedrock directly to extract requirements
                 request_body = {
@@ -146,15 +196,11 @@ Return ONLY valid JSON, no additional text."""
                     "temperature": 0.3,
                 }
 
-                response = self.bedrock_client.invoke_model(
-                    modelId=self.model_id, body=json.dumps(request_body)
-                )
-
-                response_body = json.loads(response["body"].read())
+                response_body = self._invoke_bedrock(request_body)
                 llm_response = response_body["content"][0]["text"]
 
                 # Parse JSON response
-                requirements = json.loads(llm_response)
+                requirements = _parse_json_response(llm_response)
 
             # Log extracted requirements
             logger.info("=" * 80)
@@ -201,7 +247,7 @@ Return ONLY the updated requirements JSON. Do not include explanations, markdown
             if USE_AI_PROVIDER:
                 response = self.provider.generate_code(prompt, [])
                 logger.info("Requirement edit model raw response (provider): %s", response)
-                updated = json.loads(response)
+                updated = _parse_json_response(response)
             else:
                 request_body = {
                     "anthropic_version": "bedrock-2023-05-31",
@@ -210,13 +256,10 @@ Return ONLY the updated requirements JSON. Do not include explanations, markdown
                     "temperature": 0.1,
                 }
 
-                response = self.bedrock_client.invoke_model(
-                    modelId=self.model_id, body=json.dumps(request_body)
-                )
-                body = json.loads(response["body"].read())
+                body = self._invoke_bedrock(request_body)
                 model_text = body["content"][0]["text"]
                 logger.info("Requirement edit model raw response (bedrock): %s", model_text)
-                updated = json.loads(model_text)
+                updated = _parse_json_response(model_text)
 
             if not isinstance(updated, dict):
                 raise RequirementEditError("Model returned non-object requirements payload")
@@ -384,23 +427,11 @@ Return ONLY the updated requirements as a valid JSON object. Do not include any 
                     "temperature": 0.1,
                 }
                 
-                response = self.bedrock_client.invoke_model(
-                    modelId=self.model_id, body=json.dumps(request_body)
-                )
-                
-                response_body = json.loads(response["body"].read())
+                response_body = self._invoke_bedrock(request_body)
                 llm_response = response_body["content"][0]["text"]
             
-            # Clean response
-            llm_response = llm_response.strip()
-            if llm_response.startswith("```json"):
-                llm_response = llm_response[7:]
-            if llm_response.endswith("```"):
-                llm_response = llm_response[:-3]
-            llm_response = llm_response.strip()
-            
             # Parse JSON response
-            updated_requirements = json.loads(llm_response)
+            updated_requirements = _parse_json_response(llm_response)
             
             # Log the update
             logger.info("=" * 80)
