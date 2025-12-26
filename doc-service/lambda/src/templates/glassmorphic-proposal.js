@@ -357,8 +357,6 @@ const styles = StyleSheet.create({
   },
 });
 
-const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-
 const estimateCharsPerLine = (width, fontSize) => {
   const avgCharWidth = fontSize * 0.55;
   return Math.max(12, Math.floor(width / avgCharWidth));
@@ -384,30 +382,6 @@ const splitTextToLines = (text, charsPerLine) => {
 
 const estimateLineCount = (text, charsPerLine) => splitTextToLines(text, charsPerLine).length || 1;
 
-const truncateTextToLines = (text, maxLines, charsPerLine) => {
-  if (maxLines <= 0) return '';
-  const lines = splitTextToLines(text, charsPerLine);
-  if (lines.length <= maxLines) return text;
-  const truncated = lines.slice(0, maxLines).join(' ').trim();
-  return `${truncated}...`;
-};
-
-const allocateLineBudget = (lineCounts, maxLinesTotal, minLinesPerItem) => {
-  const count = lineCounts.length;
-  if (count === 0) return [];
-  const minTotal = minLinesPerItem * count;
-  let remaining = Math.max(maxLinesTotal, minTotal);
-  let remainingItems = count;
-  return lineCounts.map((lines) => {
-    const minForItem = Math.min(minLinesPerItem, lines);
-    const maxAllowed = remaining - minLinesPerItem * (remainingItems - 1);
-    const allowed = clamp(lines, minForItem, Math.max(minForItem, maxAllowed));
-    remaining -= allowed;
-    remainingItems -= 1;
-    return Math.max(1, allowed);
-  });
-};
-
 const getHeaderHeight = () => (FONT.h1 * 1.2) + FONT.h1Margin;
 
 const fitExecutiveSummaryLayout = (paragraphs) => {
@@ -415,47 +389,61 @@ const fitExecutiveSummaryLayout = (paragraphs) => {
   const headerHeight = getHeaderHeight();
   const availableHeight = CONTENT_HEIGHT - headerHeight - SECTION_BOTTOM_BUFFER;
 
-  const measure = (scale, content) => {
+  const measureParagraphs = (scale, content) => {
     const panelPadding = PANEL.padding * scale;
     const bodySize = FONT.body * scale;
     const paragraphGap = 15 * scale;
     const textWidth = CONTENT_WIDTH - (panelPadding * 2);
     const charsPerLine = estimateCharsPerLine(textWidth, bodySize);
-    const lineCounts = content.map((paragraph) => estimateLineCount(paragraph, charsPerLine));
-    const textHeight = lineCounts.reduce((sum, lines, idx) => {
-      const block = lines * bodySize * FONT.bodyLine;
-      return sum + block + (idx > 0 ? paragraphGap : 0);
-    }, 0);
-    const panelHeight = (panelPadding * 2) + textHeight;
+    const paragraphHeights = content.map((paragraph) => (
+      estimateLineCount(paragraph, charsPerLine) * bodySize * FONT.bodyLine
+    ));
+    const totalHeight = paragraphHeights.reduce((sum, height, idx) => (
+      sum + height + (idx > 0 ? paragraphGap : 0)
+    ), 0);
     return {
-      panelHeight,
       panelPadding,
       bodySize,
       paragraphGap,
       charsPerLine,
-      lineCounts,
+      paragraphHeights,
+      totalHeight: (panelPadding * 2) + totalHeight,
       scale,
     };
   };
 
   for (const scale of SCALE_STEPS) {
-    const metrics = measure(scale, safeParagraphs);
-    if (metrics.panelHeight <= availableHeight) {
-      return { ...metrics, paragraphs: safeParagraphs };
+    const metrics = measureParagraphs(scale, safeParagraphs);
+    if (metrics.totalHeight <= availableHeight) {
+      return { ...metrics, pages: [safeParagraphs] };
     }
   }
 
-  const minScale = SCALE_STEPS[SCALE_STEPS.length - 1];
-  const metrics = measure(minScale, safeParagraphs);
-  const lineHeight = metrics.bodySize * FONT.bodyLine;
-  const fixedHeight = (metrics.panelPadding * 2) + (metrics.paragraphGap * Math.max(0, safeParagraphs.length - 1));
-  const maxLinesTotal = Math.floor((availableHeight - fixedHeight) / lineHeight);
-  const minLinesPerItem = maxLinesTotal < safeParagraphs.length * 2 ? 1 : 2;
-  const allocated = allocateLineBudget(metrics.lineCounts, maxLinesTotal, minLinesPerItem);
-  const trimmed = safeParagraphs.map((paragraph, idx) => (
-    truncateTextToLines(paragraph, allocated[idx], metrics.charsPerLine)
-  ));
-  return { ...metrics, paragraphs: trimmed };
+  const scaleForPage = SCALE_STEPS.find((scale) => {
+    const metrics = measureParagraphs(scale, safeParagraphs);
+    const maxParagraph = Math.max(...metrics.paragraphHeights, 0);
+    return (metrics.panelPadding * 2) + maxParagraph <= availableHeight;
+  }) || SCALE_STEPS[SCALE_STEPS.length - 1];
+
+  const metrics = measureParagraphs(scaleForPage, safeParagraphs);
+  const pages = [];
+  let current = [];
+  let currentHeight = 0;
+  metrics.paragraphHeights.forEach((height, idx) => {
+    const nextHeight = current.length === 0
+      ? (metrics.panelPadding * 2) + height
+      : currentHeight + metrics.paragraphGap + height;
+    if (current.length > 0 && nextHeight > availableHeight) {
+      pages.push(current);
+      current = [safeParagraphs[idx]];
+      currentHeight = (metrics.panelPadding * 2) + height;
+    } else {
+      current.push(safeParagraphs[idx]);
+      currentHeight = nextHeight;
+    }
+  });
+  if (current.length) pages.push(current);
+  return { ...metrics, pages };
 };
 
 const fitScopeLayout = (items) => {
@@ -468,7 +456,7 @@ const fitScopeLayout = (items) => {
   const headerHeight = getHeaderHeight();
   const availableHeight = CONTENT_HEIGHT - headerHeight - SECTION_BOTTOM_BUFFER;
 
-  const measure = (scale, content) => {
+  const measureCards = (scale, content) => {
     const cardPadding = SCOPE_CARD.padding * scale;
     const cardGap = SCOPE_CARD.gap * scale;
     const titleSize = FONT.scopeTitle * scale;
@@ -476,21 +464,23 @@ const fitScopeLayout = (items) => {
     const descSize = FONT.scopeDesc * scale;
     const textWidth = CONTENT_WIDTH - (cardPadding * 2) - (SCOPE_CARD.indent * scale);
     const charsPerLine = estimateCharsPerLine(textWidth, descSize);
-    const descLines = content.map((item) => estimateLineCount(item.description, charsPerLine));
+    const descLineCounts = content.map((item) => estimateLineCount(item.description, charsPerLine));
     const titleHeight = titleSize * 1.2;
-    const totalHeight = descLines.reduce((sum, lines, idx) => {
-      const descHeight = lines * descSize * FONT.scopeDescLine;
-      const cardHeight = (cardPadding * 2) + titleHeight + titleMargin + descHeight;
-      return sum + cardHeight + (idx < descLines.length - 1 ? cardGap : 0);
-    }, 0);
+    const cardHeights = descLineCounts.map((lines) => (
+      (cardPadding * 2) + titleHeight + titleMargin + (lines * descSize * FONT.scopeDescLine)
+    ));
+    const totalHeight = cardHeights.reduce((sum, height, idx) => (
+      sum + height + (idx < cardHeights.length - 1 ? cardGap : 0)
+    ), 0);
     return {
       cardPadding,
       cardGap,
       titleSize,
       titleMargin,
       descSize,
-      descLines,
       charsPerLine,
+      descLineCounts,
+      cardHeights,
       totalHeight,
       scale,
       titleHeight,
@@ -498,34 +488,38 @@ const fitScopeLayout = (items) => {
   };
 
   for (const scale of SCALE_STEPS) {
-    const metrics = measure(scale, safeItems);
+    const metrics = measureCards(scale, safeItems);
     if (metrics.totalHeight <= availableHeight) {
-      return { ...metrics, items: safeItems };
+      return { ...metrics, pages: [safeItems] };
     }
   }
 
-  const minScale = SCALE_STEPS[SCALE_STEPS.length - 1];
-  const metrics = measure(minScale, safeItems);
-  const lineHeight = metrics.descSize * FONT.scopeDescLine;
-  const fixedPerCard = (metrics.cardPadding * 2) + metrics.titleHeight + metrics.titleMargin;
-  const fixedHeight = (fixedPerCard * safeItems.length) + (metrics.cardGap * Math.max(0, safeItems.length - 1));
-  const maxLinesTotal = Math.floor((availableHeight - fixedHeight) / lineHeight);
-  const minLinesPerItem = maxLinesTotal < safeItems.length * 2 ? 1 : 2;
-  const allocated = allocateLineBudget(metrics.descLines, maxLinesTotal, minLinesPerItem);
-  const trimmed = safeItems.map((item, idx) => ({
-    ...item,
-    description: truncateTextToLines(item.description, allocated[idx], metrics.charsPerLine),
-  }));
-  return { ...metrics, items: trimmed };
-};
+  const scaleForPage = SCALE_STEPS.find((scale) => {
+    const metrics = measureCards(scale, safeItems);
+    const maxCard = Math.max(...metrics.cardHeights, 0);
+    return maxCard <= availableHeight;
+  }) || SCALE_STEPS[SCALE_STEPS.length - 1];
 
-const parseAmount = (value) => {
-  const cleaned = String(value || '').replace(/[^0-9.-]/g, '');
-  const parsed = parseFloat(cleaned);
-  return Number.isFinite(parsed) ? parsed : 0;
+  const metrics = measureCards(scaleForPage, safeItems);
+  const pages = [];
+  let current = [];
+  let currentHeight = 0;
+  metrics.cardHeights.forEach((height, idx) => {
+    const nextHeight = current.length === 0
+      ? height
+      : currentHeight + metrics.cardGap + height;
+    if (current.length > 0 && nextHeight > availableHeight) {
+      pages.push(current);
+      current = [safeItems[idx]];
+      currentHeight = height;
+    } else {
+      current.push(safeItems[idx]);
+      currentHeight = nextHeight;
+    }
+  });
+  if (current.length) pages.push(current);
+  return { ...metrics, pages };
 };
-
-const formatAmount = (value) => `$${Math.round(value).toLocaleString()}`;
 
 const fitPricingLayout = (rows) => {
   const safeRows = Array.isArray(rows)
@@ -564,27 +558,25 @@ const fitPricingLayout = (rows) => {
   for (const scale of SCALE_STEPS) {
     const metrics = measure(scale, safeRows.length);
     if (metrics.totalHeight <= availableHeight) {
-      return { ...metrics, rows: safeRows };
+      return { ...metrics, pages: [safeRows] };
     }
   }
 
-  const minScale = SCALE_STEPS[SCALE_STEPS.length - 1];
-  const metrics = measure(minScale, safeRows.length);
+  const scaleForPage = SCALE_STEPS.find((scale) => {
+    const metrics = measure(scale, safeRows.length);
+    return metrics.totalRowHeight + metrics.totalMargin <= availableHeight;
+  }) || SCALE_STEPS[SCALE_STEPS.length - 1];
+
+  const metrics = measure(scaleForPage, safeRows.length);
   const availableForRows = availableHeight - metrics.totalRowHeight - metrics.totalMargin;
   const slotHeight = metrics.rowHeight + metrics.rowGap;
   const maxRows = Math.max(1, Math.floor((availableForRows + metrics.rowGap) / slotHeight));
-  let displayRows = safeRows;
-  if (safeRows.length > maxRows) {
-    const keepCount = Math.max(1, maxRows - 1);
-    const kept = safeRows.slice(0, keepCount);
-    const remaining = safeRows.slice(keepCount);
-    const remainderTotal = remaining.reduce((sum, row) => sum + parseAmount(row.amount), 0);
-    displayRows = kept.concat({
-      item: `Additional items (${remaining.length})`,
-      amount: formatAmount(remainderTotal),
-    });
+  const pages = [];
+  for (let i = 0; i < safeRows.length; i += maxRows) {
+    pages.push(safeRows.slice(i, i + maxRows));
   }
-  return { ...metrics, rows: displayRows };
+  if (pages.length === 0) pages.push([]);
+  return { ...metrics, pages };
 };
 
 const fitNextStepsLayout = (steps, metricsList) => {
@@ -593,7 +585,20 @@ const fitNextStepsLayout = (steps, metricsList) => {
   const headerHeight = getHeaderHeight();
   const availableHeight = CONTENT_HEIGHT - headerHeight - SECTION_BOTTOM_BUFFER;
 
-  const measure = (scale, stepsText, metricsText) => {
+  const buildItems = (items, prefix) => items.map((item, idx) => ({
+    text: `${prefix}${idx + 1}. ${item}`,
+    raw: item,
+    index: idx,
+  }));
+
+  const stepItems = buildItems(safeSteps, '');
+  const metricItems = safeMetrics.map((item, idx) => ({
+    text: `• ${item}`,
+    raw: item,
+    index: idx,
+  }));
+
+  const measurePanels = (scale, stepEntries, metricEntries) => {
     const panelPadding = PANEL.padding * scale;
     const panelGap = NEXT_STEPS.panelGap * scale;
     const h2Size = FONT.h2 * scale;
@@ -601,15 +606,14 @@ const fitNextStepsLayout = (steps, metricsList) => {
     const bodySize = FONT.body * scale;
     const textWidth = CONTENT_WIDTH - (panelPadding * 2);
     const charsPerLine = estimateCharsPerLine(textWidth, bodySize);
-
-    const stepLines = stepsText.map((text) => estimateLineCount(text, charsPerLine));
-    const metricLines = metricsText.map((text) => estimateLineCount(text, charsPerLine));
-
+    const lineHeight = bodySize * FONT.bodyLine;
     const panelFixed = (panelPadding * 2) + (h2Size * 1.2) + h2Margin;
-    const stepHeight = panelFixed + stepLines.reduce((sum, lines) => sum + (lines * bodySize * FONT.bodyLine), 0);
-    const metricHeight = panelFixed + metricLines.reduce((sum, lines) => sum + (lines * bodySize * FONT.bodyLine), 0);
-
-    const totalHeight = stepHeight + metricHeight + panelGap;
+    const stepHeight = panelFixed + stepEntries.reduce((sum, entry) => (
+      sum + (estimateLineCount(entry.text, charsPerLine) * lineHeight)
+    ), 0);
+    const metricHeight = panelFixed + metricEntries.reduce((sum, entry) => (
+      sum + (estimateLineCount(entry.text, charsPerLine) * lineHeight)
+    ), 0);
     return {
       panelPadding,
       panelGap,
@@ -617,50 +621,91 @@ const fitNextStepsLayout = (steps, metricsList) => {
       h2Margin,
       bodySize,
       charsPerLine,
-      stepLines,
-      metricLines,
+      lineHeight,
+      panelFixed,
       stepHeight,
       metricHeight,
-      totalHeight,
+      totalHeight: stepHeight + metricHeight + panelGap,
       scale,
     };
   };
 
-  const stepTexts = safeSteps.map((step, idx) => `${idx + 1}. ${step}`);
-  const metricTexts = safeMetrics.map((metric) => `• ${metric}`);
-
   for (const scale of SCALE_STEPS) {
-    const metrics = measure(scale, stepTexts, metricTexts);
+    const metrics = measurePanels(scale, stepItems, metricItems);
     if (metrics.totalHeight <= availableHeight) {
-      return { ...metrics, steps: safeSteps, metrics: safeMetrics };
+      return {
+        ...metrics,
+        pages: [
+          {
+            panels: [
+              { title: 'Immediate Actions', items: stepItems },
+              { title: 'Success Metrics', items: metricItems },
+            ],
+          },
+        ],
+      };
     }
   }
 
-  const minScale = SCALE_STEPS[SCALE_STEPS.length - 1];
-  const metrics = measure(minScale, stepTexts, metricTexts);
-  const lineHeight = metrics.bodySize * FONT.bodyLine;
-  const panelFixed = (metrics.panelPadding * 2) + (metrics.h2Size * 1.2) + metrics.h2Margin;
-  const fixedTotal = (panelFixed * 2) + metrics.panelGap;
-  const maxLinesTotal = Math.floor((availableHeight - fixedTotal) / lineHeight);
-  const naturalStepLines = metrics.stepLines.reduce((sum, lines) => sum + lines, 0);
-  const naturalMetricLines = metrics.metricLines.reduce((sum, lines) => sum + lines, 0);
-  const totalNatural = naturalStepLines + naturalMetricLines;
-  const share = totalNatural > 0 ? naturalStepLines / totalNatural : 0.5;
-  const stepBudget = Math.floor(maxLinesTotal * share);
-  const metricBudget = Math.max(0, maxLinesTotal - stepBudget);
-  const stepAllocated = allocateLineBudget(metrics.stepLines, stepBudget, 1);
-  const metricAllocated = allocateLineBudget(metrics.metricLines, metricBudget, 1);
+  const scaleForPage = SCALE_STEPS.find((scale) => {
+    const metrics = measurePanels(scale, stepItems, metricItems);
+    const maxItemLines = Math.max(
+      ...stepItems.map((item) => estimateLineCount(item.text, metrics.charsPerLine)),
+      ...metricItems.map((item) => estimateLineCount(item.text, metrics.charsPerLine)),
+      1
+    );
+    const maxItemHeight = metrics.panelFixed + (maxItemLines * metrics.lineHeight);
+    return maxItemHeight <= availableHeight;
+  }) || SCALE_STEPS[SCALE_STEPS.length - 1];
 
-  const stepCharsPerLine = Math.max(8, metrics.charsPerLine - 4);
-  const metricCharsPerLine = Math.max(8, metrics.charsPerLine - 2);
-  const trimmedSteps = safeSteps.map((step, idx) => (
-    truncateTextToLines(step, stepAllocated[idx], stepCharsPerLine)
-  ));
-  const trimmedMetrics = safeMetrics.map((metric, idx) => (
-    truncateTextToLines(metric, metricAllocated[idx], metricCharsPerLine)
-  ));
+  const metrics = measurePanels(scaleForPage, stepItems, metricItems);
+  const panelEntries = [];
 
-  return { ...metrics, steps: trimmedSteps, metrics: trimmedMetrics };
+  const splitItems = (items, title) => {
+    let current = [];
+    let currentHeight = metrics.panelFixed;
+    items.forEach((entry) => {
+      const itemHeight = estimateLineCount(entry.text, metrics.charsPerLine) * metrics.lineHeight;
+      const nextHeight = currentHeight + itemHeight;
+      if (current.length > 0 && nextHeight > availableHeight) {
+        panelEntries.push({ title, items: current });
+        current = [entry];
+        currentHeight = metrics.panelFixed + itemHeight;
+      } else {
+        current.push(entry);
+        currentHeight = nextHeight;
+      }
+    });
+    if (current.length) {
+      panelEntries.push({ title, items: current });
+    }
+  };
+
+  splitItems(stepItems, 'Immediate Actions');
+  splitItems(metricItems, 'Success Metrics');
+
+  const pages = [];
+  let currentPage = [];
+  let currentHeight = 0;
+  panelEntries.forEach((panel) => {
+    const panelHeight = metrics.panelFixed + panel.items.reduce((sum, entry) => (
+      sum + (estimateLineCount(entry.text, metrics.charsPerLine) * metrics.lineHeight)
+    ), 0);
+    const nextHeight = currentPage.length === 0
+      ? panelHeight
+      : currentHeight + metrics.panelGap + panelHeight;
+    if (currentPage.length > 0 && nextHeight > availableHeight) {
+      pages.push({ panels: currentPage });
+      currentPage = [panel];
+      currentHeight = panelHeight;
+    } else {
+      currentPage.push(panel);
+      currentHeight = nextHeight;
+    }
+  });
+  if (currentPage.length) pages.push({ panels: currentPage });
+
+  return { ...metrics, pages };
 };
 
 // Gradient component
@@ -742,10 +787,11 @@ const GlassmorphicProposal = ({ data = {} }) => {
     return `$${total.toLocaleString()}`;
   };
 
-  return React.createElement(
-    Document,
-    {},
-    // Cover Page
+  const pageNumberText = (value) => React.createElement(Text, { style: styles.pageNumber }, String(value));
+
+  const pages = [];
+
+  pages.push(
     React.createElement(
       Page,
       { size: "A4", style: [styles.page, styles.coverPage] },
@@ -753,76 +799,87 @@ const GlassmorphicProposal = ({ data = {} }) => {
       React.createElement(Text, { style: styles.coverTitle }, projectTitle),
       React.createElement(Text, { style: styles.coverSubtitle }, `Project Proposal for ${clientName}`),
       React.createElement(Text, { style: [styles.coverSubtitle, { marginTop: 40, fontSize: 16 }] }, proposalDate)
-    ),
+    )
+  );
 
-    // Executive Summary
-    React.createElement(
-      Page,
-      { size: "A4", style: [styles.page, styles.contentPage] },
-      React.createElement(Text, { style: styles.h1 }, "Executive Summary"),
-      React.createElement(
-        View,
-        { style: [styles.glassPanel, { padding: execSummaryLayout.panelPadding }], wrap: false },
-        ...execSummaryLayout.paragraphs.map((paragraph, index) =>
-          React.createElement(
-            Text,
-            {
-              key: `summary-${index}`,
-              style: [
-                styles.body,
-                { fontSize: execSummaryLayout.bodySize, lineHeight: FONT.bodyLine },
-                index > 0 ? { marginTop: execSummaryLayout.paragraphGap } : null,
-              ],
-            },
-            paragraph
-          )
-        )
-      ),
-      React.createElement(GradientBar),
-      React.createElement(Text, { style: styles.pageNumber }, "2")
-    ),
+  let pageNumber = 2;
 
-    // Project Scope
-    React.createElement(
-      Page,
-      { size: "A4", style: [styles.page, styles.contentPage] },
-      React.createElement(Text, { style: styles.h1 }, "Project Scope"),
+  execSummaryLayout.pages.forEach((paragraphs, pageIndex) => {
+    pages.push(
       React.createElement(
-        View,
-        { style: styles.scopeGrid },
-        ...scopeLayout.items.map((item, index) =>
-          React.createElement(
-            View,
-            {
-              key: index,
-              style: [
-                styles.scopeCard,
-                {
-                  padding: scopeLayout.cardPadding,
-                  borderRadius: SCOPE_CARD.radius * scopeLayout.scale,
-                  marginLeft: index * SCOPE_CARD.indent * scopeLayout.scale,
-                  marginBottom: index < scopeLayout.items.length - 1 ? scopeLayout.cardGap : 0,
-                },
-              ],
-              wrap: false,
-            },
+        Page,
+        { key: `exec-${pageIndex}`, size: "A4", style: [styles.page, styles.contentPage] },
+        React.createElement(Text, { style: styles.h1 }, "Executive Summary"),
+        React.createElement(
+          View,
+          { style: [styles.glassPanel, { padding: execSummaryLayout.panelPadding }], wrap: false },
+          ...paragraphs.map((paragraph, index) =>
             React.createElement(
               Text,
-              { style: [styles.scopeCardTitle, { fontSize: scopeLayout.titleSize, marginBottom: scopeLayout.titleMargin }] },
-              item.title
-            ),
-            React.createElement(
-              Text,
-              { style: [styles.scopeCardDescription, { fontSize: scopeLayout.descSize, lineHeight: FONT.scopeDescLine }] },
-              item.description
+              {
+                key: `summary-${pageIndex}-${index}`,
+                style: [
+                  styles.body,
+                  { fontSize: execSummaryLayout.bodySize, lineHeight: FONT.bodyLine },
+                  index > 0 ? { marginTop: execSummaryLayout.paragraphGap } : null,
+                ],
+              },
+              paragraph
             )
           )
-        )
-      ),
-      React.createElement(Text, { style: styles.pageNumber }, "3")
-    ),
+        ),
+        React.createElement(GradientBar),
+        pageNumberText(pageNumber)
+      )
+    );
+    pageNumber += 1;
+  });
 
-    // Timeline
+  scopeLayout.pages.forEach((itemsPage, pageIndex) => {
+    pages.push(
+      React.createElement(
+        Page,
+        { key: `scope-${pageIndex}`, size: "A4", style: [styles.page, styles.contentPage] },
+        React.createElement(Text, { style: styles.h1 }, "Project Scope"),
+        React.createElement(
+          View,
+          { style: styles.scopeGrid },
+          ...itemsPage.map((item, index) =>
+            React.createElement(
+              View,
+              {
+                key: `scope-card-${pageIndex}-${index}`,
+                style: [
+                  styles.scopeCard,
+                  {
+                    padding: scopeLayout.cardPadding,
+                    borderRadius: SCOPE_CARD.radius * scopeLayout.scale,
+                    marginLeft: index * SCOPE_CARD.indent * scopeLayout.scale,
+                    marginBottom: index < itemsPage.length - 1 ? scopeLayout.cardGap : 0,
+                  },
+                ],
+                wrap: false,
+              },
+              React.createElement(
+                Text,
+                { style: [styles.scopeCardTitle, { fontSize: scopeLayout.titleSize, marginBottom: scopeLayout.titleMargin }] },
+                item.title
+              ),
+              React.createElement(
+                Text,
+                { style: [styles.scopeCardDescription, { fontSize: scopeLayout.descSize, lineHeight: FONT.scopeDescLine }] },
+                item.description
+              )
+            )
+          )
+        ),
+        pageNumberText(pageNumber)
+      )
+    );
+    pageNumber += 1;
+  });
+
+  pages.push(
     React.createElement(
       Page,
       { size: "A4", style: [styles.page, styles.contentPage] },
@@ -850,58 +907,67 @@ const GlassmorphicProposal = ({ data = {} }) => {
         )
       ),
       React.createElement(GradientBar),
-      React.createElement(Text, { style: styles.pageNumber }, "4")
-    ),
+      pageNumberText(pageNumber)
+    )
+  );
+  pageNumber += 1;
 
-    // Cost Breakdown
-    React.createElement(
-      Page,
-      { size: "A4", style: [styles.page, styles.contentPage] },
-      React.createElement(Text, { style: styles.h1 }, "Cost Breakdown"),
+  pricingLayout.pages.forEach((rowsPage, pageIndex) => {
+    const isLast = pageIndex === pricingLayout.pages.length - 1;
+    pages.push(
       React.createElement(
-        View,
-        { style: styles.pricingTable },
-        ...pricingLayout.rows.map((item, index) =>
-          React.createElement(
-            View,
-            {
-              key: index,
-              style: [
-                styles.pricingRow,
-                {
-                  padding: pricingLayout.rowPadding,
-                  borderRadius: PRICING_ROW.radius * pricingLayout.scale,
-                  marginBottom: index < pricingLayout.rows.length - 1 ? pricingLayout.rowGap : 0,
-                },
-              ],
-              wrap: false,
-            },
-            React.createElement(Text, { style: [styles.pricingItem, { fontSize: pricingLayout.itemSize }] }, item.item),
-            React.createElement(Text, { style: [styles.pricingAmount, { fontSize: pricingLayout.amountSize }] }, item.amount)
-          )
-        ),
+        Page,
+        { key: `pricing-${pageIndex}`, size: "A4", style: [styles.page, styles.contentPage] },
+        React.createElement(Text, { style: styles.h1 }, "Cost Breakdown"),
         React.createElement(
           View,
-          {
-            style: [
-              styles.pricingRow,
+          { style: styles.pricingTable },
+          ...rowsPage.map((item, index) =>
+            React.createElement(
+              View,
               {
-                marginTop: PRICING_ROW.totalMargin * pricingLayout.scale,
-                backgroundColor: colors.glassDark,
-                padding: pricingLayout.rowPadding,
-                borderRadius: PRICING_ROW.radius * pricingLayout.scale,
+                key: `pricing-row-${pageIndex}-${index}`,
+                style: [
+                  styles.pricingRow,
+                  {
+                    padding: pricingLayout.rowPadding,
+                    borderRadius: PRICING_ROW.radius * pricingLayout.scale,
+                    marginBottom: index < rowsPage.length - 1 ? pricingLayout.rowGap : 0,
+                  },
+                ],
+                wrap: false,
               },
-            ],
-            wrap: false,
-          },
-          React.createElement(Text, { style: [styles.pricingItem, { fontWeight: 500, fontSize: pricingLayout.itemSize }] }, "Total Cost"),
-          React.createElement(Text, { style: [styles.pricingAmount, { fontSize: pricingLayout.totalSize }] }, calculateTotal(pricingLayout.rows))
-        )
-      ),
-      React.createElement(Text, { style: styles.pageNumber }, "5")
-    ),
+              React.createElement(Text, { style: [styles.pricingItem, { fontSize: pricingLayout.itemSize }] }, item.item),
+              React.createElement(Text, { style: [styles.pricingAmount, { fontSize: pricingLayout.amountSize }] }, item.amount)
+            )
+          ),
+          isLast
+            ? React.createElement(
+                View,
+                {
+                  style: [
+                    styles.pricingRow,
+                    {
+                      marginTop: PRICING_ROW.totalMargin * pricingLayout.scale,
+                      backgroundColor: colors.glassDark,
+                      padding: pricingLayout.rowPadding,
+                      borderRadius: PRICING_ROW.radius * pricingLayout.scale,
+                    },
+                  ],
+                  wrap: false,
+                },
+                React.createElement(Text, { style: [styles.pricingItem, { fontWeight: 500, fontSize: pricingLayout.itemSize }] }, "Total Cost"),
+                React.createElement(Text, { style: [styles.pricingAmount, { fontSize: pricingLayout.totalSize }] }, calculateTotal(pricing))
+              )
+            : null
+        ),
+        pageNumberText(pageNumber)
+      )
+    );
+    pageNumber += 1;
+  });
 
-    // Technology Stack
+  pages.push(
     React.createElement(
       Page,
       { size: "A4", style: [styles.page, styles.contentPage] },
@@ -929,48 +995,55 @@ const GlassmorphicProposal = ({ data = {} }) => {
         )
       ),
       React.createElement(GradientBar),
-      React.createElement(Text, { style: styles.pageNumber }, "6")
-    ),
+      pageNumberText(pageNumber)
+    )
+  );
+  pageNumber += 1;
 
-    // Next Steps
-    React.createElement(
-      Page,
-      { size: "A4", style: [styles.page, styles.contentPage] },
-      React.createElement(Text, { style: styles.h1 }, "Next Steps"),
+  nextStepsLayout.pages.forEach((pageData, pageIndex) => {
+    pages.push(
       React.createElement(
-        View,
-        { style: [styles.glassPanel, { padding: nextStepsLayout.panelPadding }], wrap: false },
-        React.createElement(Text, { style: [styles.h2, { fontSize: nextStepsLayout.h2Size, marginBottom: nextStepsLayout.h2Margin }] }, "Immediate Actions"),
-        ...nextStepsLayout.steps.map((step, index) =>
+        Page,
+        { key: `next-${pageIndex}`, size: "A4", style: [styles.page, styles.contentPage] },
+        React.createElement(Text, { style: styles.h1 }, "Next Steps"),
+        ...pageData.panels.map((panel, panelIndex) =>
           React.createElement(
-            Text,
+            View,
             {
-              key: `next-${index}`,
-              style: [styles.body, { fontSize: nextStepsLayout.bodySize, lineHeight: FONT.bodyLine }],
+              key: `panel-${pageIndex}-${panelIndex}`,
+              style: [
+                styles.glassPanel,
+                {
+                  marginTop: panelIndex === 0 ? 0 : nextStepsLayout.panelGap,
+                  padding: nextStepsLayout.panelPadding,
+                },
+              ],
+              wrap: false,
             },
-            `${index + 1}. ${step}`
+            React.createElement(
+              Text,
+              { style: [styles.h2, { fontSize: nextStepsLayout.h2Size, marginBottom: nextStepsLayout.h2Margin }] },
+              panel.title
+            ),
+            ...panel.items.map((entry, idx) =>
+              React.createElement(
+                Text,
+                {
+                  key: `panel-item-${pageIndex}-${panelIndex}-${idx}`,
+                  style: [styles.body, { fontSize: nextStepsLayout.bodySize, lineHeight: FONT.bodyLine }],
+                },
+                entry.text
+              )
+            )
           )
-        )
-      ),
-      React.createElement(
-        View,
-        { style: [styles.glassPanel, { marginTop: NEXT_STEPS.panelGap * nextStepsLayout.scale, padding: nextStepsLayout.panelPadding }], wrap: false },
-        React.createElement(Text, { style: [styles.h2, { fontSize: nextStepsLayout.h2Size, marginBottom: nextStepsLayout.h2Margin }] }, "Success Metrics"),
-        ...nextStepsLayout.metrics.map((metric, index) =>
-          React.createElement(
-            Text,
-            {
-              key: `metric-${index}`,
-              style: [styles.body, { fontSize: nextStepsLayout.bodySize, lineHeight: FONT.bodyLine }],
-            },
-            `• ${metric}`
-          )
-        )
-      ),
-      React.createElement(Text, { style: styles.pageNumber }, "7")
-    ),
+        ),
+        pageNumberText(pageNumber)
+      )
+    );
+    pageNumber += 1;
+  });
 
-    // Signature Page
+  pages.push(
     React.createElement(
       Page,
       { size: "A4", style: [styles.page, styles.contentPage] },
@@ -1013,9 +1086,11 @@ const GlassmorphicProposal = ({ data = {} }) => {
             validityNote
           )
         : null,
-      React.createElement(Text, { style: styles.pageNumber }, "8")
+      pageNumberText(pageNumber)
     )
   );
+
+  return React.createElement(Document, {}, ...pages);
 };
 
 module.exports = GlassmorphicProposal;
