@@ -12,13 +12,15 @@ from datetime import datetime, timezone
 
 # Import AI providers if available
 try:
-    from src.providers.base import get_provider
+    from src.providers import get_provider
     USE_AI_PROVIDER = True
 except ImportError:
     USE_AI_PROVIDER = False
     # Fall back to direct Bedrock
     import boto3
-    bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-2")
+    bedrock_client = boto3.client(
+        "bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-2")
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +32,29 @@ class ResponseReviser:
         """Initialize the response reviser with Claude Sonnet 4/5."""
         # Use Sonnet 4/5 (same model as original response generation)
         self.model_id = os.environ.get(
-            "BEDROCK_MODEL_ID", "anthropic.claude-sonnet-4-5-20250929-v1:0"
+            "REVISION_MODEL_ID",
+            os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-4-5-20250929-v1:0"),
+        )
+        self.inference_profile_arn = (
+            os.environ.get("BEDROCK_IP_ARN")
+            or os.environ.get("VISION_INFERENCE_PROFILE_ARN")
         )
         self.anthropic_model = "claude-3-5-sonnet-20241022"  # For AI provider
         
         if USE_AI_PROVIDER:
             self.provider = get_provider(os.environ.get("AI_PROVIDER", "bedrock"))
+
+    def _invoke_bedrock(self, request_body: Dict[str, Any]) -> Dict[str, Any]:
+        payload = json.dumps(request_body)
+        if self.inference_profile_arn:
+            response = bedrock_client.invoke_model(
+                modelId=self.inference_profile_arn, body=payload, contentType="application/json"
+            )
+            return json.loads(response["body"].read())
+        response = bedrock_client.invoke_model(
+            modelId=self.model_id, body=payload, contentType="application/json"
+        )
+        return json.loads(response["body"].read())
     
     def revise_response(
         self, 
@@ -156,14 +175,9 @@ Return the revised email response (body only, no greeting/signature):"""
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.3,  # Lower temperature for more focused revision
                 }
-                
-                response = bedrock_client.invoke_model(
-                    modelId=self.model_id,
-                    body=json.dumps(request_body)
-                )
-                
-                response_body = json.loads(response['body'].read())
-                return response_body['content'][0]['text']
+
+                response_body = self._invoke_bedrock(request_body)
+                return response_body["content"][0]["text"]
                 
         except Exception as e:
             logger.error(f"Error calling Sonnet model: {str(e)}")

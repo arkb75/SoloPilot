@@ -1029,7 +1029,7 @@ def request_reply_revision(reply_id: str) -> Dict[str, Any]:
         
         # Generate feedback from review
         from src.agents.email_intake.reviewer import EmailReviewer
-        from response_reviser import ResponseReviser
+        from src.agents.email_intake.response_reviser import ResponseReviser
         
         reviewer = EmailReviewer()
         reviser = ResponseReviser()
