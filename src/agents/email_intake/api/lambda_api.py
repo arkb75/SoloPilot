@@ -912,7 +912,7 @@ def get_reply_review(reply_id: str) -> Dict[str, Any]:
             }
         
         # Generate new review
-        from reviewer import EmailReviewer
+        from src.agents.email_intake.reviewer import EmailReviewer
         
         reviewer = EmailReviewer()
         response_text = reply_data.get('llm_response', '')
@@ -1021,14 +1021,14 @@ def request_reply_revision(reply_id: str) -> Dict[str, Any]:
         review = reply_data.get('review')
         if not review:
             # Generate review first
-            from reviewer import EmailReviewer
+            from src.agents.email_intake.reviewer import EmailReviewer
             reviewer = EmailReviewer()
             response_text = reply_data.get('llm_response', '')
             metadata = reply_data.get('metadata', {})
             review = reviewer.review_response(conversation_data, response_text, metadata)
         
         # Generate feedback from review
-        from reviewer import EmailReviewer
+        from src.agents.email_intake.reviewer import EmailReviewer
         from response_reviser import ResponseReviser
         
         reviewer = EmailReviewer()

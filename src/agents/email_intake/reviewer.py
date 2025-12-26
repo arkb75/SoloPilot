@@ -8,6 +8,7 @@ It analyzes the response against conversation context and provides a quality ass
 import json
 import logging
 import os
+import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, Any, Optional, List
@@ -26,6 +27,26 @@ def decimal_to_json_serializable(obj):
     elif isinstance(obj, list):
         return [decimal_to_json_serializable(item) for item in obj]
     return obj
+
+
+def _clean_json_response(text: Optional[str]) -> str:
+    cleaned = (text or "").strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    return cleaned.strip()
+
+
+def _parse_json_response(text: Optional[str]) -> Any:
+    cleaned = _clean_json_response(text)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(cleaned[start : end + 1])
+        raise
 
 # Try to use the AI provider framework, fallback to Bedrock if not available
 try:
@@ -76,7 +97,7 @@ class EmailReviewer:
             response = self._call_haiku(prompt)
             
             # Parse and validate the response
-            review = json.loads(response)
+            review = _parse_json_response(response)
             validated_review = self._validate_review(review)
             
             # Log successful review
