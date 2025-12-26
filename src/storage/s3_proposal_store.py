@@ -11,6 +11,7 @@ from botocore.exceptions import ClientError
 
 from .models import ProposalMetadata, ProposalVersion
 from .proposal_version_index import ProposalVersionIndex
+from .budget_utils import compute_budget_total
 
 logger = logging.getLogger(__name__)
 
@@ -95,17 +96,14 @@ class S3ProposalStore:
             if revised_requirements:
                 all_requirements.update(revised_requirements)
             requirements_hash = self._calculate_requirements_hash(all_requirements)
+            budget_total = compute_budget_total(all_requirements, proposal_data)
 
             # Prepare metadata
             metadata = ProposalMetadata(
                 version=version,
                 created_at=datetime.now(timezone.utc).isoformat(),
                 requirements_hash=requirements_hash,
-                budget=proposal_data.get("pricing", [{}])[0]
-                .get("amount", "")
-                .replace("$", "")
-                .replace(",", "")
-                or None,
+                budget=budget_total,
                 removed_features=(
                     revised_requirements.get("removed_features", []) if revised_requirements else []
                 ),

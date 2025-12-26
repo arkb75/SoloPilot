@@ -22,6 +22,7 @@ lambda_client = boto3.client("lambda")
 # Import storage modules if available
 try:
     from src.storage import S3ProposalStore
+    from src.storage.budget_utils import compute_budget_total
 
     STORAGE_AVAILABLE = True
 except ImportError:
@@ -247,11 +248,12 @@ class ProposalPDFGenerator:
 
             # Store metadata.json in S3 (email-intake owns metadata and index)
             requirements_hash = self.s3_store._calculate_requirements_hash(requirements)
+            budget_total = compute_budget_total(requirements, proposal_data)
             metadata = {
                 "version": proposal_version_number,
                 "created_at": datetime.utcnow().isoformat(),
                 "requirements_hash": requirements_hash,
-                "budget": proposal_data.get("pricing", [{}])[0].get("amount", "").replace("$", "").replace(",", "") or None,
+                "budget": budget_total,
                 "client_name": proposal_data.get("clientName", ""),
                 "project_type": proposal_data.get("projectTitle", ""),
                 "file_size": len(pdf_bytes),

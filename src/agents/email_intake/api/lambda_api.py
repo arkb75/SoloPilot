@@ -1182,6 +1182,7 @@ def list_proposals(conversation_id: str) -> Dict[str, Any]:
                     "has_revisions": proposal.has_revisions,
                 }
             )
+        proposal_list = _convert_decimals(proposal_list)
 
         return {
             "statusCode": 200,
@@ -1340,7 +1341,6 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
         # Stage 1: Vision model -> Edit Intent (plain text)
         from src.agents.email_intake.vision_analyzer import VisionAnalyzer, VisionModelError  # type: ignore
         from src.agents.email_intake.requirement_extractor import RequirementEditError, RequirementExtractor  # type: ignore
-        from src.agents.email_intake.requirement_ops import apply_ops, RequirementOpsError  # type: ignore
         from src.agents.email_intake.proposal_mapper import ProposalDataMapper  # type: ignore
         from src.storage import S3ProposalStore  # type: ignore
 
@@ -1351,102 +1351,64 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
         )
         analyzer = VisionAnalyzer()
 
-        # Prefer OPS mode; fall back to intent-based editor if needed
-        use_ops_mode = (os.environ.get("REQUIREMENTS_EDIT_MODE", "ops").lower() == "ops")
         intent_text = ""
         updated_requirements = current_requirements
 
-        if use_ops_mode:
+        logger.info(
+            "[VISION_DEBUG][REQ_BEFORE] trace_id=%s %s",
+            debug_trace_id,
+            json.dumps(current_requirements, default=str),
+        )
+        if debug_dir:
             try:
-                logger.info(
-                    "[VISION_DEBUG][REQ_BEFORE] trace_id=%s %s",
-                    debug_trace_id,
-                    json.dumps(current_requirements, default=str),
-                )
-                if debug_dir:
-                    try:
-                        with open(
-                            os.path.join(debug_dir, "requirements_before.json"),
-                            "w",
-                            encoding="utf-8",
-                        ) as handle:
-                            json.dump(current_requirements, handle, indent=2, default=str)
-                    except Exception as req_err:
-                        logger.warning("[VISION_DEBUG][REQ_BEFORE] Failed to write requirements: %s", req_err)
-                ops_payload = analyzer.generate_ops(
-                    pages,
-                    annotations,
-                    current_requirements,
-                    body.get("prompt"),
-                    debug_dir=debug_dir,
-                    debug_tag="ops",
-                    debug_trace_id=debug_trace_id,
-                    debug_s3_bucket=debug_s3_bucket,
-                    debug_s3_prefix=debug_s3_prefix,
-                )
-                ops = ops_payload.get("ops", []) if isinstance(ops_payload, dict) else []
-                if not isinstance(ops, list):
-                    ops = []
-                strict_title = str(os.environ.get("STRICT_TITLE_EDITS", "true")).lower() == "true"
-                allowed_paths = os.environ.get("ALLOWED_EDIT_PATHS")
-                allowed = (allowed_paths or "/title,/summary,/pricing_breakdown,/timeline_phases").split(
-                    ","
-                )
-                updated_requirements = apply_ops(
-                    current_requirements,
-                    ops,
-                    allowed_paths=allowed,
-                    strict_title=strict_title,
-                )
-                logger.info(
-                    "[VISION_DEBUG][REQ_AFTER] trace_id=%s %s",
-                    debug_trace_id,
-                    json.dumps(updated_requirements, default=str),
-                )
-                if debug_dir:
-                    try:
-                        with open(
-                            os.path.join(debug_dir, "requirements_after.json"),
-                            "w",
-                            encoding="utf-8",
-                        ) as handle:
-                            json.dump(updated_requirements, handle, indent=2, default=str)
-                    except Exception as req_err:
-                        logger.warning("[VISION_DEBUG][REQ_AFTER] Failed to write requirements: %s", req_err)
-                logger.info("[VISION] Applied %d ops to requirements", len(ops))
-            except (VisionModelError, RequirementOpsError) as ops_err:
-                logger.warning(
-                    "[VISION_DEBUG][REQ_OPS_ERROR] trace_id=%s %s",
-                    debug_trace_id,
-                    ops_err,
-                )
-                logger.warning("[VISION] Ops mode failed: %s; falling back to intent editor", ops_err)
-                use_ops_mode = False
+                with open(
+                    os.path.join(debug_dir, "requirements_before.json"),
+                    "w",
+                    encoding="utf-8",
+                ) as handle:
+                    json.dump(current_requirements, handle, indent=2, default=str)
+            except Exception as req_err:
+                logger.warning("[VISION_DEBUG][REQ_BEFORE] Failed to write requirements: %s", req_err)
 
-        if not use_ops_mode:
+        try:
+            intent_text = analyzer.generate_intent(
+                pages,
+                annotations,
+                base_instructions,
+                body.get("prompt"),
+                debug_dir=debug_dir,
+                debug_tag="intent",
+                debug_trace_id=debug_trace_id,
+                debug_s3_bucket=debug_s3_bucket,
+                debug_s3_prefix=debug_s3_prefix,
+            )
+        except VisionModelError as vision_err:
+            raise VisionProcessingError(str(vision_err)) from vision_err
+
+        logger.info("[VISION] Response intent: %s", intent_text)
+
+        # Apply instructions to requirements via LLM-based editor
+        extractor = RequirementExtractor()
+        try:
+            updated_requirements = extractor.apply_edit_instructions(current_requirements, intent_text)
+        except RequirementEditError as edit_err:
+            raise RequirementUpdateError(str(edit_err)) from edit_err
+
+        logger.info(
+            "[VISION_DEBUG][REQ_AFTER] trace_id=%s %s",
+            debug_trace_id,
+            json.dumps(updated_requirements, default=str),
+        )
+        if debug_dir:
             try:
-                intent_text = analyzer.generate_intent(
-                    pages,
-                    annotations,
-                    base_instructions,
-                    body.get("prompt"),
-                    debug_dir=debug_dir,
-                    debug_tag="intent",
-                    debug_trace_id=debug_trace_id,
-                    debug_s3_bucket=debug_s3_bucket,
-                    debug_s3_prefix=debug_s3_prefix,
-                )
-            except VisionModelError as vision_err:
-                raise VisionProcessingError(str(vision_err)) from vision_err
-
-            logger.info("[VISION] Response intent: %s", intent_text)
-
-            # Apply instructions to requirements via LLM-based editor
-            extractor = RequirementExtractor()
-            try:
-                updated_requirements = extractor.apply_edit_instructions(current_requirements, intent_text)
-            except RequirementEditError as edit_err:
-                raise RequirementUpdateError(str(edit_err)) from edit_err
+                with open(
+                    os.path.join(debug_dir, "requirements_after.json"),
+                    "w",
+                    encoding="utf-8",
+                ) as handle:
+                    json.dump(updated_requirements, handle, indent=2, default=str)
+            except Exception as req_err:
+                logger.warning("[VISION_DEBUG][REQ_AFTER] Failed to write requirements: %s", req_err)
 
         def _build_idempotency_key(
             base_version_value: int,
@@ -1560,19 +1522,18 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
 
         # Metadata and version record
         base_meta = s3_store.get_proposal_metadata(conversation_id, int(base_version)) or {}
+        from src.storage.budget_utils import compute_budget_total  # type: ignore
+
+        budget_total = compute_budget_total(updated_requirements, proposal_data)
         metadata = {
             "version": new_version,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "requirements_hash": requirements_hash,
-            "budget": proposal_data.get("pricing", [{}])[0].get("amount", "").replace("$", "").replace(",", "") or None,
+            "budget": budget_total,
             "client_name": proposal_data.get("clientName", ""),
             "project_type": proposal_data.get("projectTitle", ""),
             "file_size": pdf_size,
-            "generated_by": (
-                "proposal_edit_vision_ops"
-                if os.environ.get("REQUIREMENTS_EDIT_MODE", "ops").lower() == "ops"
-                else "proposal_edit_vision_requirements"
-            ),
+            "generated_by": "proposal_edit_vision_intent",
             "requirements_used": updated_requirements,
             "revised_requirements_used": {
                 "annotation_count": len(annotations or []),
