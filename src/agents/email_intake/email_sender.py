@@ -1,8 +1,10 @@
 """Email sender module for sending replies via AWS SES."""
 
 import email.utils
+import html
 import logging
 import os
+import re
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -19,6 +21,27 @@ ses_client = boto3.client("ses", region_name=os.environ.get("AWS_REGION", "us-ea
 # Email configuration
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "intake@solopilot.abdulkhurram.com")
 SENDER_NAME = os.environ.get("SENDER_NAME", "SoloPilot")
+
+
+def _append_conversation_id(body: str, conversation_id: str) -> str:
+    if f"Conversation ID: {conversation_id}" in body:
+        return body
+    return f"{body}\n\n--\nConversation ID: {conversation_id}"
+
+
+def _strip_markdown(text: str) -> str:
+    return re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+
+
+def _markdown_to_html(text: str) -> str:
+    escaped = html.escape(text or "", quote=False)
+    escaped = escaped.replace("\r\n", "\n").replace("\r", "\n")
+    escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+    paragraphs = [p.strip() for p in re.split(r"\n{2,}", escaped) if p.strip()]
+    rendered = []
+    for paragraph in paragraphs:
+        rendered.append(f"<p>{paragraph.replace(chr(10), '<br>')}</p>")
+    return "\n".join(rendered) if rendered else escaped.replace("\n", "<br>")
 
 
 def send_reply_email(
@@ -59,7 +82,7 @@ def send_reply_email(
 
     try:
         # Create MIME message
-        msg = MIMEMultipart()
+        msg = MIMEMultipart("mixed" if attachments else "alternative")
         msg["From"] = f"{SENDER_NAME} <{SENDER_EMAIL}>"
         msg["To"] = to_email
         msg["Subject"] = subject
@@ -91,10 +114,18 @@ def send_reply_email(
         msg["X-SoloPilot-Message-ID"] = email.utils.make_msgid(domain="solopilot.abdulkhurram.com")
 
         # Add body - ensure conversation ID is visible
-        # If conversation ID not already in body, append it
-        if f"Conversation ID: {conversation_id}" not in body:
-            body = f"{body}\n\n--\nConversation ID: {conversation_id}"
-        msg.attach(MIMEText(body, "plain"))
+        body_with_tracking = _append_conversation_id(body, conversation_id)
+        plain_body = _strip_markdown(body_with_tracking)
+        html_body = _markdown_to_html(body_with_tracking)
+
+        if attachments:
+            alternative = MIMEMultipart("alternative")
+            alternative.attach(MIMEText(plain_body, "plain"))
+            alternative.attach(MIMEText(html_body, "html"))
+            msg.attach(alternative)
+        else:
+            msg.attach(MIMEText(plain_body, "plain"))
+            msg.attach(MIMEText(html_body, "html"))
 
         # Add attachments if any
         if attachments:
