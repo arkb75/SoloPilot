@@ -53,13 +53,15 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
 
   const handleApprove = async (reply: PendingReply, version: 'original' | 'revised' = 'original') => {
     try {
-      // Get the content to send based on selected version
-      let replyData = { ...reply };
-      if (version === 'revised' && revisions[reply.reply_id]?.revision_successful) {
-        // Update the reply with revised content
-        replyData.llm_response = revisions[reply.reply_id].revised_response;
+      if (version === 'revised') {
+        const revision = revisions[reply.reply_id];
+        if (!revision?.revision_successful || !revision.revised_response) {
+          alert('No revised response is available for this reply.');
+          return;
+        }
+        await api.amendReply(reply.reply_id, conversationId, revision.revised_response, 'ai_revision');
       }
-      
+
       await api.approveReply(reply.reply_id, conversationId);
       setPendingReplies(prev => prev.filter(r => r.reply_id !== reply.reply_id));
       // Reload to get updated conversation
