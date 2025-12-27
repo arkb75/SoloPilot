@@ -8,6 +8,7 @@ import re
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional, Tuple
 
 import boto3
@@ -22,6 +23,22 @@ ses_client = boto3.client("ses", region_name=os.environ.get("AWS_REGION", "us-ea
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "intake@solopilot.abdulkhurram.com")
 SENDER_NAME = os.environ.get("SENDER_NAME", "SoloPilot")
 
+_ALLOWED_HTML_TAGS = {
+    "p",
+    "br",
+    "strong",
+    "em",
+    "u",
+    "s",
+    "ol",
+    "ul",
+    "li",
+    "a",
+    "hr",
+}
+_ALLOWED_HTML_ATTRS = {"a": {"href", "target", "rel"}}
+_SELF_CLOSING_TAGS = {"br", "hr"}
+
 
 def _append_conversation_id(body: str, conversation_id: str) -> str:
     if f"Conversation ID: {conversation_id}" in body:
@@ -29,14 +46,97 @@ def _append_conversation_id(body: str, conversation_id: str) -> str:
     return f"{body}\n\n--\nConversation ID: {conversation_id}"
 
 
+def _append_conversation_id_html(body: str, conversation_id: str) -> str:
+    if f"Conversation ID: {conversation_id}" in body:
+        return body
+    return f"{body}<hr><p>Conversation ID: {conversation_id}</p>"
+
+
 def _strip_markdown(text: str) -> str:
-    return re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    stripped = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    stripped = re.sub(r"\*([^*]+)\*", r"\1", stripped)
+    stripped = re.sub(r"_([^_]+)_", r"\1", stripped)
+    return stripped
+
+
+def _is_html_body(text: str) -> bool:
+    return bool(re.search(r"</?(p|br|strong|em|u|s|ol|ul|li|a|hr)\b", text, re.IGNORECASE))
+
+
+class _HTMLSanitizer(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.parts: List[str] = []
+
+    def handle_starttag(self, tag: str, attrs: List[tuple[str, Optional[str]]]) -> None:
+        tag_lower = tag.lower()
+        if tag_lower not in _ALLOWED_HTML_TAGS:
+            return
+        if tag_lower in _SELF_CLOSING_TAGS:
+            self.parts.append(f"<{tag_lower}>")
+            return
+        safe_attrs = []
+        allowed_attrs = _ALLOWED_HTML_ATTRS.get(tag_lower, set())
+        for key, value in attrs:
+            if key not in allowed_attrs or value is None:
+                continue
+            cleaned_value = value.strip()
+            if key == "href" and cleaned_value.lower().startswith("javascript:"):
+                continue
+            safe_attrs.append(f'{key}="{html.escape(cleaned_value, quote=True)}"')
+        attr_text = f" {' '.join(safe_attrs)}" if safe_attrs else ""
+        self.parts.append(f"<{tag_lower}{attr_text}>")
+
+    def handle_startendtag(self, tag: str, attrs: List[tuple[str, Optional[str]]]) -> None:
+        tag_lower = tag.lower()
+        if tag_lower in _ALLOWED_HTML_TAGS:
+            self.parts.append(f"<{tag_lower}>")
+
+    def handle_endtag(self, tag: str) -> None:
+        tag_lower = tag.lower()
+        if tag_lower in _ALLOWED_HTML_TAGS and tag_lower not in _SELF_CLOSING_TAGS:
+            self.parts.append(f"</{tag_lower}>")
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(html.escape(data))
+
+    def handle_entityref(self, name: str) -> None:
+        self.parts.append(html.escape(html.unescape(f"&{name};")))
+
+    def handle_charref(self, name: str) -> None:
+        self.parts.append(html.escape(html.unescape(f"&#{name};")))
+
+    def get_html(self) -> str:
+        return "".join(self.parts)
+
+
+def _sanitize_html(text: str) -> str:
+    sanitizer = _HTMLSanitizer()
+    sanitizer.feed(text or "")
+    sanitizer.close()
+    return sanitizer.get_html()
+
+
+def _html_to_text(text: str) -> str:
+    if not text:
+        return ""
+    cleaned = re.sub(r"<\s*br\s*/?\s*>", "\n", text, flags=re.IGNORECASE)
+    cleaned = re.sub(r"<\s*hr\s*/?\s*>", "\n\n", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"</\s*p\s*>", "\n\n", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"<\s*p[^>]*>", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"<\s*li[^>]*>", "- ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"</\s*li\s*>", "\n", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"</\s*(ul|ol)\s*>", "\n", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"<[^>]+>", "", cleaned)
+    return html.unescape(cleaned).strip()
 
 
 def _markdown_to_html(text: str) -> str:
     escaped = html.escape(text or "", quote=False)
     escaped = escaped.replace("\r\n", "\n").replace("\r", "\n")
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", escaped)
+    escaped = re.sub(r"_([^_]+)_", r"<em>\1</em>", escaped)
     paragraphs = [p.strip() for p in re.split(r"\n{2,}", escaped) if p.strip()]
     rendered = []
     for paragraph in paragraphs:
@@ -49,6 +149,7 @@ def send_reply_email(
     subject: str,
     body: str,
     conversation_id: str,
+    body_format: Optional[str] = None,
     in_reply_to: Optional[str] = None,
     references: Optional[List[str]] = None,
     attachments: Optional[List[Dict[str, Any]]] = None,
@@ -60,6 +161,7 @@ def send_reply_email(
         subject: Email subject (should include Re: prefix)
         body: Email body content
         conversation_id: Conversation ID for tracking
+        body_format: Optional hint for body format ("html" or "markdown")
         in_reply_to: Message-ID of the email being replied to
         references: List of Message-IDs in the thread
         attachments: Optional list of attachments
@@ -114,9 +216,15 @@ def send_reply_email(
         msg["X-SoloPilot-Message-ID"] = email.utils.make_msgid(domain="solopilot.abdulkhurram.com")
 
         # Add body - ensure conversation ID is visible
-        body_with_tracking = _append_conversation_id(body, conversation_id)
-        plain_body = _strip_markdown(body_with_tracking)
-        html_body = _markdown_to_html(body_with_tracking)
+        format_hint = (body_format or "").lower().strip()
+        if format_hint == "html" or (not format_hint and _is_html_body(body)):
+            html_body = _append_conversation_id_html(body, conversation_id)
+            html_body = _sanitize_html(html_body)
+            plain_body = _html_to_text(html_body)
+        else:
+            body_with_tracking = _append_conversation_id(body, conversation_id)
+            plain_body = _strip_markdown(body_with_tracking)
+            html_body = _markdown_to_html(body_with_tracking)
 
         if attachments:
             alternative = MIMEMultipart("alternative")
@@ -171,6 +279,7 @@ def send_proposal_email(
     conversation_id: str,
     pdf_content: bytes,
     pdf_filename: str,
+    body_format: Optional[str] = None,
     in_reply_to: Optional[str] = None,
     references: Optional[List[str]] = None,
 ) -> Tuple[bool, Optional[str], Optional[str]]:
@@ -198,6 +307,7 @@ def send_proposal_email(
         subject=subject,
         body=body,
         conversation_id=conversation_id,
+        body_format=body_format,
         in_reply_to=in_reply_to,
         references=references,
         attachments=attachments,
@@ -301,6 +411,7 @@ def extract_email_metadata(pending_reply: Dict[str, Any]) -> Dict[str, Any]:
         "should_send_pdf": metadata.get("should_send_pdf", False),
         "phase": pending_reply.get("phase", "unknown"),
         "body": email_body,
+        "body_format": metadata.get("email_body_format"),
         "proposal_content": metadata.get("proposal_content", ""),  # For PDF generation
         "client_name": metadata.get("client_name", "Client"),
         "sender_name": metadata.get("sender_name", "The SoloPilot Team"),

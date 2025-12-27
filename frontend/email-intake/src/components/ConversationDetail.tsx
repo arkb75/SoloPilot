@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { Conversation, PendingReply, ReviewResult, RevisionResult } from '../types';
 import api from '../api/client';
 import ReplyEditor from './ReplyEditor';
+import { toSafeHtml } from '../utils/emailBody';
 import ProposalViewer from './ProposalViewer';
 
 interface ConversationDetailProps {
@@ -59,7 +60,13 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
           alert('No revised response is available for this reply.');
           return;
         }
-        await api.amendReply(reply.reply_id, conversationId, revision.revised_response, 'ai_revision');
+        await api.amendReply(
+          reply.reply_id,
+          conversationId,
+          revision.revised_response,
+          'ai_revision',
+          'markdown'
+        );
       }
 
       await api.approveReply(reply.reply_id, conversationId);
@@ -96,7 +103,7 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
 
   const handleAmend = async (reply: PendingReply, newContent: string) => {
     try {
-      await api.amendReply(reply.reply_id, conversationId, newContent);
+      await api.amendReply(reply.reply_id, conversationId, newContent, 'admin', 'html');
       await handleApprove(reply);
       setEditingReply(null);
     } catch (err) {
@@ -355,18 +362,20 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
             {/* Original */}
             <div className={`border rounded-lg p-3 ${selectedVersion === 'original' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
               <h5 className="text-sm font-medium text-gray-700 mb-2">Original Response</h5>
-              <div className="text-sm text-gray-900 whitespace-pre-wrap mb-2 max-h-40 overflow-y-auto">
-                {original}
-              </div>
+              <div
+                className="text-sm text-gray-900 mb-2 max-h-40 overflow-y-auto"
+                dangerouslySetInnerHTML={{ __html: toSafeHtml(original) }}
+              />
               {originalReview && <ReviewDisplay review={originalReview} />}
             </div>
 
             {/* Revised */}
             <div className={`border rounded-lg p-3 ${selectedVersion === 'revised' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
               <h5 className="text-sm font-medium text-gray-700 mb-2">Revised Response</h5>
-              <div className="text-sm text-gray-900 whitespace-pre-wrap mb-2 max-h-40 overflow-y-auto">
-                {revised}
-              </div>
+              <div
+                className="text-sm text-gray-900 mb-2 max-h-40 overflow-y-auto"
+                dangerouslySetInnerHTML={{ __html: toSafeHtml(revised || '') }}
+              />
               {revisedReview && <ReviewDisplay review={revisedReview} />}
             </div>
           </div>
@@ -538,9 +547,10 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
                     />
                   ) : (
                     <>
-                      <div className="mb-4 p-3 bg-gray-50 rounded whitespace-pre-wrap">
-                        {reply.llm_response}
-                      </div>
+                      <div
+                        className="mb-4 p-3 bg-gray-50 rounded"
+                        dangerouslySetInnerHTML={{ __html: toSafeHtml(reply.llm_response) }}
+                      />
 
                       {/* AI Review */}
                       {replyReviews[reply.reply_id] ? (

@@ -554,6 +554,7 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
                 conversation_id=conversation_id,
                 pdf_content=pregen_pdf_bytes,
                 pdf_filename=f"{client_name.replace(' ', '_')}_proposal.pdf",
+                body_format=email_meta.get("body_format"),
                 in_reply_to=email_meta.get("in_reply_to"),
                 references=email_meta.get("references", []),
             )
@@ -564,6 +565,7 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
                 subject=email_meta["subject"],
                 body=email_meta["body"],
                 conversation_id=conversation_id,
+                body_format=email_meta.get("body_format"),
                 in_reply_to=email_meta.get("in_reply_to"),
                 references=email_meta.get("references", []),
             )
@@ -755,6 +757,7 @@ def amend_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
     try:
         conversation_id = body.get("conversation_id")
         amended_content = body.get("content")
+        content_format = body.get("content_format")
 
         if not conversation_id or not amended_content:
             return {
@@ -795,6 +798,8 @@ def amend_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
 
                 # Update the email_body in metadata directly - this becomes the source of truth
                 pending_replies[i]["metadata"]["email_body"] = amended_content
+                if content_format:
+                    pending_replies[i]["metadata"]["email_body_format"] = content_format
                 
                 # Track amendment details for audit trail
                 pending_replies[i]["amended_at"] = datetime.now(timezone.utc).isoformat()

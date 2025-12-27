@@ -80,11 +80,18 @@ export const api = {
     return response.data;
   },
 
-  amendReply: async (replyId: string, conversationId: string, content: string, amendedBy = 'admin') => {
+  amendReply: async (
+    replyId: string,
+    conversationId: string,
+    content: string,
+    amendedBy = 'admin',
+    contentFormat?: 'html' | 'markdown'
+  ) => {
     const response = await client.patch(`/replies/${replyId}`, {
       conversation_id: conversationId,
       content,
       amended_by: amendedBy,
+      content_format: contentFormat,
     });
     return response.data;
   },

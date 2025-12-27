@@ -1,4 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import ReactQuill from 'react-quill';
+import 'react-quill/dist/quill.snow.css';
+
+import { htmlToText, normalizeToHtml, toSafeHtml } from '../utils/emailBody';
 
 interface ReplyEditorProps {
   initialContent: string;
@@ -7,11 +11,31 @@ interface ReplyEditorProps {
 }
 
 const ReplyEditor: React.FC<ReplyEditorProps> = ({ initialContent, onSave, onCancel }) => {
-  const [content, setContent] = useState(initialContent);
+  const [content, setContent] = useState(() => normalizeToHtml(initialContent));
   const [showPreview, setShowPreview] = useState(false);
 
-  const wordCount = content.trim().split(/\s+/).filter(Boolean).length;
-  const charCount = content.length;
+  const plainText = htmlToText(content);
+  const wordCount = plainText.trim().split(/\s+/).filter(Boolean).length;
+  const charCount = plainText.length;
+
+  const editorModules = useMemo(() => ({
+    toolbar: [
+      ['bold', 'italic', 'underline', 'strike'],
+      [{ list: 'ordered' }, { list: 'bullet' }],
+      ['link'],
+      ['clean'],
+    ],
+  }), []);
+
+  const editorFormats = [
+    'bold',
+    'italic',
+    'underline',
+    'strike',
+    'list',
+    'bullet',
+    'link',
+  ];
 
   return (
     <div className="space-y-4">
@@ -36,14 +60,18 @@ const ReplyEditor: React.FC<ReplyEditorProps> = ({ initialContent, onSave, onCan
       </div>
 
       {showPreview ? (
-        <div className="p-4 bg-gray-50 rounded-lg whitespace-pre-wrap">
-          {content}
-        </div>
+        <div
+          className="p-4 bg-gray-50 rounded-lg"
+          dangerouslySetInnerHTML={{ __html: toSafeHtml(content) }}
+        />
       ) : (
-        <textarea
+        <ReactQuill
           value={content}
-          onChange={(e) => setContent(e.target.value)}
-          className="w-full h-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          onChange={setContent}
+          modules={editorModules}
+          formats={editorFormats}
+          className="bg-white"
+          style={{ height: '16rem' }}
           placeholder="Edit the reply..."
         />
       )}
