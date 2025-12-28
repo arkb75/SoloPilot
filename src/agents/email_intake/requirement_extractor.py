@@ -220,7 +220,9 @@ Return ONLY valid JSON, no additional text."""
             logger.error(f"Error extracting requirements: {str(e)}")
             return existing_requirements
 
-    def apply_edit_instructions(self, requirements: Dict[str, Any], instructions: str) -> Dict[str, Any]:
+    def apply_edit_instructions(
+        self, requirements: Dict[str, Any], instructions: str, max_attempts: int = 2
+    ) -> Dict[str, Any]:
         """Apply natural language instructions to existing requirements JSON."""
 
         if not instructions or not instructions.strip():
@@ -233,7 +235,7 @@ Return ONLY valid JSON, no additional text."""
 
         requirements_json = json.dumps(requirements, indent=2, default=_decimal_safe)
 
-        prompt = f"""You are a senior proposal analyst. Update the JSON requirements to reflect the requested changes exactly.
+        base_prompt = f"""You are a senior proposal analyst. Update the JSON requirements to reflect the requested changes exactly.
 
 CURRENT REQUIREMENTS:
 {requirements_json}
@@ -243,34 +245,49 @@ CHANGE INSTRUCTIONS:
 
 Return ONLY the updated requirements JSON. Do not include explanations, markdown, code fences, or extra text. Preserve all fields from the current payload, updating only where the instructions require changes."""
 
-        try:
-            if USE_AI_PROVIDER:
-                response = self.provider.generate_code(prompt, [])
-                logger.info("Requirement edit model raw response (provider): %s", response)
-                updated = _parse_json_response(response)
-            else:
-                request_body = {
-                    "anthropic_version": "bedrock-2023-05-31",
-                    "max_tokens": 4000,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.1,
-                }
+        last_error: Optional[Exception] = None
+        for attempt in range(1, max_attempts + 1):
+            prompt = base_prompt
+            if attempt > 1 and last_error:
+                prompt = (
+                    f"{base_prompt}\n\n"
+                    f"The previous output was invalid JSON ({last_error}). "
+                    "Return valid JSON only with double quotes, no trailing commas."
+                )
+            try:
+                if USE_AI_PROVIDER:
+                    response = self.provider.generate_code(prompt, [])
+                    logger.info("Requirement edit model raw response (provider): %s", response)
+                    updated = _parse_json_response(response)
+                else:
+                    request_body = {
+                        "anthropic_version": "bedrock-2023-05-31",
+                        "max_tokens": 4000,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.1,
+                    }
 
-                body = self._invoke_bedrock(request_body)
-                model_text = body["content"][0]["text"]
-                logger.info("Requirement edit model raw response (bedrock): %s", model_text)
-                updated = _parse_json_response(model_text)
+                    body = self._invoke_bedrock(request_body)
+                    model_text = body["content"][0]["text"]
+                    logger.info("Requirement edit model raw response (bedrock): %s", model_text)
+                    updated = _parse_json_response(model_text)
 
-            if not isinstance(updated, dict):
-                raise RequirementEditError("Model returned non-object requirements payload")
+                if not isinstance(updated, dict):
+                    raise RequirementEditError("Model returned non-object requirements payload")
 
-            return updated
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse requirement edit response: {e}")
-            raise RequirementEditError("Model returned invalid JSON while applying edits") from e
-        except Exception as e:
-            logger.error(f"Error applying requirement edits: {e}")
-            raise RequirementEditError(str(e)) from e
+                return updated
+            except json.JSONDecodeError as e:
+                last_error = e
+                logger.error(f"Failed to parse requirement edit response (attempt {attempt}): {e}")
+                if attempt == max_attempts:
+                    raise RequirementEditError(
+                        "Model returned invalid JSON while applying edits"
+                    ) from e
+            except Exception as e:
+                logger.error(f"Error applying requirement edits: {e}")
+                raise RequirementEditError(str(e)) from e
+
+        raise RequirementEditError("Model returned invalid JSON while applying edits")
 
     def is_complete(self, requirements: Dict[str, Any]) -> bool:
         """Check if requirements are complete enough to proceed.

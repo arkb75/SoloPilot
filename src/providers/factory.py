@@ -196,7 +196,7 @@ def get_provider(provider_name: Optional[str] = None, **config_kwargs) -> BasePr
             "bedrock": {
                 "inference_profile_arn": os.getenv("BEDROCK_IP_ARN", ""),
                 "region": "us-east-2",
-                "model_kwargs": {"temperature": 0.1, "max_tokens": 2048},
+                "model_kwargs": {"temperature": 0.1, "max_tokens": 10000},
             },
         }
     }
