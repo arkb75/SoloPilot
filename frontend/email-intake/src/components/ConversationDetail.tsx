@@ -651,9 +651,10 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
                       </p>
                     </div>
                     <p className="text-sm text-gray-500">To: {email.to.join(', ')}</p>
-                    <div className="text-sm text-gray-900 whitespace-pre-wrap mt-2">
-                      {email.body}
-                    </div>
+                    <div
+                      className="text-sm text-gray-900 mt-2"
+                      dangerouslySetInnerHTML={{ __html: toSafeHtml(email.body || '') }}
+                    />
                   </div>
                 </div>
               </li>
