@@ -270,7 +270,7 @@ class EmailParser:
                 if any(line.strip().startswith(marker) for marker in signature_markers):
                     break
                 if _is_reply_header(line):
-                    break
+                    continue
                 fallback_lines.append(line)
             cleaned = "\n".join(fallback_lines)
 
