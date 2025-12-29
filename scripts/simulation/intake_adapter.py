@@ -298,65 +298,134 @@ class IntakeAdapter:
         subject: str,
         body: str,
     ) -> SystemResponse:
-        """Invoke Lambda to process email and generate response.
+        """Process email by calling ConversationalResponder directly.
         
-        This calls the conversational responder to generate an AI response.
+        This generates an AI response and stores it as a pending reply, bypassing
+        the Lambda API which only handles frontend management operations.
         """
+        import sys
+        import os
+        from pathlib import Path
+        
+        # Add project root to path for imports
+        project_root = Path(__file__).parent.parent.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+        
+        # Set required environment variables for the responder
+        # These would normally be set in the Lambda environment
+        # Use the inference profile ID format that works with boto3 invoke_model
+        os.environ.setdefault("BEDROCK_IP_ARN", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+        os.environ.setdefault("AWS_REGION", self.aws_region)
+        os.environ.setdefault("USE_AI_PROVIDER", "false")  # Use Bedrock directly
+        os.environ.setdefault("CONVERSATIONS_TABLE", self.dynamodb_table)
+        
         try:
-            # Build API Gateway-like event for the process endpoint
-            payload = {
-                "httpMethod": "POST",
-                "resource": "/conversations/{conversation_id}/process",
-                "pathParameters": {"conversation_id": conversation_id},
-                "body": json.dumps({
-                    "client_email": client_email,
-                    "subject": subject,
-                    "body": body,
-                }),
-            }
+            # Force direct Bedrock mode in the modules by patching before import
+            # This avoids the provider factory which has ARN validation issues
+            import src.agents.email_intake.metadata_extractor as me_module
+            import src.agents.email_intake.conversational_responder as cr_module
+            me_module.USE_AI_PROVIDER = False
+            cr_module.USE_AI_PROVIDER = False
             
-            response = self.lambda_client.invoke(
-                FunctionName=self.lambda_function,
-                InvocationType="RequestResponse",
-                Payload=json.dumps(payload),
-            )
+            # Inject boto3 into modules (they conditionally import it)
+            cr_module.boto3 = boto3
             
-            result = json.loads(response["Payload"].read())
+            # Create a Bedrock client with the correct AWS profile
+            session = boto3.Session(profile_name=self.aws_profile, region_name=self.aws_region)
+            profile_bedrock_client = session.client("bedrock-runtime")
             
-            if result.get("statusCode") == 200:
-                body_data = json.loads(result.get("body", "{}"))
-                
-                # Get updated conversation state
-                conversation = self.get_conversation_state(conversation_id)
-                pending = self.get_pending_reply(conversation_id)
-                
-                return SystemResponse(
-                    conversation_id=conversation_id,
-                    phase=conversation.get("phase", "understanding") if conversation else "unknown",
-                    response_body=pending.get("llm_response", "") if pending else body_data.get("response", ""),
-                    subject=f"Re: {subject}",
-                    requirements=conversation.get("requirements", {}) if conversation else {},
-                    pending_reply=pending,
-                )
-            else:
-                error_body = result.get("body", "Unknown error")
-                logger.error(f"Lambda returned error: {error_body}")
+            # Initialize Bedrock client directly in the modules with correct profile
+            me_module.bedrock_client = profile_bedrock_client
+            
+            # Now import the responder
+            from src.agents.email_intake.conversational_responder import ConversationalResponder
+            from src.agents.email_intake.conversation_state import ConversationStateManager
+            
+            # Get the current conversation state
+            conversation = self.get_conversation_state(conversation_id)
+            if not conversation:
                 return SystemResponse(
                     conversation_id=conversation_id,
                     phase="error",
                     response_body="",
                     subject=subject,
                     requirements={},
-                    error=error_body,
+                    error="Conversation not found",
                 )
-                
+            
+            # Get the latest email from history
+            email_history = conversation.get("email_history", [])
+            latest_email = email_history[-1] if email_history else {
+                "from": client_email,
+                "subject": subject,
+                "body": body,
+            }
+            
+            # Initialize responder and state manager
+            responder = ConversationalResponder()
+            state_manager = ConversationStateManager(table_name=self.dynamodb_table)
+            
+            # Patch responder's bedrock client to use the correct profile
+            # (it creates its own client without profile in __init__)
+            responder.bedrock_client = profile_bedrock_client
+            
+            # Generate response - returns tuple (response_body, metadata, prompt)
+            logger.info(f"Generating response for conversation {conversation_id}")
+            response_body, response_metadata, used_prompt = responder.generate_response_with_tracking(
+                conversation=conversation,
+                latest_email=latest_email,
+            )
+            
+            # Add pending reply to conversation
+            from datetime import datetime, timezone
+            import uuid
+            
+            reply_id = f"reply_{uuid.uuid4().hex[:8]}"
+            pending_reply = {
+                "reply_id": reply_id,
+                "status": "pending",
+                "llm_response": response_body,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "phase": conversation.get("phase", "understanding"),
+                "metadata": {
+                    "email_body": response_body,
+                    "subject": f"Re: {subject}",
+                    "recipient": client_email,
+                },
+            }
+            
+            # Update conversation with pending reply and new phase
+            new_phase = response_metadata.get("stage", conversation.get("phase", "understanding"))
+            self.table.update_item(
+                Key={"conversation_id": conversation_id},
+                UpdateExpression="SET pending_replies = list_append(if_not_exists(pending_replies, :empty), :reply), phase = :phase, updated_at = :now",
+                ExpressionAttributeValues={
+                    ":reply": [pending_reply],
+                    ":empty": [],
+                    ":phase": new_phase,
+                    ":now": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            
+            logger.info(f"Generated response for {conversation_id}, phase: {new_phase}")
+            
+            return SystemResponse(
+                conversation_id=conversation_id,
+                phase=new_phase,
+                response_body=response_body,
+                subject=f"Re: {subject}",
+                requirements=response_metadata.get("requirements", {}),
+                pending_reply=pending_reply,
+            )
+            
         except Exception as e:
-            logger.error(f"Failed to invoke Lambda: {e}")
+            logger.error(f"Failed to generate response: {e}", exc_info=True)
             return SystemResponse(
                 conversation_id=conversation_id,
                 phase="error",
                 response_body="",
                 subject=subject,
                 requirements={},
-                error=str(e),
+                error=f"Intake error: {str(e)}",
             )
