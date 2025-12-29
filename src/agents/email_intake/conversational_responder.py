@@ -139,6 +139,14 @@ class ConversationalResponder:
         
         # Determine conversation stage and capabilities
         stage_info = self._determine_stage_info(conversation, metadata)
+
+        pricing_guard = ""
+        if current_phase == "proposal" and requirements.get("pricing_breakdown"):
+            pricing_guard = (
+                "\nPRICING GUARD:\n"
+                "- Insert <PRICING_BLOCK/> exactly once where pricing should appear\n"
+                "- Do not include any other dollar amounts in the response\n"
+            )
         
         prompt = f"""You are {self.sender_name}, a freelance developer {client_context}.
 
@@ -178,6 +186,7 @@ RESPONSE GUIDELINES:
    - If True: You MUST mention "attached" or "I've attached" when referring to the proposal
    - If False: DO NOT mention attachments, just discuss the project
 6. If they want a meeting, acknowledge it (system will add Calendly)
+{pricing_guard}
 
 What is the most appropriate response to this email?"""
         
@@ -334,7 +343,7 @@ CONSTRAINTS:
                     response_metadata["action_taken"] = "initial_proposal_sent"
                     response_metadata["proposal_version"] = 1
                     if current_phase == "understanding":
-                        response_metadata["suggested_phase"] = "proposal_draft"
+                        response_metadata["suggested_phase"] = "proposal"
             else:
                 logger.warning("Metadata says to send PDF but AI didn't mention proposal/attached - not sending PDF")
         

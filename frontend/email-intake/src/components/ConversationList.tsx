@@ -100,6 +100,7 @@ const ConversationList: React.FC<ConversationListProps> = ({ onSelectConversatio
   const getPhaseColor = (phase: string) => {
     const colors: Record<string, string> = {
       understanding: 'bg-blue-100 text-blue-800',
+      proposal: 'bg-purple-100 text-purple-800',
       proposal_draft: 'bg-purple-100 text-purple-800',
       proposal_feedback: 'bg-yellow-100 text-yellow-800',
       documentation: 'bg-indigo-100 text-indigo-800',

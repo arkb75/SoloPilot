@@ -437,7 +437,11 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         storage_info = None
 
         # Check if we should send a PDF proposal
-        if email_meta.get("should_send_pdf") and email_meta.get("phase") in ["proposal_draft", "proposal_feedback"]:
+        if email_meta.get("should_send_pdf") and email_meta.get("phase") in [
+            "proposal",
+            "proposal_draft",
+            "proposal_feedback",
+        ]:
             # Prefer reusing a pre-generated proposal stored during pending-creation
             pregen_version = (
                 (reply_data or {}).get("proposal_version")

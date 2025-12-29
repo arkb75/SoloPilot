@@ -10,6 +10,7 @@ This version includes:
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
@@ -23,6 +24,7 @@ from src.agents.email_intake.conversational_responder import ConversationalRespo
 from src.agents.email_intake.email_parser import EmailParser
 from src.agents.email_intake.requirement_extractor import RequirementExtractor
 from src.agents.email_intake.utils import EmailThreadingUtils
+from src.storage import ProposalVersionIndex
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -39,6 +41,140 @@ DYNAMO_TABLE = os.environ.get("DYNAMO_TABLE", "conversations")
 ENABLE_OUTBOUND_TRACKING = os.environ.get("ENABLE_OUTBOUND_TRACKING", "true").lower() == "true"
 CALENDLY_LINK = os.environ.get("CALENDLY_LINK", "https://calendly.com/your-link")
 BUCKET_NAME = os.environ.get("EMAIL_BUCKET", "solopilot-emails")
+
+
+def _normalize_phase(phase: Optional[str]) -> str:
+    if phase in {"proposal_draft", "proposal_feedback"}:
+        return "proposal"
+    return phase or "understanding"
+
+
+def _should_run_full_extraction(conversation_id: str, conversation: Dict[str, Any]) -> bool:
+    try:
+        version_index = ProposalVersionIndex()
+        latest_version = version_index.get_latest_version(conversation_id)
+        if latest_version:
+            logger.info(
+                "Skipping full requirements extraction for %s: proposal version v%s exists",
+                conversation_id,
+                latest_version.version,
+            )
+            return False
+    except Exception as exc:
+        logger.warning(
+            "Failed to check proposal versions for %s; falling back to phase check: %s",
+            conversation_id,
+            str(exc),
+            exc_info=True,
+        )
+        phase = _normalize_phase(conversation.get("phase"))
+        if phase == "proposal":
+            logger.info(
+                "Skipping full requirements extraction for %s based on phase=%s",
+                conversation_id,
+                phase,
+            )
+            return False
+    return True
+
+
+_PRICE_REGEX = re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?")
+
+
+def _coerce_amount(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float, Decimal)):
+        try:
+            return int(round(float(value)))
+        except (TypeError, ValueError):
+            return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    multiplier = 1000 if "k" in raw.lower() else 1
+    cleaned = raw.replace(",", "")
+    match = re.search(r"-?\d+(?:\.\d+)?", cleaned)
+    if not match:
+        return None
+    try:
+        amount = float(match.group(0)) * multiplier
+    except ValueError:
+        return None
+    return int(round(amount))
+
+
+def _build_pricing_block(requirements: Dict[str, Any]) -> str:
+    breakdown = requirements.get("pricing_breakdown") or []
+    if not isinstance(breakdown, list) or not breakdown:
+        return ""
+
+    lines = ["Pricing:"]
+    for item in breakdown:
+        if not isinstance(item, dict):
+            continue
+        label = item.get("item") or item.get("name") or "Line Item"
+        amount = _coerce_amount(item.get("amount"))
+        if amount is None:
+            continue
+        suffix = " (optional)" if item.get("optional") else ""
+        lines.append(f"- {label}{suffix}: ${amount:,}")
+
+    if len(lines) == 1:
+        return ""
+
+    try:
+        from src.storage.budget_utils import compute_budget_total
+
+        total = compute_budget_total({"pricing_breakdown": breakdown})
+    except Exception as budget_err:
+        logger.warning("Failed to compute pricing total for guard: %s", budget_err)
+        total = None
+
+    if total:
+        lines.append(f"Total: ${total:,}")
+
+    return "\n".join(lines)
+
+
+def _strip_price_mentions(text: str) -> Tuple[str, List[str]]:
+    if not text:
+        return text, []
+    matches = _PRICE_REGEX.findall(text)
+    cleaned = _PRICE_REGEX.sub("", text)
+    return cleaned, matches
+
+
+def _apply_pricing_guard(
+    response_text: str,
+    requirements: Dict[str, Any],
+    conversation_id: str,
+) -> str:
+    pricing_block = _build_pricing_block(requirements)
+    if not pricing_block:
+        return response_text
+
+    token = "<PRICING_BLOCK/>"
+    if token in response_text:
+        guarded = response_text.replace(token, pricing_block)
+    else:
+        guarded = response_text.rstrip() + "\n\n" + pricing_block
+
+    pre, _, post = guarded.partition(pricing_block)
+    pre_clean, pre_matches = _strip_price_mentions(pre)
+    post_clean, post_matches = _strip_price_mentions(post)
+
+    if pre_matches or post_matches:
+        logger.warning(
+            "[PRICING_GUARD] Stripped %s mismatched price mention(s) for %s: %s",
+            len(pre_matches) + len(post_matches),
+            conversation_id,
+            pre_matches + post_matches,
+        )
+
+    return pre_clean + pricing_block + post_clean
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -118,6 +254,21 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             max_retries=2,  # Allow up to 2 retries for concurrent access
         )
 
+        normalized_phase = _normalize_phase(conversation.get("phase"))
+        if normalized_phase != conversation.get("phase"):
+            logger.info(
+                "Normalizing phase for %s: %s -> %s",
+                conversation_id,
+                conversation.get("phase"),
+                normalized_phase,
+            )
+            state_manager.update_phase(
+                conversation_id,
+                normalized_phase,
+                metadata={"normalized_from": conversation.get("phase")},
+            )
+            conversation["phase"] = normalized_phase
+
         # Store message ID mapping for future thread lookups
         if parsed_email.get("message_id"):
             raw_msg_id = parsed_email["message_id"]
@@ -143,60 +294,72 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 state_manager.store_message_id_mapping(custom_msg_id, conversation_id)
 
         # Extract/update requirements with version control
-        logger.info(f"Running requirement extractor for conversation {conversation_id}")
-        current_version = conversation.get("requirements_version", 0)
-        updated_requirements = extractor.extract(
-            conversation["email_history"], conversation.get("requirements", {})
-        )
+        logger.info(f"Evaluating requirements extraction for conversation {conversation_id}")
+        updated_requirements = conversation.get("requirements", {})
+        requirements_changed = False
 
-        # Update requirements atomically
-        try:
-            conversation = state_manager.update_requirements_atomic(
-                conversation_id, updated_requirements, expected_version=current_version
-            )
-        except ValueError as e:
-            # Requirements were updated by another Lambda - refetch and retry once
-            logger.warning(f"Requirements version conflict, retrying: {str(e)}")
-            conversation = state_manager.fetch_or_create_conversation(
-                conversation_id, original_message_id, parsed_email
-            )
+        if _should_run_full_extraction(conversation_id, conversation):
+            current_version = conversation.get("requirements_version", 0)
             updated_requirements = extractor.extract(
                 conversation["email_history"], conversation.get("requirements", {})
             )
-            conversation = state_manager.update_requirements_atomic(
-                conversation_id, updated_requirements
-            )
 
-        # Always send to SQS after successful DynamoDB update
-        _send_to_queue_enhanced(conversation_id, updated_requirements, conversation)
+            # Update requirements atomically
+            try:
+                conversation = state_manager.update_requirements_atomic(
+                    conversation_id, updated_requirements, expected_version=current_version
+                )
+                requirements_changed = True
+            except ValueError as e:
+                # Requirements were updated by another Lambda - refetch and retry once
+                logger.warning(f"Requirements version conflict, retrying: {str(e)}")
+                conversation = state_manager.fetch_or_create_conversation(
+                    conversation_id, original_message_id, parsed_email
+                )
+                updated_requirements = extractor.extract(
+                    conversation["email_history"], conversation.get("requirements", {})
+                )
+                conversation = state_manager.update_requirements_atomic(
+                    conversation_id, updated_requirements
+                )
+                requirements_changed = True
+
+        # Update requirements from feedback whenever we're in the proposal phase
+        normalized_phase = _normalize_phase(conversation.get("phase"))
+        if normalized_phase == "proposal":
+            logger.info("Proposal phase - updating requirements based on feedback")
+            updated_requirements_from_feedback = extractor.update_requirements_from_feedback(
+                conversation.get("requirements", {}), parsed_email
+            )
+            if updated_requirements_from_feedback != conversation.get("requirements", {}):
+                try:
+                    current_version = conversation.get("requirements_version", 0)
+                    conversation = state_manager.update_requirements_atomic(
+                        conversation_id,
+                        updated_requirements_from_feedback,
+                        expected_version=current_version,
+                    )
+                    updated_requirements = updated_requirements_from_feedback
+                    requirements_changed = True
+                    logger.info("Successfully updated requirements based on feedback")
+                except Exception as e:
+                    logger.error(f"Failed to update requirements from feedback: {str(e)}")
+            else:
+                updated_requirements = conversation.get("requirements", {})
+
+        if requirements_changed:
+            _send_to_queue_enhanced(conversation_id, updated_requirements, conversation)
 
         # Use ConversationalResponder to generate appropriate response
         responder = ConversationalResponder(calendly_link=CALENDLY_LINK)
         response_text, response_metadata, llm_prompt = responder.generate_response_with_tracking(
             conversation, parsed_email
         )
-
-        # Update requirements if in proposal_feedback phase
-        if conversation.get("phase") == "proposal_feedback":
-            logger.info("Proposal feedback phase - updating requirements based on feedback")
-            
-            # Use the new update method to get complete updated requirements
-            updated_requirements_from_feedback = extractor.update_requirements_from_feedback(
-                conversation.get("requirements", {}), parsed_email
+        normalized_phase = _normalize_phase(conversation.get("phase"))
+        if normalized_phase == "proposal":
+            response_text = _apply_pricing_guard(
+                response_text, updated_requirements, conversation_id
             )
-            
-            # Update the main requirements (not revised_requirements)
-            try:
-                current_version = conversation.get("requirements_version", 0)
-                conversation = state_manager.update_requirements_atomic(
-                    conversation_id, updated_requirements_from_feedback, expected_version=current_version
-                )
-                logger.info("Successfully updated requirements based on feedback")
-                
-                # Send updated requirements to queue
-                _send_to_queue_enhanced(conversation_id, updated_requirements_from_feedback, conversation)
-            except Exception as e:
-                logger.error(f"Failed to update requirements from feedback: {str(e)}")
 
         # Check reply mode (default to manual if not set)
         reply_mode = conversation.get("reply_mode", "manual")
@@ -422,7 +585,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     logger.error(f"[DEBUG-AUTO] Exception details:", exc_info=True)
 
             # Determine email type and send
-            if response_metadata.get("phase") == "proposal_draft":
+            if response_metadata.get("phase") == "proposal":
                 # Send proposal email
                 result = _send_confirmation_email_v2(
                     parsed_email["from"], updated_requirements, conversation_id
@@ -459,20 +622,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Handle phase transitions based on actions taken
         if response_metadata.get("action_taken") == "initial_proposal_sent":
-            # Move to proposal_draft when first proposal is sent
-            new_phase = "proposal_draft"
+            new_phase = "proposal"
             logger.info(f"Phase transition: {current_phase} -> {new_phase} (proposal sent)")
             state_manager.update_phase(conversation_id, new_phase)
-        elif current_phase == "proposal_draft" and len(conversation.get("email_history", [])) > 1:
-            # Auto-transition to proposal_feedback after client responds to proposal
-            inbound_after_proposal = any(
-                email.get("direction") == "inbound" 
-                for email in conversation.get("email_history", [])[-2:]
-            )
-            if inbound_after_proposal:
-                new_phase = "proposal_feedback"
-                logger.info(f"Phase transition: {current_phase} -> {new_phase} (client responded)")
-                state_manager.update_phase(conversation_id, new_phase)
         elif suggested_phase and suggested_phase != current_phase:
             # Honor other AI-suggested phase transitions
             logger.info(f"Phase transition: {current_phase} -> {suggested_phase} (AI suggested)")

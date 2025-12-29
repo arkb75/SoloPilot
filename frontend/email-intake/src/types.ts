@@ -41,6 +41,7 @@ export interface ExtractedMetadata {
 
 export type ConversationPhase =
   | 'understanding'
+  | 'proposal'
   | 'proposal_draft'
   | 'proposal_feedback'
   | 'documentation'

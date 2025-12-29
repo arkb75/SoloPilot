@@ -154,7 +154,8 @@ Extract and return a JSON object with these fields:"""
 - budget_amount: Single numeric budget amount (e.g., 1000 for $1k, 3500 for $3-4k range)
 - scope_items: Array of {{"title": "Scope Title", "description": "Detailed description"}} for proposal sections
 - timeline_phases: Array of {{"phase": "Phase Name", "duration": "X weeks"}} for project phases
-- pricing_breakdown: Array of {{"item": "Line Item", "amount": numeric_amount}} that adds up to budget_amount
+- pricing_breakdown: Array of {{"item": "Line Item", "amount": numeric_amount, "optional": boolean}} that adds up to budget_amount
+  - Mark nice-to-have items as optional=true
 - executive_summary: 1-3 short paragraphs (string with newlines) summarizing the proposal
 - executive_summary_paragraphs: Optional array of paragraphs if you can separate them
 - tech_stack_overview: Short paragraph explaining the technology stack choices
@@ -209,6 +210,8 @@ Return ONLY valid JSON, no additional text."""
             logger.info("=" * 80)
 
             logger.info("Successfully extracted requirements")
+            requirements = self._ensure_pricing_optional_flags(requirements)
+            requirements = self._sync_budget_to_pricing(requirements)
             return requirements
 
         except json.JSONDecodeError as e:
@@ -274,7 +277,8 @@ Return ONLY the updated requirements JSON. Do not include explanations, markdown
 
                 if not isinstance(updated, dict):
                     raise RequirementEditError("Model returned non-object requirements payload")
-
+                updated = self._ensure_pricing_optional_flags(updated)
+                updated = self._sync_budget_to_pricing(updated)
                 return updated
             except json.JSONDecodeError as e:
                 last_error = e
@@ -419,15 +423,16 @@ Key instructions:
 3. If the client asks to add features, add them to the features list
 4. If the client updates the timeline, update the timeline field
 5. If features change significantly, update scope_items to reflect the changes
-6. If budget changes, recalculate pricing_breakdown to match the new budget_amount
+6. If the client requests scope changes that affect pricing, update pricing_breakdown by adding/removing line items, but DO NOT change the amount of any existing line item
 7. Keep all other requirements that aren't explicitly changed
 8. Maintain the same JSON structure as the existing requirements
+9. Preserve the optional flag on existing pricing_breakdown items; mark newly added optional items with optional=true
 
 For budget changes:
 - "$1k" or "$1000" → budget_amount: 1000
 - "$500" → budget_amount: 500
 - "$3-4k" → budget_amount: 3500 (midpoint)
-- Update pricing_breakdown items proportionally
+- If the budget changes due to removing/adding items, adjust budget_amount to equal the sum of pricing_breakdown
 
 Return ONLY the updated requirements as a valid JSON object. Do not include any explanation or commentary."""
 
@@ -449,6 +454,14 @@ Return ONLY the updated requirements as a valid JSON object. Do not include any 
             
             # Parse JSON response
             updated_requirements = _parse_json_response(llm_response)
+            existing_requirements = self._ensure_pricing_optional_flags(existing_requirements)
+            updated_requirements = self._ensure_pricing_optional_flags(updated_requirements)
+            updated_requirements = self._lock_pricing_breakdown(
+                existing_requirements, updated_requirements
+            )
+            if self._feedback_requests_optional_removal(feedback_email):
+                updated_requirements = self._remove_optional_items(updated_requirements)
+            updated_requirements = self._sync_budget_to_pricing(updated_requirements)
             
             # Log the update
             logger.info("=" * 80)
@@ -467,100 +480,192 @@ Return ONLY the updated requirements as a valid JSON object. Do not include any 
             logger.error(f"Error updating requirements from feedback: {str(e)}")
             return existing_requirements
 
-    def extract_requirement_updates(
-        self, latest_email: Dict[str, Any], existing_requirements: Dict[str, Any]
+    def _lock_pricing_breakdown(
+        self, existing_requirements: Dict[str, Any], updated_requirements: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Extract requirement updates from proposal feedback email.
+        locked_breakdown = existing_requirements.get("pricing_breakdown")
+        if not locked_breakdown or not isinstance(locked_breakdown, list):
+            return updated_requirements
 
-        Args:
-            latest_email: The latest feedback email
-            existing_requirements: Current requirements
+        updated_breakdown = updated_requirements.get("pricing_breakdown")
+        if not updated_breakdown or not isinstance(updated_breakdown, list):
+            merged = updated_requirements.copy()
+            merged["pricing_breakdown"] = locked_breakdown
+            return merged
 
-        Returns:
-            Dictionary of requirement updates to apply
-        """
-        email_body = latest_email.get("body", "").lower()
-        updates = {}
+        def _normalize(label: Any) -> str:
+            if not label:
+                return ""
+            raw = str(label).strip().lower()
+            cleaned = "".join(ch if ch.isalnum() else " " for ch in raw)
+            return " ".join(cleaned.split())
 
-        # Extract budget updates
-        import re
+        existing_amounts = {}
+        existing_optionals = {}
+        for item in locked_breakdown:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("item") or item.get("name")
+            key = _normalize(name)
+            if key:
+                existing_amounts[key] = item.get("amount")
+                existing_optionals[key] = item.get("optional")
 
-        # Patterns for budget updates
-        budget_patterns = [
-            r"cost down to \$?([\d,]+)k?",
-            r"budget (?:is|of) \$?([\d,]+)k?",
-            r"reduce (?:the )?(?:cost|budget) to \$?([\d,]+)k?",
-            r"(?:can you|could you) (?:do|make) (?:it|this) (?:for )?\$?([\d,]+)k?",
-            r"\$?([\d,]+)k? (?:budget|max|maximum)",
-        ]
+        reconciled = []
+        locked_count = 0
+        for item in updated_breakdown:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("item") or item.get("name")
+            key = _normalize(name)
+            if key and key in existing_amounts:
+                locked_item = dict(item)
+                locked_item["amount"] = existing_amounts[key]
+                if existing_optionals.get(key) is not None:
+                    locked_item["optional"] = existing_optionals[key]
+                reconciled.append(locked_item)
+                locked_count += 1
+            else:
+                reconciled.append(item)
 
-        for pattern in budget_patterns:
-            match = re.search(pattern, email_body)
-            if match:
-                amount_str = match.group(1).replace(",", "")
-                amount = int(amount_str)
-                # Handle 'k' notation
-                if "k" in match.group(0).lower():
-                    amount *= 1000
-                updates["budget"] = {"max_amount": amount, "type": "fixed"}
-                logger.info(f"Extracted budget update: ${amount}")
-                break
+        merged = updated_requirements.copy()
+        merged["pricing_breakdown"] = reconciled
 
-        # Extract feature removals/changes
-        removal_patterns = [
-            r"(?:we're )?not (?:on|using|with) ([\w\s]+)",
-            r"no ([\w\s]+)",
-            r"remove ([\w\s]+)",
-            r"don't (?:need|want|use) ([\w\s]+)",
-            r"without ([\w\s]+)",
-        ]
+        logger.info(
+            "Locked pricing_breakdown line-item amounts for %s item(s); removed=%s, added=%s",
+            locked_count,
+            max(len(locked_breakdown) - locked_count, 0),
+            max(len(reconciled) - locked_count, 0),
+        )
+        return merged
 
-        removed_features = []
-        for pattern in removal_patterns:
-            matches = re.findall(pattern, email_body)
-            for match in matches:
-                feature = match.strip().lower()
-                # Check if this is a significant feature
-                if feature in ["shopify", "wordpress", "woocommerce", "magento", "squarespace"]:
-                    removed_features.append(feature)
-                    logger.info(f"Detected feature removal: {feature}")
+    def _ensure_pricing_optional_flags(
+        self, requirements: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        breakdown = requirements.get("pricing_breakdown")
+        if not breakdown or not isinstance(breakdown, list):
+            return requirements
 
-        if removed_features:
-            updates["removed_features"] = removed_features
+        def _normalize(label: Any) -> str:
+            if not label:
+                return ""
+            raw = str(label).strip().lower()
+            cleaned = "".join(ch if ch.isalnum() else " " for ch in raw)
+            tokens = [t for t in cleaned.split() if t not in {"optional", "nice", "to", "have"}]
+            return " ".join(tokens)
 
-            # Update features list if exists
-            if "features" in existing_requirements:
-                current_features = existing_requirements.get("features", [])
-                updated_features = []
-                for feature in current_features:
-                    feature_name = feature.get("name", "").lower()
-                    feature_desc = feature.get("desc", "").lower()
-                    # Skip features that mention removed items
-                    if not any(
-                        removed in feature_name or removed in feature_desc
-                        for removed in removed_features
-                    ):
-                        updated_features.append(feature)
-                updates["features"] = updated_features
+        optional_keys = set()
+        scope_items = requirements.get("scope_items") or []
+        for item in scope_items:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "").lower()
+            desc = str(item.get("description") or "").lower()
+            if "optional" in title or "optional" in desc or "nice-to-have" in title or "nice to have" in title:
+                optional_keys.add(_normalize(title))
 
-        # Extract timeline updates
-        timeline_patterns = [
-            r"(?:need|want) (?:it|this) (?:in|within) ([\d\w\s]+)",
-            r"timeline (?:is|of) ([\d\w\s]+)",
-            r"(?:by|before) (next \w+|end of \w+|\d+ \w+)",
-        ]
+        features = requirements.get("features") or []
+        for item in features:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").lower()
+            desc = str(item.get("desc") or "").lower()
+            if "optional" in name or "optional" in desc or "nice-to-have" in name or "nice to have" in name:
+                optional_keys.add(_normalize(name))
 
-        for pattern in timeline_patterns:
-            match = re.search(pattern, email_body)
-            if match:
-                timeline = match.group(1).strip()
-                updates["timeline"] = timeline
-                logger.info(f"Extracted timeline update: {timeline}")
-                break
+        updated = []
+        for item in breakdown:
+            if not isinstance(item, dict):
+                continue
+            optional = item.get("optional")
+            if optional is None:
+                name = item.get("item") or item.get("name") or ""
+                normalized_name = _normalize(name)
+                optional = bool(
+                    "optional" in str(name).lower()
+                    or "nice-to-have" in str(name).lower()
+                    or "nice to have" in str(name).lower()
+                    or (normalized_name and normalized_name in optional_keys)
+                )
+            updated_item = dict(item)
+            updated_item["optional"] = bool(optional)
+            updated.append(updated_item)
 
-        # Extract any additional requirements
-        if "more" in email_body or "also" in email_body or "addition" in email_body:
-            # Mark that there might be additional requirements
-            updates["has_additional_requirements"] = True
+        requirements["pricing_breakdown"] = updated
+        return requirements
 
-        return updates
+    def _feedback_requests_optional_removal(self, feedback_email: Dict[str, Any]) -> bool:
+        body = (feedback_email.get("body") or "").lower()
+        return any(
+            phrase in body
+            for phrase in (
+                "remove optional",
+                "strip optional",
+                "drop optional",
+                "remove the optional",
+                "remove optional stuff",
+                "remove optional items",
+                "remove optional features",
+                "remove nice-to-haves",
+                "remove nice to haves",
+                "drop nice-to-haves",
+                "drop nice to haves",
+                "strip nice-to-haves",
+            )
+        )
+
+    def _remove_optional_items(self, requirements: Dict[str, Any]) -> Dict[str, Any]:
+        breakdown = requirements.get("pricing_breakdown")
+        if breakdown and isinstance(breakdown, list):
+            filtered = [
+                item
+                for item in breakdown
+                if isinstance(item, dict) and not item.get("optional")
+            ]
+            requirements["pricing_breakdown"] = filtered
+
+        scope_items = requirements.get("scope_items")
+        if scope_items and isinstance(scope_items, list):
+            filtered_scope = []
+            for item in scope_items:
+                if not isinstance(item, dict):
+                    continue
+                title = str(item.get("title") or "").lower()
+                desc = str(item.get("description") or "").lower()
+                if "optional" in title or "optional" in desc:
+                    continue
+                if "nice-to-have" in title or "nice to have" in title:
+                    continue
+                filtered_scope.append(item)
+            requirements["scope_items"] = filtered_scope
+
+        features = requirements.get("features")
+        if features and isinstance(features, list):
+            filtered_features = []
+            for item in features:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("name") or "").lower()
+                desc = str(item.get("desc") or "").lower()
+                if "optional" in name or "optional" in desc:
+                    continue
+                if "nice-to-have" in name or "nice to have" in name:
+                    continue
+                filtered_features.append(item)
+            requirements["features"] = filtered_features
+
+        return requirements
+
+    def _sync_budget_to_pricing(self, requirements: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            from src.storage.budget_utils import compute_budget_total
+
+            total = compute_budget_total({"pricing_breakdown": requirements.get("pricing_breakdown")})
+        except Exception as budget_err:
+            logger.warning(f"Failed to compute pricing total: {budget_err}")
+            return requirements
+
+        if total:
+            requirements["budget_amount"] = total
+            requirements["budget"] = f"${total:,}"
+        return requirements

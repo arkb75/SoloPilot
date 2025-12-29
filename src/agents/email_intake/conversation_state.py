@@ -622,7 +622,7 @@ class ConversationStateManager:
                 "last_seq = last_seq + :one",
             ]
 
-            # If phase should change back to proposal_draft
+            # If phase should change back to proposal
             if requirement_updates:
                 update_expr_parts.append("#phase = :phase")
 
@@ -636,7 +636,7 @@ class ConversationStateManager:
 
             expr_names = {}
             if requirement_updates:
-                expr_attrs[":phase"] = "proposal_draft"
+                expr_attrs[":phase"] = "proposal"
                 expr_names["#phase"] = "phase"
 
             # Update with the revised requirements
@@ -690,8 +690,7 @@ class ConversationStateManager:
         """Update conversation phase with transition tracking."""
         valid_phases = [
             "understanding",  # Clarifying requirements
-            "proposal_draft",  # Presenting proposal
-            "proposal_feedback",  # Awaiting feedback
+            "proposal",  # Proposal creation + feedback loop
             "documentation",  # Creating detailed plan
             "awaiting_approval",  # Waiting for approval
             "approved",  # Client approved

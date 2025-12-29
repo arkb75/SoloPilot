@@ -67,7 +67,7 @@ class S3ProposalStore:
         proposal_data: Dict[str, any],
         requirements: Dict[str, any],
         revised_requirements: Optional[Dict[str, Any]] = None,
-        generated_by: str = "proposal_draft",
+        generated_by: str = "proposal",
     ) -> Tuple[ProposalVersion, str]:
         """Store a proposal PDF and metadata in S3.
 

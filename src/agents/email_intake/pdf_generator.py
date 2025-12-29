@@ -257,7 +257,7 @@ class ProposalPDFGenerator:
                 "client_name": proposal_data.get("clientName", ""),
                 "project_type": proposal_data.get("projectTitle", ""),
                 "file_size": len(pdf_bytes),
-                "generated_by": conversation.get("phase", "proposal_draft"),
+                "generated_by": conversation.get("phase", "proposal"),
             }
 
             try:

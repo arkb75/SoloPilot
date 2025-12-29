@@ -63,7 +63,7 @@ class MetadataExtractor:
         
         Args:
             conversation: Full conversation data including email history
-            current_phase: Current conversation phase (understanding, proposal_draft, etc.)
+            current_phase: Current conversation phase (understanding, proposal, etc.)
             
         Returns:
             Dict containing extracted metadata with confidence scores
@@ -151,7 +151,7 @@ FIELD DEFINITIONS:
   * If PDF was already sent: ONLY set to true if client is explicitly requesting it again or asking for changes
   * If PDF was NOT sent yet: Consider if client is ready for a formal proposal
   * Consider phrases like: "send proposal", "what's the cost", "I meant the pdf", "just send me something", "give me a quote", "pricing details", etc.
-  * Also true if: We're in proposal_draft phase and haven't sent one yet, OR client is asking for revisions to existing proposal
+  * Also true if: We're in proposal phase and haven't sent one yet, OR client is asking for revisions to existing proposal
   * IMPORTANT: Set to FALSE if we've already sent a PDF proposal and client is just asking questions or discussing without requesting changes
 - proposal_explicitly_requested: Did client directly ask for a proposal/quote using clear language?
 - meeting_requested: Is client asking to schedule a call/meeting IN THIS SPECIFIC EMAIL (not in conversation history)?
@@ -164,7 +164,7 @@ FIELD DEFINITIONS:
 CRITICAL REASONING POINTS:
 - If client references "the pdf" or "the proposal" they likely want the PDF document (should_send_pdf = true)
 - If client seems confused about next steps and we're in proposal phase, they probably need the proposal
-- IMPORTANT: If we're in proposal_feedback phase and client is just asking questions or discussing WITHOUT requesting changes, DO NOT resend the PDF
+- IMPORTANT: If we're in proposal phase and client is just asking questions or discussing WITHOUT requesting changes, DO NOT resend the PDF
 - Don't be overly rigid - understand intent, not just exact words
 - Consider what would be most helpful to the client at this moment
 - Avoid sending duplicate PDFs unless explicitly requested or changes are needed
@@ -316,10 +316,10 @@ Think through the client's needs step by step, then provide ONLY the JSON object
             validated["should_send_pdf"] = True
             validated["extraction_notes"] += " [Auto-corrected: explicit proposal request requires PDF]"
         
-        # 2. If revision requested in proposal_feedback phase, send updated PDF
-        if current_phase == "proposal_feedback" and validated["revision_requested"]:
+        # 2. If revision requested in proposal phase, send updated PDF
+        if current_phase == "proposal" and validated["revision_requested"]:
             if not validated["should_send_pdf"]:
-                logger.info("Consistency fix: revision requested in proposal_feedback, setting should_send_pdf=True")
+                logger.info("Consistency fix: revision requested in proposal, setting should_send_pdf=True")
                 validated["should_send_pdf"] = True
                 validated["extraction_notes"] += " [Auto-corrected: revision request requires updated PDF]"
         
@@ -371,7 +371,7 @@ Think through the client's needs step by step, then provide ONLY the JSON object
             "revision_requested": False,
             "feedback_sentiment": "neutral",
             "key_topics": [],
-            "action_required": "send_proposal" if current_phase == "proposal_draft" else "answer_question",
+            "action_required": "send_proposal" if current_phase == "proposal" else "answer_question",
             "confidence_score": 0.0,
             "extraction_notes": "Failed to extract metadata, using defaults",
             "timestamp": datetime.utcnow().isoformat()
