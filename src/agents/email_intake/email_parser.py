@@ -231,15 +231,48 @@ class EmailParser:
         signature_markers = ["--", "___", "Sent from", "Get Outlook"]
         lines = body.split("\n")
 
+        def _is_reply_header(line: str) -> bool:
+            normalized = line.lstrip("> ").strip()
+            if not normalized:
+                return False
+            if normalized.lower().startswith("-----original message-----"):
+                return True
+            if re.match(r"^on .+wrote:$", normalized, flags=re.IGNORECASE):
+                return True
+            return bool(re.match(r"^(from|sent|to|subject|cc):", normalized, flags=re.IGNORECASE))
+
         cleaned_lines = []
+        quoted_lines = []
+        has_content = False
         for line in lines:
             # Stop at signature markers
             if any(line.strip().startswith(marker) for marker in signature_markers):
                 break
+            if _is_reply_header(line):
+                if has_content:
+                    break
+                continue
+            if line.lstrip().startswith(">"):
+                stripped = line.lstrip()[1:]
+                if stripped.startswith(" "):
+                    stripped = stripped[1:]
+                quoted_lines.append(stripped)
+                continue
             cleaned_lines.append(line)
+            if line.strip():
+                has_content = True
 
         # Join and clean whitespace
         cleaned = "\n".join(cleaned_lines)
+        if not has_content and quoted_lines:
+            fallback_lines = []
+            for line in quoted_lines:
+                if any(line.strip().startswith(marker) for marker in signature_markers):
+                    break
+                if _is_reply_header(line):
+                    break
+                fallback_lines.append(line)
+            cleaned = "\n".join(fallback_lines)
 
         # Remove excessive blank lines
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
