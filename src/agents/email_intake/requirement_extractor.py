@@ -4,6 +4,8 @@ import json
 import logging
 import os
 import re
+import uuid
+from datetime import datetime
 from decimal import Decimal  # Added for Decimal handling
 from typing import Any, Dict, List, Optional
 
@@ -384,13 +386,17 @@ Return ONLY the updated requirements JSON. Do not include explanations, markdown
 
 
     def update_requirements_from_feedback(
-        self, existing_requirements: Dict[str, Any], feedback_email: Dict[str, Any]
+        self,
+        existing_requirements: Dict[str, Any],
+        feedback_email: Dict[str, Any],
+        extraction_notes: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Update requirements based on client feedback using LLM.
         
         Args:
             existing_requirements: Current complete requirements
             feedback_email: Latest feedback email from client
+            extraction_notes: Metadata extractor notes to consider
             
         Returns:
             Updated complete requirements (not just changes)
@@ -414,6 +420,9 @@ CLIENT FEEDBACK:
 From: {feedback_email.get('from', 'Unknown')}
 Body: {feedback_email.get('body', '')}
 
+EXTRACTION NOTES:
+{(extraction_notes or '').strip() or 'None provided'}
+
 TASK:
 Update the existing requirements based on the client's feedback. Return the COMPLETE updated requirements, not just the changes.
 
@@ -424,6 +433,7 @@ Key instructions:
 4. If the client updates the timeline, update the timeline field
 5. If features change significantly, update scope_items to reflect the changes
 6. If the client requests scope changes that affect pricing, update pricing_breakdown by adding/removing line items, but DO NOT change the amount of any existing line item
+6a. If the client asks to remove optional/nice-to-have items, remove any items marked optional=true and remove related optional scope_items/features
 7. Keep all other requirements that aren't explicitly changed
 8. Maintain the same JSON structure as the existing requirements
 9. Preserve the optional flag on existing pricing_breakdown items; mark newly added optional items with optional=true
@@ -435,6 +445,45 @@ For budget changes:
 - If the budget changes due to removing/adding items, adjust budget_amount to equal the sum of pricing_breakdown
 
 Return ONLY the updated requirements as a valid JSON object. Do not include any explanation or commentary."""
+
+        trace_id = f"feedback-{datetime.utcnow().strftime('%Y%m%dT%H%M%S%fZ')}-{uuid.uuid4().hex[:8]}"
+        debug_root = os.environ.get("FEEDBACK_DEBUG_DIR", "/tmp/feedback_debug")
+        debug_dir = os.path.join(debug_root, trace_id)
+        prompt_path = os.path.join(debug_dir, "prompt.txt")
+        response_path = os.path.join(debug_dir, "response.txt")
+        def _log_blob(tag: str, payload: str, chunk_size: int = 4000) -> None:
+            if not payload:
+                logger.info("[FEEDBACK_DEBUG][%s_TEXT] empty=true", tag)
+                return
+            total = (len(payload) + chunk_size - 1) // chunk_size
+            for idx in range(total):
+                chunk = payload[idx * chunk_size : (idx + 1) * chunk_size]
+                logger.info(
+                    "[FEEDBACK_DEBUG][%s_TEXT] part=%s/%s chunk=%s",
+                    tag,
+                    idx + 1,
+                    total,
+                    chunk,
+                )
+
+        try:
+            os.makedirs(debug_dir, exist_ok=True)
+            with open(prompt_path, "w", encoding="utf-8") as handle:
+                handle.write(prompt)
+            logger.info(
+                "[FEEDBACK_DEBUG][INPUT] trace_id=%s dir=%s prompt_path=%s prompt_len=%s",
+                trace_id,
+                debug_dir,
+                prompt_path,
+                len(prompt),
+            )
+            _log_blob("INPUT", prompt)
+        except Exception as debug_err:
+            logger.warning(
+                "[FEEDBACK_DEBUG][INPUT] trace_id=%s failed_to_write_prompt=%s",
+                trace_id,
+                debug_err,
+            )
 
         try:
             # Call LLM
@@ -451,6 +500,23 @@ Return ONLY the updated requirements as a valid JSON object. Do not include any 
                 
                 response_body = self._invoke_bedrock(request_body)
                 llm_response = response_body["content"][0]["text"]
+
+            try:
+                with open(response_path, "w", encoding="utf-8") as handle:
+                    handle.write(llm_response or "")
+                logger.info(
+                    "[FEEDBACK_DEBUG][OUTPUT] trace_id=%s response_path=%s response_len=%s",
+                    trace_id,
+                    response_path,
+                    len(llm_response or ""),
+                )
+                _log_blob("OUTPUT", llm_response or "")
+            except Exception as debug_err:
+                logger.warning(
+                    "[FEEDBACK_DEBUG][OUTPUT] trace_id=%s failed_to_write_response=%s",
+                    trace_id,
+                    debug_err,
+                )
             
             # Parse JSON response
             updated_requirements = _parse_json_response(llm_response)
@@ -459,14 +525,12 @@ Return ONLY the updated requirements as a valid JSON object. Do not include any 
             updated_requirements = self._lock_pricing_breakdown(
                 existing_requirements, updated_requirements
             )
-            if self._feedback_requests_optional_removal(feedback_email):
-                updated_requirements = self._remove_optional_items(updated_requirements)
             updated_requirements = self._sync_budget_to_pricing(updated_requirements)
             
             # Log the update
             logger.info("=" * 80)
             logger.info("REQUIREMENT EXTRACTOR: Updated requirements from feedback")
-            logger.info(json.dumps(updated_requirements, indent=2))
+            logger.info(json.dumps(updated_requirements, indent=2, default=_decimal_safe))
             logger.info("=" * 80)
             
             return updated_requirements
@@ -592,68 +656,6 @@ Return ONLY the updated requirements as a valid JSON object. Do not include any 
             updated.append(updated_item)
 
         requirements["pricing_breakdown"] = updated
-        return requirements
-
-    def _feedback_requests_optional_removal(self, feedback_email: Dict[str, Any]) -> bool:
-        body = (feedback_email.get("body") or "").lower()
-        return any(
-            phrase in body
-            for phrase in (
-                "remove optional",
-                "strip optional",
-                "drop optional",
-                "remove the optional",
-                "remove optional stuff",
-                "remove optional items",
-                "remove optional features",
-                "remove nice-to-haves",
-                "remove nice to haves",
-                "drop nice-to-haves",
-                "drop nice to haves",
-                "strip nice-to-haves",
-            )
-        )
-
-    def _remove_optional_items(self, requirements: Dict[str, Any]) -> Dict[str, Any]:
-        breakdown = requirements.get("pricing_breakdown")
-        if breakdown and isinstance(breakdown, list):
-            filtered = [
-                item
-                for item in breakdown
-                if isinstance(item, dict) and not item.get("optional")
-            ]
-            requirements["pricing_breakdown"] = filtered
-
-        scope_items = requirements.get("scope_items")
-        if scope_items and isinstance(scope_items, list):
-            filtered_scope = []
-            for item in scope_items:
-                if not isinstance(item, dict):
-                    continue
-                title = str(item.get("title") or "").lower()
-                desc = str(item.get("description") or "").lower()
-                if "optional" in title or "optional" in desc:
-                    continue
-                if "nice-to-have" in title or "nice to have" in title:
-                    continue
-                filtered_scope.append(item)
-            requirements["scope_items"] = filtered_scope
-
-        features = requirements.get("features")
-        if features and isinstance(features, list):
-            filtered_features = []
-            for item in features:
-                if not isinstance(item, dict):
-                    continue
-                name = str(item.get("name") or "").lower()
-                desc = str(item.get("desc") or "").lower()
-                if "optional" in name or "optional" in desc:
-                    continue
-                if "nice-to-have" in name or "nice to have" in name:
-                    continue
-                filtered_features.append(item)
-            requirements["features"] = filtered_features
-
         return requirements
 
     def _sync_budget_to_pricing(self, requirements: Dict[str, Any]) -> Dict[str, Any]:

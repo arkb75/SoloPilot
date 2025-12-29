@@ -22,6 +22,7 @@ from botocore.exceptions import ClientError
 from src.agents.email_intake.conversation_state import ConversationStateManager
 from src.agents.email_intake.conversational_responder import ConversationalResponder
 from src.agents.email_intake.email_parser import EmailParser
+from src.agents.email_intake.metadata_extractor import MetadataExtractor
 from src.agents.email_intake.requirement_extractor import RequirementExtractor
 from src.agents.email_intake.utils import EmailThreadingUtils
 from src.storage import ProposalVersionIndex
@@ -215,6 +216,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Initialize managers first
         state_manager = ConversationStateManager(table_name=DYNAMO_TABLE)
         extractor = RequirementExtractor()
+        metadata_extractor = MetadataExtractor()
 
         # Parse email with state manager for conversation lookups
         parser = EmailParser(state_manager=state_manager)
@@ -324,12 +326,25 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 )
                 requirements_changed = True
 
+        # Extract metadata for current email (reused across requirements + response)
+        current_phase = _normalize_phase(conversation.get("phase"))
+        extracted_metadata = metadata_extractor.extract_metadata(conversation, current_phase)
+        logger.info(f"Extracted metadata (pre-response): {json.dumps(extracted_metadata, default=str)}")
+        extraction_notes = (extracted_metadata.get("extraction_notes") or "").strip()
+        logger.info(
+            "[METADATA][EXTRACTION_NOTES] len=%s notes=%s",
+            len(extraction_notes),
+            extraction_notes or "none",
+        )
+
         # Update requirements from feedback whenever we're in the proposal phase
         normalized_phase = _normalize_phase(conversation.get("phase"))
         if normalized_phase == "proposal":
             logger.info("Proposal phase - updating requirements based on feedback")
             updated_requirements_from_feedback = extractor.update_requirements_from_feedback(
-                conversation.get("requirements", {}), parsed_email
+                conversation.get("requirements", {}),
+                parsed_email,
+                extraction_notes=extraction_notes,
             )
             if updated_requirements_from_feedback != conversation.get("requirements", {}):
                 try:
@@ -353,7 +368,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Use ConversationalResponder to generate appropriate response
         responder = ConversationalResponder(calendly_link=CALENDLY_LINK)
         response_text, response_metadata, llm_prompt = responder.generate_response_with_tracking(
-            conversation, parsed_email
+            conversation, parsed_email, extracted_metadata=extracted_metadata
         )
         normalized_phase = _normalize_phase(conversation.get("phase"))
         if normalized_phase == "proposal":

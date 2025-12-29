@@ -70,25 +70,36 @@ class ConversationalResponder:
             )
 
     def generate_response_with_tracking(
-        self, conversation: Dict[str, Any], latest_email: Dict[str, Any]
+        self,
+        conversation: Dict[str, Any],
+        latest_email: Dict[str, Any],
+        extracted_metadata: Optional[Dict[str, Any]] = None,
     ) -> Tuple[str, Dict[str, Any], str]:
         """Generate unified response with metadata tracking.
 
         Args:
             conversation: Full conversation state
             latest_email: Latest email received
+            extracted_metadata: Precomputed metadata to reuse (optional)
 
         Returns:
             Tuple of (response_text, metadata, llm_prompt)
         """
-        # Extract metadata using Haiku
-        current_phase = conversation.get("phase", "understanding")
-        metadata = self.metadata_extractor.extract_metadata(conversation, current_phase)
-        logger.info(f"Extracted metadata: {json.dumps(metadata, default=str)}")
+        # Extract metadata using Haiku unless we already have it
+        if extracted_metadata is not None:
+            metadata = extracted_metadata
+            logger.info("Using pre-extracted metadata for response generation")
+        else:
+            current_phase = conversation.get("phase", "understanding")
+            metadata = self.metadata_extractor.extract_metadata(conversation, current_phase)
+            logger.info(f"Extracted metadata: {json.dumps(metadata, default=str)}")
         
         # Generate unified response
         response_body, response_metadata, prompt = self._generate_unified_response(
-            conversation, latest_email, metadata
+            conversation,
+            latest_email,
+            metadata,
+            extraction_notes=metadata.get("extraction_notes"),
         )
         
         # Build final email with greeting and signature
@@ -100,12 +111,18 @@ class ConversationalResponder:
         return final_email, response_metadata, prompt
 
     def _generate_unified_response(
-        self, conversation: Dict[str, Any], latest_email: Dict[str, Any], metadata: Dict[str, Any]
+        self,
+        conversation: Dict[str, Any],
+        latest_email: Dict[str, Any],
+        metadata: Dict[str, Any],
+        extraction_notes: Optional[str] = None,
     ) -> Tuple[str, Dict[str, Any], str]:
         """Generate response using unified approach with full context."""
         
         # Build comprehensive prompt
-        prompt = self._build_unified_prompt(conversation, latest_email, metadata)
+        prompt = self._build_unified_prompt(
+            conversation, latest_email, metadata, extraction_notes=extraction_notes
+        )
         
         # Generate response body only
         response_body = self._call_llm(prompt)
@@ -118,7 +135,11 @@ class ConversationalResponder:
         return response_body, response_metadata, prompt
 
     def _build_unified_prompt(
-        self, conversation: Dict[str, Any], latest_email: Dict[str, Any], metadata: Dict[str, Any]
+        self,
+        conversation: Dict[str, Any],
+        latest_email: Dict[str, Any],
+        metadata: Dict[str, Any],
+        extraction_notes: Optional[str] = None,
     ) -> str:
         """Build comprehensive prompt with all context."""
         
@@ -168,6 +189,7 @@ METADATA ANALYSIS:
 - Revision Requested: {metadata.get('revision_requested', False)}
 - Action Required: {metadata.get('action_required', 'respond')}
 - Key Topics: {', '.join(metadata.get('key_topics', []))}
+- Extraction Notes: {(extraction_notes or '').strip() or 'None provided'}
 
 CONVERSATION HISTORY:
 {history_text}
@@ -387,10 +409,13 @@ CONSTRAINTS:
 
     # Backward compatibility method
     def generate_response(
-        self, conversation: Dict[str, Any], latest_email: Dict[str, Any]
+        self,
+        conversation: Dict[str, Any],
+        latest_email: Dict[str, Any],
+        extracted_metadata: Optional[Dict[str, Any]] = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """Generate response (backward compatibility)."""
         response_text, metadata, _ = self.generate_response_with_tracking(
-            conversation, latest_email
+            conversation, latest_email, extracted_metadata=extracted_metadata
         )
         return response_text, metadata
