@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 # Load system prompt template
 PROMPT_TEMPLATE_PATH = Path(__file__).parent / "prompts" / "client_persona.txt"
 
+# Default inference profile ID for Sonnet 4.5 (uses cross-region routing)
+DEFAULT_MODEL_ID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
 
 @dataclass
 class EmailMessage:
@@ -66,14 +69,14 @@ class ConversationEngine:
 
     def __init__(
         self,
-        model_id: str = "us.anthropic.claude-3-haiku-20240307-v1:0",
+        model_id: str = DEFAULT_MODEL_ID,
         aws_profile: str = "root",
         aws_region: str = "us-east-2",
     ):
         """Initialize conversation engine with Bedrock client.
         
         Args:
-            model_id: Bedrock model ID to use for client simulation
+            model_id: Bedrock inference profile ID to use for client simulation
             aws_profile: AWS profile to use
             aws_region: AWS region
         """
@@ -81,7 +84,7 @@ class ConversationEngine:
         self.aws_profile = aws_profile
         self.aws_region = aws_region
         
-        # Initialize Bedrock client
+        # Initialize Bedrock client with profile
         session = boto3.Session(profile_name=aws_profile, region_name=aws_region)
         self.bedrock = session.client("bedrock-runtime")
         
@@ -377,11 +380,14 @@ Write the email now:"""
         return random.choice(subjects)
 
     def _call_bedrock(self, system_prompt: str, user_prompt: str) -> str:
-        """Call Bedrock Claude model using invoke_model API."""
-        import json as json_module
+        """Call Bedrock Claude model using direct boto3 client.
+        
+        Uses inference profile ID for cross-region routing.
+        """
+        import json
         
         try:
-            # Use Claude Messages API format (same as project's conversational_responder)
+            # Build Claude Messages API request body
             request_body = {
                 "anthropic_version": "bedrock-2023-05-31",
                 "max_tokens": 1024,
@@ -392,11 +398,11 @@ Write the email now:"""
             
             response = self.bedrock.invoke_model(
                 modelId=self.model_id,
-                body=json_module.dumps(request_body),
                 contentType="application/json",
+                body=json.dumps(request_body),
             )
             
-            response_body = json_module.loads(response["body"].read())
+            response_body = json.loads(response["body"].read())
             content = response_body["content"][0]["text"]
             return content.strip()
             

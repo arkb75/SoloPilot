@@ -25,7 +25,7 @@ class SimulatorConfig:
     aws_region: str = "us-east-2"
     
     # Model settings
-    model_id: str = "us.anthropic.claude-3-haiku-20240307-v1:0"
+    model_id: str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
     
     # Simulation settings
     max_turns: int = 10

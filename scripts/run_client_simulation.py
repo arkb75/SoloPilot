@@ -142,8 +142,8 @@ Available Scenarios:
     parser.add_argument(
         "--model",
         type=str,
-        default="us.anthropic.claude-3-haiku-20240307-v1:0",
-        help="Bedrock model/inference profile ID for client simulation",
+        default="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        help="Bedrock inference profile ID for client simulation (default: Sonnet 4.5)",
     )
     
     # Output settings
