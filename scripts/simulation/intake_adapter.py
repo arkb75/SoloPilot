@@ -1,15 +1,27 @@
-"""Adapter for integrating simulator with email intake Lambda."""
+"""Adapter for client-only simulation with real email delivery.
+
+This adapter sends real emails via SES to the intake address and polls
+DynamoDB for your manual responses.
+"""
 
 import json
 import logging
-import os
+import time
+import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from datetime import datetime, timezone
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from typing import Any, Dict, List, Optional
 
 import boto3
 from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
+
+# Default configuration
+DEFAULT_INTAKE_EMAIL = "intake@abdulkhurram.com"
+DEFAULT_SENDER_DOMAIN = "abdulkhurram.com"
 
 
 @dataclass
@@ -26,181 +38,203 @@ class SystemResponse:
 
 
 class IntakeAdapter:
-    """Bridges simulator to email intake Lambda and DynamoDB."""
+    """Bridges client simulator to real email intake via SES.
+    
+    In client-only mode, this adapter:
+    1. Sends real emails via SES to the intake address
+    2. Polls DynamoDB to find the created conversation
+    3. Waits for your manual response through the dashboard
+    4. Detects outbound replies and returns them
+    """
 
     def __init__(
         self,
         aws_profile: str = "root",
         aws_region: str = "us-east-2",
-        lambda_function: str = "email-agent-api",
+        intake_email: str = DEFAULT_INTAKE_EMAIL,
         dynamodb_table: str = "conversations",
+        sender_domain: str = DEFAULT_SENDER_DOMAIN,
     ):
         """Initialize adapter with AWS clients.
         
         Args:
             aws_profile: AWS profile to use
             aws_region: AWS region
-            lambda_function: Name of the API Lambda function
+            intake_email: Email address that receives client emails
             dynamodb_table: Name of the DynamoDB conversations table
+            sender_domain: Domain to use for simulated client emails
         """
         self.aws_profile = aws_profile
         self.aws_region = aws_region
-        self.lambda_function = lambda_function
+        self.intake_email = intake_email
         self.dynamodb_table = dynamodb_table
+        self.sender_domain = sender_domain
         
         # Initialize AWS clients with profile
         session = boto3.Session(profile_name=aws_profile, region_name=aws_region)
-        self.lambda_client = session.client("lambda")
+        self.ses = session.client("ses")
         self.dynamodb = session.resource("dynamodb")
         self.table = self.dynamodb.Table(dynamodb_table)
+        
+        # Track simulated client emails for threading
+        self._client_emails: Dict[str, str] = {}  # conversation_id -> client_email
 
-    def create_conversation(
+    def send_client_email(
         self,
         client_email: str,
         subject: str,
         body: str,
-    ) -> SystemResponse:
-        """Create a new conversation by simulating an incoming email.
-        
-        This directly creates the conversation in DynamoDB and triggers
-        the conversational responder, bypassing actual SES email flow.
+        in_reply_to: Optional[str] = None,
+        references: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Send a client email via real SES.
         
         Args:
-            client_email: Email address of the simulated client
+            client_email: Simulated client's email address
             subject: Email subject
             body: Email body content
+            in_reply_to: Message-ID to reply to (for threading)
+            references: List of Message-IDs for thread references
         
         Returns:
-            SystemResponse with the system's reply
+            Dict with message_id and status
         """
-        import uuid
-        from datetime import datetime, timezone
-        
-        # Generate conversation ID
-        conversation_id = f"sim_{uuid.uuid4().hex[:12]}"
-        
-        # Create the conversation record directly
-        conversation_data = {
-            "conversation_id": conversation_id,
-            "status": "active",
-            "phase": "understanding",
-            "reply_mode": "manual",  # Use manual mode for simulation inspection
-            "subject": subject,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "participants": [client_email, "hello@solopilot.ai"],
-            "email_history": [
-                {
-                    "email_id": f"{conversation_id}-001",
-                    "from": client_email,
-                    "to": "hello@solopilot.ai",
-                    "subject": subject,
-                    "body": body,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "direction": "inbound",
-                }
-            ],
-            "requirements": {},
-            "thread_references": [],
-            "pending_replies": [],
-            "attachments": [],
-            "simulation": True,  # Mark as simulation
-        }
-        
         try:
-            # Create conversation in DynamoDB
-            self.table.put_item(Item=conversation_data)
-            logger.info(f"Created simulation conversation: {conversation_id}")
+            # Build the email
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = subject
+            msg['From'] = client_email
+            msg['To'] = self.intake_email
             
-            # Invoke the API Lambda to process the email and generate response
-            response = self._invoke_process_email(conversation_id, client_email, subject, body)
+            # Add threading headers if this is a reply
+            if in_reply_to:
+                msg['In-Reply-To'] = in_reply_to
+            if references:
+                msg['References'] = ' '.join(references)
             
-            return response
+            # Add text body
+            text_part = MIMEText(body, 'plain', 'utf-8')
+            msg.attach(text_part)
             
-        except ClientError as e:
-            logger.error(f"Failed to create conversation: {e}")
-            return SystemResponse(
-                conversation_id=conversation_id,
-                phase="error",
-                response_body="",
-                subject=subject,
-                requirements={},
-                error=str(e),
+            # Send via SES
+            response = self.ses.send_raw_email(
+                Source=client_email,
+                Destinations=[self.intake_email],
+                RawMessage={'Data': msg.as_string()},
             )
-
-    def send_reply(
-        self,
-        conversation_id: str,
-        client_email: str,
-        body: str,
-    ) -> SystemResponse:
-        """Send a client reply to an existing conversation.
-        
-        Args:
-            conversation_id: Existing conversation ID
-            client_email: Client email address
-            body: Reply body content
-        
-        Returns:
-            SystemResponse with the system's reply
-        """
-        from datetime import datetime, timezone
-        
-        try:
-            # Get current conversation state
-            conversation = self.get_conversation_state(conversation_id)
-            if not conversation:
-                return SystemResponse(
-                    conversation_id=conversation_id,
-                    phase="error",
-                    response_body="",
-                    subject="",
-                    requirements={},
-                    error="Conversation not found",
-                )
             
-            # Append client reply to email history
-            email_count = len(conversation.get("email_history", []))
-            new_email = {
-                "email_id": f"{conversation_id}-{email_count + 1:03d}",
-                "from": client_email,
-                "to": "hello@solopilot.ai",
-                "subject": f"Re: {conversation.get('subject', 'Project')}",
-                "body": body,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "direction": "inbound",
+            message_id = response['MessageId']
+            logger.info(f"Sent email from {client_email} to {self.intake_email}, MessageId: {message_id}")
+            
+            return {
+                "success": True,
+                "message_id": message_id,
+                "ses_message_id": f"{message_id}@{self.aws_region}.amazonses.com",
             }
             
-            # Update DynamoDB
-            self.table.update_item(
-                Key={"conversation_id": conversation_id},
-                UpdateExpression="SET email_history = list_append(email_history, :email), updated_at = :now",
-                ExpressionAttributeValues={
-                    ":email": [new_email],
-                    ":now": datetime.now(timezone.utc).isoformat(),
-                },
-            )
-            
-            # Generate system response
-            response = self._invoke_process_email(
-                conversation_id,
-                client_email,
-                conversation.get("subject", "Project"),
-                body,
-            )
-            
-            return response
-            
         except ClientError as e:
-            logger.error(f"Failed to send reply: {e}")
-            return SystemResponse(
-                conversation_id=conversation_id,
-                phase="error",
-                response_body="",
-                subject="",
-                requirements={},
-                error=str(e),
-            )
+            logger.error(f"Failed to send email: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    def wait_for_conversation(
+        self,
+        client_email: str,
+        subject: str,
+        timeout_seconds: int = 60,
+        poll_interval: int = 3,
+    ) -> Optional[str]:
+        """Poll DynamoDB to find the conversation created from our email.
+        
+        Args:
+            client_email: The client email we sent from
+            subject: The email subject
+            timeout_seconds: How long to wait for conversation to appear
+            poll_interval: Seconds between polls
+        
+        Returns:
+            Conversation ID if found, None if timeout
+        """
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout_seconds:
+            # Scan for conversations with this client email
+            try:
+                response = self.table.scan(
+                    FilterExpression="contains(participants, :email)",
+                    ExpressionAttributeValues={":email": client_email},
+                    Limit=10,
+                )
+                
+                for item in response.get("Items", []):
+                    # Check if this is our conversation (by subject or recency)
+                    conv_subject = item.get("subject", "")
+                    if subject.lower() in conv_subject.lower() or conv_subject.lower() in subject.lower():
+                        conversation_id = item["conversation_id"]
+                        logger.info(f"Found conversation: {conversation_id}")
+                        return conversation_id
+                    
+            except ClientError as e:
+                logger.warning(f"Error scanning for conversation: {e}")
+            
+            time.sleep(poll_interval)
+        
+        logger.warning(f"Timeout waiting for conversation from {client_email}")
+        return None
+
+    def wait_for_response(
+        self,
+        conversation_id: str,
+        last_email_count: int,
+        interactive: bool = True,
+    ) -> Optional[Dict[str, Any]]:
+        """Wait for the freelancer to respond to the conversation.
+        
+        In interactive mode, prompts user to press Enter after responding.
+        
+        Args:
+            conversation_id: Conversation to monitor
+            last_email_count: Number of emails before we expect a response
+            interactive: If True, prompt user instead of polling
+        
+        Returns:
+            The freelancer's response email dict, or None if not found
+        """
+        if interactive:
+            input("\n📧 Email sent! Respond via your dashboard, then press Enter to continue...")
+        
+        # Poll for new outbound email
+        try:
+            conversation = self.get_conversation_state(conversation_id)
+            if not conversation:
+                return None
+            
+            email_history = conversation.get("email_history", [])
+            
+            # Look for new outbound emails
+            for email in email_history[last_email_count:]:
+                if email.get("direction") == "outbound":
+                    logger.info(f"Found freelancer response in conversation {conversation_id}")
+                    return email
+            
+            # Also check pending replies that were approved
+            pending_replies = conversation.get("pending_replies", [])
+            for reply in pending_replies:
+                if reply.get("status") == "approved":
+                    return {
+                        "body": reply.get("metadata", {}).get("email_body", reply.get("llm_response", "")),
+                        "subject": reply.get("metadata", {}).get("subject", f"Re: {conversation.get('subject', '')}"),
+                        "direction": "outbound",
+                    }
+            
+            logger.warning("No new outbound email found after prompt")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error checking for response: {e}")
+            return None
 
     def get_conversation_state(self, conversation_id: str) -> Optional[Dict[str, Any]]:
         """Fetch current conversation state from DynamoDB.
@@ -218,63 +252,50 @@ class IntakeAdapter:
             logger.error(f"Failed to get conversation: {e}")
             return None
 
-    def get_pending_reply(self, conversation_id: str) -> Optional[Dict[str, Any]]:
-        """Get the pending reply for a conversation.
+    def get_latest_response(self, conversation_id: str) -> Optional[str]:
+        """Get the latest freelancer response body from a conversation.
         
         Args:
             conversation_id: Conversation ID
         
         Returns:
-            Pending reply dict or None
+            Response body text, or None if not found
         """
         conversation = self.get_conversation_state(conversation_id)
         if not conversation:
             return None
         
-        pending = conversation.get("pending_replies", [])
-        # Return the most recent pending reply
-        for reply in reversed(pending):
-            if reply.get("status") == "pending":
-                return reply
+        email_history = conversation.get("email_history", [])
+        
+        # Find the latest outbound email
+        for email in reversed(email_history):
+            if email.get("direction") == "outbound":
+                return email.get("body", "")
         
         return None
 
-    def approve_reply(self, conversation_id: str, reply_id: str) -> bool:
-        """Approve a pending reply (for testing the full flow).
+    def generate_client_email(self, persona_name: str) -> str:
+        """Generate a realistic client email address.
         
         Args:
-            conversation_id: Conversation ID
-            reply_id: Reply ID to approve
+            persona_name: Client's name (e.g., "John Smith")
         
         Returns:
-            True if approval succeeded
+            Email address like "john.smith@simclient.abdulkhurram.com"
         """
-        try:
-            # Call the approve endpoint via Lambda
-            payload = {
-                "httpMethod": "POST",
-                "resource": "/replies/{reply_id}/approve",
-                "pathParameters": {"reply_id": reply_id},
-                "body": json.dumps({
-                    "conversation_id": conversation_id,
-                    "reviewed_by": "simulation",
-                }),
-            }
-            
-            response = self.lambda_client.invoke(
-                FunctionName=self.lambda_function,
-                InvocationType="RequestResponse",
-                Payload=json.dumps(payload),
-            )
-            
-            result = json.loads(response["Payload"].read())
-            return result.get("statusCode") == 200
-            
-        except Exception as e:
-            logger.error(f"Failed to approve reply: {e}")
-            return False
+        # Clean name and generate email
+        name_parts = persona_name.lower().replace("'", "").split()
+        if len(name_parts) >= 2:
+            local = f"{name_parts[0]}.{name_parts[-1]}"
+        else:
+            local = name_parts[0] if name_parts else "client"
+        
+        # Add random suffix to ensure uniqueness
+        suffix = uuid.uuid4().hex[:4]
+        
+        return f"{local}.{suffix}@simclient.{self.sender_domain}"
 
-    def delete_conversation(self, conversation_id: str) -> bool:
+    def cleanup_conversation(self, conversation_id: str) -> bool:
         """Delete a simulation conversation (cleanup).
         
         Args:
@@ -291,141 +312,19 @@ class IntakeAdapter:
             logger.error(f"Failed to delete conversation: {e}")
             return False
 
-    def _invoke_process_email(
-        self,
-        conversation_id: str,
-        client_email: str,
-        subject: str,
-        body: str,
-    ) -> SystemResponse:
-        """Process email by calling ConversationalResponder directly.
-        
-        This generates an AI response and stores it as a pending reply, bypassing
-        the Lambda API which only handles frontend management operations.
-        """
-        import sys
-        import os
-        from pathlib import Path
-        
-        # Add project root to path for imports
-        project_root = Path(__file__).parent.parent.parent
-        if str(project_root) not in sys.path:
-            sys.path.insert(0, str(project_root))
-        
-        # Set required environment variables for the responder
-        # These would normally be set in the Lambda environment
-        # Use the inference profile ID format that works with boto3 invoke_model
-        os.environ.setdefault("BEDROCK_IP_ARN", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
-        os.environ.setdefault("AWS_REGION", self.aws_region)
-        os.environ.setdefault("USE_AI_PROVIDER", "false")  # Use Bedrock directly
-        os.environ.setdefault("CONVERSATIONS_TABLE", self.dynamodb_table)
-        
-        try:
-            # Force direct Bedrock mode in the modules by patching before import
-            # This avoids the provider factory which has ARN validation issues
-            import src.agents.email_intake.metadata_extractor as me_module
-            import src.agents.email_intake.conversational_responder as cr_module
-            me_module.USE_AI_PROVIDER = False
-            cr_module.USE_AI_PROVIDER = False
-            
-            # Inject boto3 into modules (they conditionally import it)
-            cr_module.boto3 = boto3
-            
-            # Create a Bedrock client with the correct AWS profile
-            session = boto3.Session(profile_name=self.aws_profile, region_name=self.aws_region)
-            profile_bedrock_client = session.client("bedrock-runtime")
-            
-            # Initialize Bedrock client directly in the modules with correct profile
-            me_module.bedrock_client = profile_bedrock_client
-            
-            # Now import the responder
-            from src.agents.email_intake.conversational_responder import ConversationalResponder
-            from src.agents.email_intake.conversation_state import ConversationStateManager
-            
-            # Get the current conversation state
-            conversation = self.get_conversation_state(conversation_id)
-            if not conversation:
-                return SystemResponse(
-                    conversation_id=conversation_id,
-                    phase="error",
-                    response_body="",
-                    subject=subject,
-                    requirements={},
-                    error="Conversation not found",
-                )
-            
-            # Get the latest email from history
-            email_history = conversation.get("email_history", [])
-            latest_email = email_history[-1] if email_history else {
-                "from": client_email,
-                "subject": subject,
-                "body": body,
-            }
-            
-            # Initialize responder and state manager
-            responder = ConversationalResponder()
-            state_manager = ConversationStateManager(table_name=self.dynamodb_table)
-            
-            # Patch responder's bedrock client to use the correct profile
-            # (it creates its own client without profile in __init__)
-            responder.bedrock_client = profile_bedrock_client
-            
-            # Generate response - returns tuple (response_body, metadata, prompt)
-            logger.info(f"Generating response for conversation {conversation_id}")
-            response_body, response_metadata, used_prompt = responder.generate_response_with_tracking(
-                conversation=conversation,
-                latest_email=latest_email,
-            )
-            
-            # Add pending reply to conversation
-            from datetime import datetime, timezone
-            import uuid
-            
-            reply_id = f"reply_{uuid.uuid4().hex[:8]}"
-            pending_reply = {
-                "reply_id": reply_id,
-                "status": "pending",
-                "llm_response": response_body,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "phase": conversation.get("phase", "understanding"),
-                "metadata": {
-                    "email_body": response_body,
-                    "subject": f"Re: {subject}",
-                    "recipient": client_email,
-                },
-            }
-            
-            # Update conversation with pending reply and new phase
-            new_phase = response_metadata.get("stage", conversation.get("phase", "understanding"))
-            self.table.update_item(
-                Key={"conversation_id": conversation_id},
-                UpdateExpression="SET pending_replies = list_append(if_not_exists(pending_replies, :empty), :reply), phase = :phase, updated_at = :now",
-                ExpressionAttributeValues={
-                    ":reply": [pending_reply],
-                    ":empty": [],
-                    ":phase": new_phase,
-                    ":now": datetime.now(timezone.utc).isoformat(),
-                },
-            )
-            
-            logger.info(f"Generated response for {conversation_id}, phase: {new_phase}")
-            
-            return SystemResponse(
-                conversation_id=conversation_id,
-                phase=new_phase,
-                response_body=response_body,
-                subject=f"Re: {subject}",
-                requirements=response_metadata.get("requirements", {}),
-                pending_reply=pending_reply,
-            )
-            
-        except Exception as e:
-            logger.error(f"Failed to generate response: {e}", exc_info=True)
-            return SystemResponse(
-                conversation_id=conversation_id,
-                phase="error",
-                response_body="",
-                subject=subject,
-                requirements={},
-                error=f"Intake error: {str(e)}",
-            )
+
+# Legacy compatibility - SystemResponse for dry-run mode
+def create_mock_response(
+    conversation_id: str,
+    phase: str = "understanding",
+    response_body: str = "",
+    subject: str = "",
+) -> SystemResponse:
+    """Create a mock SystemResponse for dry-run mode."""
+    return SystemResponse(
+        conversation_id=conversation_id,
+        phase=phase,
+        response_body=response_body,
+        subject=subject,
+        requirements={},
+    )

@@ -1,15 +1,19 @@
-"""Main orchestrator for client simulation scenarios."""
+"""Main orchestrator for client-only simulation scenarios.
+
+This simulates the CLIENT side only - generating realistic client emails
+that are sent via real SES. The freelancer responds manually through
+the normal dashboard workflow.
+"""
 
 import json
 import logging
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .conversation_engine import ConversationContext, ConversationEngine, EmailMessage
-from .intake_adapter import IntakeAdapter, SystemResponse
+from .intake_adapter import IntakeAdapter, SystemResponse, create_mock_response
 from .personas import ClientPersona
 from .scenarios import Scenario, ScenarioPreset, get_all_presets, load_scenario
 
@@ -24,13 +28,16 @@ class SimulatorConfig:
     aws_profile: str = "root"
     aws_region: str = "us-east-2"
     
+    # Email settings
+    intake_email: str = "intake@abdulkhurram.com"
+    
     # Model settings
     model_id: str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
     
     # Simulation settings
     max_turns: int = 10
     verbose: bool = False
-    dry_run: bool = False
+    dry_run: bool = False  # If True, don't send real emails
     
     # Output settings
     output_format: str = "text"  # text, json, markdown
@@ -104,7 +111,15 @@ class BatchResult:
 
 
 class ClientSimulator:
-    """Orchestrates client simulation scenarios."""
+    """Orchestrates client-only simulation scenarios.
+    
+    This simulator:
+    1. Generates realistic AI client personas and emails
+    2. Sends those emails via real SES to your intake
+    3. Waits for you to respond manually through dashboard
+    4. Generates next client response based on your reply
+    5. Repeats until conversation concludes
+    """
 
     def __init__(self, config: SimulatorConfig):
         """Initialize simulator with configuration.
@@ -114,21 +129,19 @@ class ClientSimulator:
         """
         self.config = config
         
-        # Initialize conversation engine
+        # Initialize conversation engine (for AI client generation)
         self.engine = ConversationEngine(
             model_id=config.model_id,
             aws_profile=config.aws_profile,
             aws_region=config.aws_region,
         )
         
-        # Initialize intake adapter (unless dry run)
-        if not config.dry_run:
-            self.adapter = IntakeAdapter(
-                aws_profile=config.aws_profile,
-                aws_region=config.aws_region,
-            )
-        else:
-            self.adapter = None
+        # Initialize intake adapter (for email sending)
+        self.adapter = IntakeAdapter(
+            aws_profile=config.aws_profile,
+            aws_region=config.aws_region,
+            intake_email=config.intake_email,
+        )
 
     def run_scenario(self, scenario: Scenario) -> ConversationResult:
         """Run a single client scenario through multiple turns.
@@ -145,79 +158,127 @@ class ClientSimulator:
         error = None
         
         try:
-            # Generate initial email
-            if self.config.verbose:
-                logger.info(f"Starting scenario: {scenario.preset.value}")
-                logger.info(f"Client: {scenario.persona.name} ({scenario.persona.company})")
+            # Generate client email address
+            client_email = self.adapter.generate_client_email(scenario.persona.name)
+            scenario.persona.email = client_email
             
+            if self.config.verbose:
+                print(f"\n{'='*60}")
+                print(f"Starting scenario: {scenario.preset.value}")
+                print(f"Client: {scenario.persona.name} ({scenario.persona.company})")
+                print(f"Client Email: {client_email}")
+                print(f"{'='*60}")
+            
+            # Generate initial email
             initial_email = self.engine.generate_initial_email(scenario)
             context.emails.append(initial_email)
             
-            if self.config.verbose:
-                self._print_email(initial_email, "CLIENT")
+            self._print_email(initial_email, "CLIENT")
             
             if self.config.dry_run:
-                # In dry run mode, just generate emails without Lambda
+                # In dry run mode, just generate emails without real SES
                 return self._run_dry_scenario(context, start_time)
             
-            # Send to intake system
-            response = self.adapter.create_conversation(
-                client_email=scenario.persona.email,
+            # Send initial email via real SES
+            print(f"\n📤 Sending email to {self.config.intake_email}...")
+            send_result = self.adapter.send_client_email(
+                client_email=client_email,
                 subject=initial_email.subject,
                 body=initial_email.body,
             )
             
-            conversation_id = response.conversation_id
+            if not send_result.get("success"):
+                raise Exception(f"Failed to send email: {send_result.get('error')}")
             
-            if response.error:
-                raise Exception(f"Intake error: {response.error}")
+            print(f"✅ Email sent! Message ID: {send_result.get('message_id')}")
+            
+            # Wait for conversation to be created
+            print(f"\n⏳ Waiting for conversation to appear in system...")
+            conversation_id = self.adapter.wait_for_conversation(
+                client_email=client_email,
+                subject=initial_email.subject,
+                timeout_seconds=60,
+            )
+            
+            if not conversation_id:
+                raise Exception("Timeout waiting for conversation to be created")
+            
+            print(f"✅ Conversation created: {conversation_id}")
+            
+            # Track email count for detecting responses
+            last_email_count = 1  # We sent 1 email
             
             # Multi-turn conversation loop
             while not context.concluded and context.turn_count < self.config.max_turns:
-                # Get system response
-                system_response = response.response_body
+                # Wait for freelancer response (interactive)
+                response = self.adapter.wait_for_response(
+                    conversation_id=conversation_id,
+                    last_email_count=last_email_count,
+                    interactive=True,
+                )
                 
-                if not system_response:
-                    # Try to get from pending reply
-                    pending = self.adapter.get_pending_reply(conversation_id)
-                    if pending:
-                        system_response = pending.get("llm_response", "")
+                if not response:
+                    print("\n⚠️  No response detected. Continue anyway? (y/n): ", end="")
+                    if input().lower() != 'y':
+                        context.outcome = "abandoned"
+                        break
+                    # Try to get latest response
+                    response_body = self.adapter.get_latest_response(conversation_id)
+                    if not response_body:
+                        print("❌ Still no response found. Ending conversation.")
+                        break
+                else:
+                    response_body = response.get("body", "")
                 
-                if not system_response:
-                    logger.warning(f"No system response at turn {context.turn_count}")
+                # Display freelancer response
+                freelancer_email = EmailMessage(
+                    sender=self.config.intake_email,
+                    recipient=client_email,
+                    subject=response.get("subject", f"Re: {initial_email.subject}") if response else f"Re: {initial_email.subject}",
+                    body=response_body,
+                    direction="inbound",
+                )
+                self._print_email(freelancer_email, "FREELANCER")
+                
+                # Check if user wants to continue
+                print("\n🔄 Generate next client response? (y/n/done): ", end="")
+                user_input = input().lower()
+                if user_input == 'n':
+                    context.outcome = "paused"
+                    break
+                elif user_input == 'done':
+                    context.outcome = "completed"
+                    context.concluded = True
                     break
                 
-                if self.config.verbose:
-                    self._print_email(
-                        EmailMessage(
-                            sender="hello@solopilot.ai",
-                            recipient=scenario.persona.email,
-                            subject=response.subject,
-                            body=system_response,
-                            direction="inbound",
-                        ),
-                        "SYSTEM",
-                    )
-                
                 # Generate client reply
-                client_reply = self.engine.generate_reply(context, system_response)
+                client_reply = self.engine.generate_reply(context, response_body)
                 context.emails.append(client_reply)
                 
-                if self.config.verbose:
-                    self._print_email(client_reply, "CLIENT")
+                self._print_email(client_reply, "CLIENT")
                 
                 if context.concluded:
                     break
                 
-                # Send reply to intake system
-                response = self.adapter.send_reply(
-                    conversation_id=conversation_id,
-                    client_email=scenario.persona.email,
+                # Send the reply
+                print(f"\n📤 Sending reply...")
+                
+                # Get conversation state for threading info
+                conv_state = self.adapter.get_conversation_state(conversation_id)
+                thread_refs = conv_state.get("thread_references", []) if conv_state else []
+                
+                send_result = self.adapter.send_client_email(
+                    client_email=client_email,
+                    subject=client_reply.subject,
                     body=client_reply.body,
+                    references=thread_refs,
                 )
                 
-                if response.error:
-                    raise Exception(f"Reply error: {response.error}")
+                if not send_result.get("success"):
+                    raise Exception(f"Failed to send reply: {send_result.get('error')}")
+                
+                print(f"✅ Reply sent!")
+                last_email_count = len(context.emails)
             
             # Get final state
             final_conversation = self.adapter.get_conversation_state(conversation_id) or {}
@@ -280,10 +341,9 @@ class ClientSimulator:
         error_count = 0
         
         for i, scenario in enumerate(scenarios):
-            if self.config.verbose:
-                logger.info(f"\n{'='*60}")
-                logger.info(f"Running scenario {i+1}/{len(scenarios)}: {scenario.preset.value}")
-                logger.info(f"{'='*60}")
+            print(f"\n{'='*60}")
+            print(f"Running scenario {i+1}/{len(scenarios)}: {scenario.preset.value}")
+            print(f"{'='*60}")
             
             result = self.run_scenario(scenario)
             results.append(result)
@@ -292,6 +352,12 @@ class ClientSimulator:
                 error_count += 1
             else:
                 success_count += 1
+            
+            # Ask if user wants to continue to next scenario
+            if i < len(scenarios) - 1:
+                print("\n📋 Continue to next scenario? (y/n): ", end="")
+                if input().lower() != 'y':
+                    break
         
         end_time = datetime.now(timezone.utc)
         total_duration = (end_time - start_time).total_seconds()
@@ -308,7 +374,7 @@ class ClientSimulator:
         context: ConversationContext,
         start_time: datetime,
     ) -> ConversationResult:
-        """Run scenario in dry-run mode (no Lambda, just email generation).
+        """Run scenario in dry-run mode (no real SES, just email generation).
         
         Args:
             context: Conversation context with initial email
@@ -318,6 +384,8 @@ class ClientSimulator:
             ConversationResult with simulated emails only
         """
         scenario = context.scenario
+        
+        print("\n🔸 DRY RUN MODE - No real emails sent")
         
         # Simulate a few turns with mock responses
         mock_responses = [
@@ -333,23 +401,26 @@ class ClientSimulator:
             if context.turn_count >= self.config.max_turns:
                 break
             
-            if self.config.verbose:
-                self._print_email(
-                    EmailMessage(
-                        sender="hello@solopilot.ai",
-                        recipient=scenario.persona.email,
-                        subject=f"Re: {context.emails[0].subject}",
-                        body=mock_response,
-                        direction="inbound",
-                    ),
-                    "SYSTEM (mock)",
-                )
+            self._print_email(
+                EmailMessage(
+                    sender=self.config.intake_email,
+                    recipient=scenario.persona.email,
+                    subject=f"Re: {context.emails[0].subject}",
+                    body=mock_response,
+                    direction="inbound",
+                ),
+                "FREELANCER (mock)",
+            )
+            
+            # Check if user wants to continue
+            print("\n🔄 Generate next client response? (y/n): ", end="")
+            if input().lower() != 'y':
+                break
             
             client_reply = self.engine.generate_reply(context, mock_response)
             context.emails.append(client_reply)
             
-            if self.config.verbose:
-                self._print_email(client_reply, "CLIENT")
+            self._print_email(client_reply, "CLIENT")
             
             if context.concluded:
                 break
@@ -370,13 +441,16 @@ class ClientSimulator:
         )
 
     def _print_email(self, email: EmailMessage, label: str) -> None:
-        """Print email for verbose output."""
-        print(f"\n--- {label} ---")
+        """Print email for output."""
+        print(f"\n{'─'*60}")
+        print(f"📧 {label}")
+        print(f"{'─'*60}")
         print(f"From: {email.sender}")
+        print(f"To: {email.recipient}")
         print(f"Subject: {email.subject}")
-        print(f"---")
+        print(f"{'─'*60}")
         print(email.body)
-        print(f"---\n")
+        print(f"{'─'*60}")
 
     def save_results(self, result: ConversationResult, path: Optional[str] = None) -> str:
         """Save conversation result to file.

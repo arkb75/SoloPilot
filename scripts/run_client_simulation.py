@@ -2,21 +2,21 @@
 """
 Client Simulation Testing Utility
 
-A Bedrock-powered tool that simulates realistic client interactions with
-the email intake system for end-to-end testing.
+Simulates realistic CLIENT emails using Claude Sonnet 4.5. The freelancer
+side is NOT simulated - you respond manually through your normal workflow.
+
+Flow:
+    1. AI generates client email → sent via real SES to intake
+    2. You respond manually via dashboard
+    3. AI generates next client reply → sent via SES
+    4. Repeat until done
 
 Usage:
-    # Run single scenario
-    python scripts/run_client_simulation.py --scenario simple --verbose
+    # Run single scenario (sends real emails)
+    python scripts/run_client_simulation.py --scenario simple
 
-    # Run multiple scenarios
-    python scripts/run_client_simulation.py --scenarios simple,complex,budget_conscious
-
-    # Run with custom settings
-    python scripts/run_client_simulation.py --count 3 --max-turns 5 --output json
-
-    # Dry run (no Lambda, just test email generation)
-    python scripts/run_client_simulation.py --scenario simple --dry-run --verbose
+    # Dry run (no real emails, tests client AI only)
+    python scripts/run_client_simulation.py --scenario simple --dry-run
 """
 
 import argparse
@@ -137,6 +137,12 @@ Available Scenarios:
         default="us-east-2",
         help="AWS region (default: us-east-2)",
     )
+    parser.add_argument(
+        "--intake-email",
+        type=str,
+        default="intake@abdulkhurram.com",
+        help="Email address to send client emails to (default: intake@abdulkhurram.com)",
+    )
     
     # Model settings
     parser.add_argument(
@@ -169,7 +175,7 @@ Available Scenarios:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Generate client emails without invoking Lambda",
+        help="Test client AI generation without sending real emails",
     )
     parser.add_argument(
         "--list-scenarios",
@@ -304,6 +310,7 @@ def main():
     config = SimulatorConfig(
         aws_profile=args.profile,
         aws_region=args.region,
+        intake_email=args.intake_email,
         model_id=args.model,
         max_turns=args.max_turns,
         verbose=args.verbose,
@@ -315,13 +322,14 @@ def main():
     # Get presets to run
     presets = get_presets_from_args(args)
     
-    logger.info(f"Starting client simulation")
-    logger.info(f"  AWS Profile: {config.aws_profile}")
-    logger.info(f"  Region: {config.aws_region}")
-    logger.info(f"  Scenarios: {[p.value for p in presets]}")
-    logger.info(f"  Max Turns: {config.max_turns}")
+    print(f"\n🎭 Client Simulation")
+    print(f"   AWS Profile: {config.aws_profile}")
+    print(f"   Intake Email: {config.intake_email}")
+    print(f"   Scenarios: {[p.value for p in presets]}")
     if args.dry_run:
-        logger.info("  Mode: DRY RUN (no Lambda invocation)")
+        print(f"   Mode: DRY RUN (no real emails)")
+    else:
+        print(f"   Mode: REAL EMAILS via SES")
     
     # Initialize simulator
     simulator = ClientSimulator(config)
