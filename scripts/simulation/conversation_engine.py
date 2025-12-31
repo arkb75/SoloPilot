@@ -136,12 +136,14 @@ Write the email now:"""
         self,
         context: ConversationContext,
         system_response: str,
+        guidance: Optional[str] = None,
     ) -> EmailMessage:
         """Generate client reply based on conversation history and system response.
         
         Args:
             context: Current conversation context
             system_response: The freelancer's response to reply to
+            guidance: Optional user guidance (e.g., "ask for PDF proposal")
         
         Returns:
             Generated EmailMessage from the client
@@ -165,7 +167,7 @@ Write the email now:"""
         
         # Build prompts
         system_prompt = self._build_system_prompt(scenario)
-        user_prompt = self._build_reply_prompt(context, system_response)
+        user_prompt = self._build_reply_prompt(context, system_response, guidance)
         
         # Call Bedrock
         response = self._call_bedrock(system_prompt, user_prompt)
@@ -289,8 +291,14 @@ Write the email now:"""
         
         return "\n".join(instructions)
 
-    def _build_reply_prompt(self, context: ConversationContext, system_response: str) -> str:
-        """Build prompt for generating a reply."""
+    def _build_reply_prompt(self, context: ConversationContext, system_response: str, guidance: Optional[str] = None) -> str:
+        """Build prompt for generating a reply.
+        
+        Args:
+            context: Conversation context
+            system_response: Freelancer's response
+            guidance: Optional user guidance for this specific reply
+        """
         scenario = context.scenario
         phase = self.determine_phase(context)
         context.phase = phase
@@ -302,6 +310,11 @@ Write the email now:"""
             "negotiation": "Discuss terms, timeline, or scope adjustments.",
             "decision": "Move toward a decision - accept, decline, or ask for more time.",
         }
+        
+        # Add user guidance if provided
+        guidance_section = ""
+        if guidance:
+            guidance_section = f"\n\n⚠️ IMPORTANT GUIDANCE: {guidance}\nMake sure your reply naturally incorporates this direction."
         
         return f"""The freelancer has responded to your email:
 
@@ -316,7 +329,7 @@ Current phase: {phase}
 Turn: {context.turn_count} of ~{scenario.expected_turns}
 
 Instructions for this reply:
-{phase_instructions.get(phase, "Continue the conversation naturally.")}
+{phase_instructions.get(phase, "Continue the conversation naturally.")}{guidance_section}
 
 Write your reply email now:"""
 

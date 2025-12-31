@@ -251,8 +251,14 @@ class ClientSimulator:
                     context.concluded = True
                     break
                 
-                # Generate client reply
-                client_reply = self.engine.generate_reply(context, response_body)
+                # Ask for optional guidance
+                print("\n💡 Guide client's response (or press Enter to skip):")
+                print("   Examples: 'ask for PDF proposal', 'say budget is too high', 'wrap up and accept'")
+                print("   > ", end="")
+                guidance = input().strip() or None
+                
+                # Generate client reply with optional guidance
+                client_reply = self.engine.generate_reply(context, response_body, guidance=guidance)
                 context.emails.append(client_reply)
                 
                 self._print_email(client_reply, "CLIENT")
@@ -417,7 +423,13 @@ class ClientSimulator:
             if input().lower() != 'y':
                 break
             
-            client_reply = self.engine.generate_reply(context, mock_response)
+            # Ask for optional guidance
+            print("\n💡 Guide client's response (or press Enter to skip):")
+            print("   Examples: 'ask for PDF proposal', 'say budget is too high', 'wrap up and accept'")
+            print("   > ", end="")
+            guidance = input().strip() or None
+            
+            client_reply = self.engine.generate_reply(context, mock_response, guidance=guidance)
             context.emails.append(client_reply)
             
             self._print_email(client_reply, "CLIENT")
