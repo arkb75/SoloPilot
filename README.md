@@ -1,44 +1,50 @@
-# SoloPilot — Client Ops Studio for Freelancers
+# SoloPilot — Client-to-Codebase Bridge
 
-SoloPilot is a human-in-the-loop platform that helps solo freelancers move from inbound email to approved proposal to code and deployment with clear guardrails, auditability, and opt-in automation.
+SoloPilot automates the client intake workflow — from email threads to approved proposals to structured plans ready for AI powered IDEs like Antigravity, Cursor, and VS Code.
 
 ## Vision
 
-Unify the operational flow for one-person teams:
-	-	Intake: triage email threads, capture scope, and propose next steps
-	-	Proposals: generate and revise PDF proposals with markup and approvals
-	-	Build: create issues, plan work, and let a repo-aware agent scaffold code behind CI gates
-	-	Deliver: ship to hosting after human review, collect artifacts for the portfolio
+Bridge the gap between client conversations and code:
+- **Intake**: Manage email threads, extract requirements, draft responses with human review
+- **Proposals**: Generate, annotate, and version PDF proposals with full revision history
+- **Plan**: Transform approved proposals into structured PRDs and project plans
+- **Export**: Output plans in formats optimized for AI coding assistants
 
-SoloPilot assists; you stay in control at every decision point.
+SoloPilot handles the messy client → requirements → proposal → plan workflow so you can jump straight into building.
 
 ## Key Capabilities
-	-	Email intake console: conversational manager that groups threads, extracts requirements, and prepares draft responses
-	-	Proposal PDFs with versioning: render proposals via React-PDF; annotate directly; each revision is stored as a versioned S3 object for audit and rollback
-	-	Copy evaluator + revisor loop: summarize and score email bodies against a rubric, then generate a higher-scoring alternative for side-by-side selection and edits
-	-	Repo-aware coding and deployment agent: reads the codebase, proposes diffs, opens PRs, and can trigger deploys after checks pass and you approve
-	-	Provider-agnostic LLM layer: swap models behind a unified interface with centralized logging
-	-	Quality gates: CI runs ruff, mypy, bandit, ESLint, and SonarCloud; merges and deploys remain human-approved
-	-	Ops on AWS: S3 (versioned proposals and artifacts), Lambda, SQS, CloudWatch; telemetry and logs for traceability
 
-## Current Status (September 2025)
+- **Email Intake Console**: Conversational manager that groups threads, extracts requirements, and prepares draft responses
+- **AI Response Generation**: Draft email replies with evaluator-revisor loop for quality scoring
+- **Metadata Extraction**: AI-powered extraction of project type, budget, timeline, client name, and key requirements
+- **Proposal PDFs with Versioning**: Render proposals via React-PDF; each revision stored as versioned S3 object for audit and rollback
+- **PDF Annotation**: Annotate proposals directly with vision analysis feedback
+- **PRD/Plan Generation**: Create detailed project plans with milestones, tasks, and acceptance criteria from approved proposals
+- **IDE Export**: Export plans in formats optimized for Antigravity, Cursor, and VS Code agents
+- **Provider-Agnostic LLM Layer**: Swap models (Bedrock, OpenAI) via unified interface
+- **Ops on AWS**: S3 (versioned proposals and artifacts), Lambda, DynamoDB, CloudWatch
+
+## Current Status (December 2025)
 
 ### Completed
 - Email intake console and conversational manager
+- AI-powered metadata and requirement extraction
 - Proposal PDF rendering, annotation, and S3 versioned storage
+- Vision analysis for PDF feedback
 - Evaluator-and-revisor loop for email copy
+- Human-in-the-loop review UI with approve/reject/edit workflow
 - Provider abstraction and centralized LLM logging
-- CI baseline with static analysis and SonarCloud
+- Client simulation testing utility
 
 ### In Progress
-- Planning: issue creation and milestone flows
-- Dev: repo-aware coding agent (PR creation, deploy hooks)
+- PRD/Plan generation from approved proposals
+- IDE export formats (Antigravity, Cursor, VS Code)
 
 ### Next (Planned)
-- Deploy: approved pipeline to Vercel/Netlify
-- Coordination: Notion MCP orchestration for tasks and milestones
-- Lightweight client portal for approvals and file access
-- Multi-channel intake, billing, and portfolio artifact generation
+- Template library for different project types
+- Multi-format export (Markdown, JSON, YAML)
+- Lightweight client portal for approvals
+- Multi-channel intake (beyond email)
 
 ## Architecture
 
@@ -46,31 +52,32 @@ SoloPilot assists; you stay in control at every decision point.
 flowchart TD
   subgraph "Intake"
     A[Inbound Email] -->|SES| B[Intake Lambda]
-    B --> C[S3 (versioned) : raw messages + attachments]
+    B --> C[S3 : raw messages + attachments]
     B --> D[DynamoDB : conversation state]
     D --> E[Conversational Manager]
+    E --> F[AI Response Draft]
+    F --> G[Human Review UI]
   end
 
   subgraph "Proposals"
-    E --> F[React-PDF Builder]
-    F --> G[S3 (versioned) : proposals]
-    G --> H[Human Annotation UI]
-    H --> I[Revision Loop]
-    I -->|Approve| J[Create Plan/Issues]
+    G -->|Approve| H[Requirement Extractor]
+    H --> I[PDF Generator]
+    I --> J[S3 versioned : proposals]
+    J --> K[PDF Annotator + Vision Analysis]
+    K --> L[Revision Loop]
+    L -->|Client Approves| M[Approved Proposal]
   end
 
-  subgraph "Build"
-    J --> K[Notion MCP : tasks/milestones]
-    J --> L[SQS : work queue]
-    L --> M[Repo-Aware Coding Agent]
-    M --> N[PR to Repo]
-    N --> O[CI: ruff/mypy/bandit/ESLint + SonarCloud]
+  subgraph "Plan"
+    M --> N[PRD Generator]
+    N --> O[Plan Builder]
+    O --> P[Human Review]
   end
 
-  subgraph "Delivery"
-    O -->|Pass + Human Approve| P[Deploy : Vercel/Netlify]
-    P --> Q[Notify Client]
-    Q --> R[Archive Artifacts (S3 versioned)]
+  subgraph "Export"
+    P -->|Approve| Q[IDE Export Engine]
+    Q --> R[Antigravity / Cursor / VS Code]
+    Q --> S[Markdown / JSON / YAML]
   end
 ```
 
@@ -81,35 +88,50 @@ SoloPilot/
 ├── src/
 │   ├── agents/
 │   │   ├── email_intake/          # Email console + conversational manager
-│   │   ├── proposals/             # React-PDF rendering + annotation handling
-│   │   ├── dev/                   # Repo-aware coding & deployment agent
-│   │   ├── planning/              # Issue planning and milestones
-│   │   └── review/                # Static analysis and checks
+│   │   │   ├── conversational_responder.py
+│   │   │   ├── metadata_extractor.py
+│   │   │   ├── requirement_extractor.py
+│   │   │   ├── pdf_generator.py
+│   │   │   ├── vision_analyzer.py
+│   │   │   ├── reviewer.py
+│   │   │   └── response_reviser.py
+│   │   ├── planning/              # PRD and plan generation
+│   │   └── export/                # IDE export formats
 │   ├── providers/                 # Model/provider abstraction
-│   ├── common/                    # Shared utilities
-│   └── utils/                     # CI, SCM, and telemetry helpers
-├── frontend/                      # Intake dashboard and proposal UI
+│   └── utils/                     # Helpers
+├── frontend/
+│   └── email-intake/              # React dashboard
+│       └── src/components/
+│           ├── ConversationDetail.tsx
+│           ├── ConversationList.tsx
+│           ├── ProposalViewer.tsx
+│           ├── PDFAnnotator.tsx
+│           └── ReplyEditor.tsx
 ├── infrastructure/                # Terraform + Lambda
-├── tests/                         # Unit and integration tests
+├── tests/
 └── docs/
 ```
 
 ## Module Overview
 
-| Module       | Status   | Purpose                                           |
-|--------------|----------|---------------------------------------------------|
-| email_intake | ✅ Active | Triage threads and capture requirements           |
-| proposals    | ✅ Active | Render, annotate, and version proposal PDFs       |
-| planning     | 🚧 WIP   | Produce tasks, milestones, and assignments        |
-| dev          | 🚧 WIP   | Repo-aware code generation, PRs, deploy hooks     |
-| review       | 🚧 WIP   | CI quality gates and SonarCloud checks            |
-| deploy       | 🗓️ Planned | Approved deploys to hosting platforms           |
-| coordination | 🗓️ Planned | Notion MCP orchestration                        |
+| Module             | Status   | Purpose                                           |
+|--------------------|----------|---------------------------------------------------|
+| email_intake       | ✅ Active | Triage threads, draft responses, manage state     |
+| metadata_extractor | ✅ Active | Extract client info, project type, budget, etc.   |
+| requirement_extractor | ✅ Active | Synthesize requirements from conversations     |
+| pdf_generator      | ✅ Active | Render proposal PDFs with versioning              |
+| vision_analyzer    | ✅ Active | AI-powered PDF annotation feedback                |
+| reviewer           | ✅ Active | Score and evaluate draft responses                |
+| response_reviser   | ✅ Active | Generate improved response alternatives           |
+| planning           | 🚧 WIP   | Generate PRDs and structured project plans        |
+| export             | 🚧 WIP   | Export to IDE-ready formats                       |
 
-Tech Stack
-	-	Core: Python, TypeScript/Next.js, AWS, LangChain
-	-	Quality: GitHub Actions, SonarCloud, ruff, mypy, bandit, ESLint
-	-	Storage: S3 with object versioning for proposals and artifacts
+## Tech Stack
+- **Core**: Python, TypeScript, AWS, LangChain
+- **LLMs**: AWS Bedrock (Claude), OpenAI
+- **Frontend**: React, Vite, TailwindCSS
+- **Storage**: S3 (versioned), DynamoDB
+- **Quality**: GitHub Actions, ruff, mypy, ESLint
 
 ## Quick Start
 
@@ -127,9 +149,12 @@ node --version               # 18+
 git clone <repo-url> && cd SoloPilot
 poetry install
 poetry run pre-commit install
-poetry run pytest            # tests
-poetry run make plan-dev     # end-to-end local plan
-poetry run pre-commit run --all-files
+poetry run pytest
+
+# Frontend
+cd frontend/email-intake
+yarn install
+yarn dev
 ```
 
 ## Email Intake Setup
@@ -138,60 +163,40 @@ poetry run pre-commit run --all-files
 # 1) Verify domain in SES
 # 2) Create S3 bucket with versioning enabled
 # 3) Deploy the intake Lambda
-cd src/agents/email_intake && zip -r email-intake.zip .
-# Upload to Lambda and set:
-export REQUIREMENT_QUEUE_URL=<SQS URL>
-export SENDER_EMAIL=<verified SES sender>
+cd src/agents/email_intake && ./deploy.sh
+
+# Environment variables
+export EMAIL_BUCKET=<S3 bucket>
 export DYNAMO_TABLE=conversations
+export SENDER_EMAIL=<verified SES sender>
+export AI_PROVIDER=bedrock
 ```
 
-## Configuration
+## IDE Export Formats
 
-### Providers
-	-	AI_PROVIDER = bedrock | openai | fake
-	-	NO_NETWORK = 1 for offline tests
+SoloPilot generates plans optimized for AI coding assistants:
 
-### Context & Telemetry
-	-	CONTEXT_ENGINE = serena | legacy
-	-	SERENA_TELEMETRY_ENABLED = 1 to record usage
-
-### SCM/CI
-	-	GITHUB_TOKEN, SONAR_TOKEN
-
-### Deploy
-	-	VERCEL_TOKEN or platform specific token
-
-## Development Workflow
-
-```bash
-make test        # run tests
-make lint        # lint and static checks
-make plan-dev    # intake → proposal → plan
-make review      # run AI/static review on PRs
-make deploy      # deploy after human approval
-```
-
-Quality Assurance
-	-	PRs must pass ruff, mypy, bandit, ESLint and SonarCloud
-	-	Human review gates merges and deploys
-	-	Proposal revisions and artifacts are traceable via S3 object versions
-
-Metrics & Monitoring
-	-	Centralized LLM call logs and CI artifacts
-	-	CloudWatch alarms for Lambdas and queue backlogs
-	-	Proposal and email copy revisions tracked via S3 versions and audit logs
+| Format | IDE Target | Description |
+|--------|------------|-------------|
+| `.antigravity/` | Antigravity | Task files with context and instructions |
+| `.cursor/` | Cursor | Rules and project context |
+| `AGENTS.md` | VS Code Copilot | Agent instructions and project overview |
+| `plan.json` | Universal | Structured plan data for custom integrations |
 
 ## Roadmap
 
-### Phase 1: MVP
-	-	✅ Intake console, proposal PDFs with annotations and S3 versioning
-	-	✅ Evaluator-revisor loop for email copy
-	-	✅ Repo-aware coding agent with PRs
+### Phase 1: Intake & Proposals ✅
+- Email intake console with conversation management
+- AI-powered metadata and requirement extraction
+- Proposal PDF generation with versioning and annotations
+- Human review workflow with evaluator-revisor loop
 
-### Phase 2: Delivery
-	-	🚧 Approved deploy pipeline to Vercel/Netlify
-	-	🚧 Notion MCP task coordination
-	-	🚧 Client portal for approvals
+### Phase 2: Plan & Export 🚧
+- PRD generation from approved proposals
+- IDE export (Antigravity, Cursor, VS Code)
+- Template library for common project types
 
-### Phase 3: Growth
-	-	Multi-channel intake, billing, and portfolio automation
+### Phase 3: Expand
+- Multi-channel intake (Slack, forms)
+- Client portal for approvals
+- Team collaboration features
