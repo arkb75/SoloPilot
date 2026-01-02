@@ -63,10 +63,11 @@ export const api = {
   },
 
   // Reply endpoints
-  approveReply: async (replyId: string, conversationId: string, reviewedBy = 'admin') => {
+  approveReply: async (replyId: string, conversationId: string, reviewedBy = 'admin', proposalVersion?: number) => {
     const response = await client.post(`/replies/${replyId}/approve`, {
       conversation_id: conversationId,
       reviewed_by: reviewedBy,
+      ...(proposalVersion !== undefined && { proposal_version: proposalVersion }),
     });
     return response.data;
   },

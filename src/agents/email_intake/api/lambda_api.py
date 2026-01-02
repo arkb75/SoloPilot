@@ -442,9 +442,11 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
             "proposal_draft",
             "proposal_feedback",
         ]:
-            # Prefer reusing a pre-generated proposal stored during pending-creation
+            # Check for proposal_version from request body first (user selected),
+            # then fall back to pre-generated version stored on the reply
             pregen_version = (
-                (reply_data or {}).get("proposal_version")
+                body.get("proposal_version")  # User selected from UI
+                or (reply_data or {}).get("proposal_version")
                 or (reply_data or {}).get("metadata", {}).get("proposal_version")
             )
             pregen_pdf_bytes = None

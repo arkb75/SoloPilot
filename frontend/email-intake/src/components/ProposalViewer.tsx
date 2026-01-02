@@ -5,6 +5,8 @@ import PDFAnnotator from './PDFAnnotator';
 
 interface ProposalViewerProps {
   conversationId: string;
+  selectedVersion?: number | null;
+  onSelectProposal?: (version: number) => void;
 }
 
 interface Proposal {
@@ -15,7 +17,7 @@ interface Proposal {
   has_revisions: boolean;
 }
 
-const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId }) => {
+const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId, selectedVersion, onSelectProposal }) => {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +53,10 @@ const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId }) => {
       setLoading(true);
       const data = await api.listProposals(conversationId);
       setProposals(data.proposals);
+      // Auto-select the most recent proposal (first in list) if nothing selected
+      if (data.proposals.length > 0 && selectedVersion == null && onSelectProposal) {
+        onSelectProposal(data.proposals[0].version);
+      }
     } catch (err) {
       setError('Failed to load proposals');
       console.error(err);
@@ -165,38 +171,47 @@ const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId }) => {
                 </div>
               </div>
               <div className="flex items-center gap-2 ml-4">
-              <button
-                onClick={() => handleDownload(proposal.version)}
-                disabled={downloadingVersion === proposal.version}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {downloadingVersion === proposal.version ? (
-                  <span className="flex items-center gap-2">
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                        fill="none"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    Loading...
-                  </span>
-                ) : (
-                  'View PDF'
+                {onSelectProposal && (
+                  <button
+                    onClick={() => onSelectProposal(proposal.version)}
+                    className={`px-4 py-2 rounded transition-colors ${selectedVersion === proposal.version
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                  >
+                    {selectedVersion === proposal.version ? '✓ Selected' : 'Use'}
+                  </button>
                 )}
-              </button>
-              {proposals[0]?.version === proposal.version && (
+                <button
+                  onClick={() => handleDownload(proposal.version)}
+                  disabled={downloadingVersion === proposal.version}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {downloadingVersion === proposal.version ? (
+                    <span className="flex items-center gap-2">
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                          fill="none"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                      Loading...
+                    </span>
+                  ) : (
+                    'View PDF'
+                  )}
+                </button>
                 <button onClick={() => openEditor(proposal.version)} className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600">Edit</button>
-              )}
               </div>
             </div>
           </div>
@@ -222,13 +237,12 @@ const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId }) => {
       {toast && (
         <div className="fixed bottom-4 right-4 z-50">
           <div
-            className={`px-4 py-3 rounded shadow-lg text-sm text-white ${
-              toast.tone === 'success'
-                ? 'bg-green-600'
-                : toast.tone === 'error'
+            className={`px-4 py-3 rounded shadow-lg text-sm text-white ${toast.tone === 'success'
+              ? 'bg-green-600'
+              : toast.tone === 'error'
                 ? 'bg-red-600'
                 : 'bg-blue-600'
-            }`}
+              }`}
           >
             {toast.message}
           </div>

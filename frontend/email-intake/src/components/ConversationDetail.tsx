@@ -23,6 +23,7 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
   const [revisions, setRevisions] = useState<Record<string, RevisionResult>>({});
   const [loadingRevisions, setLoadingRevisions] = useState<Set<string>>(new Set());
   const [selectedVersion, setSelectedVersion] = useState<Record<string, 'original' | 'revised'>>({});
+  const [selectedProposalVersion, setSelectedProposalVersion] = useState<number | null>(null);
 
   useEffect(() => {
     loadConversationDetails();
@@ -69,7 +70,7 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
         );
       }
 
-      await api.approveReply(reply.reply_id, conversationId);
+      await api.approveReply(reply.reply_id, conversationId, 'admin', selectedProposalVersion ?? undefined);
       setPendingReplies(prev => prev.filter(r => r.reply_id !== reply.reply_id));
       // Reload to get updated conversation
       loadConversationDetails();
@@ -175,7 +176,7 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
       console.log('Requesting revision for reply:', replyId);
       const data = await api.requestRevision(replyId);
       console.log('Revision data received:', data);
-      
+
       setRevisions(prev => ({
         ...prev,
         [replyId]: data.revision
@@ -226,7 +227,7 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
       if (reply.status !== 'pending') {
         return; // Only review pending replies
       }
-      
+
       // Load review
       if (reply.review) {
         // Use cached review from reply data
@@ -245,7 +246,7 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
           ...prev,
           [reply.reply_id]: reply.revision!
         }));
-        
+
         // Auto-select revised version if it's successful and user hasn't selected yet
         if (reply.revision.revision_successful && !selectedVersion[reply.reply_id]) {
           setSelectedVersion(prev => ({
@@ -271,7 +272,7 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
           Overall: {review.overall_score}/5
         </span>
       </div>
-      
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
         <div className={`px-2 py-1 text-xs rounded ${getScoreColor(review.relevance_score)}`}>
           Relevance: {review.relevance_score}/5
@@ -302,14 +303,14 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
     </div>
   );
 
-  const RevisionComparison = ({ 
-    replyId, 
-    original, 
-    originalReview, 
-    revised, 
+  const RevisionComparison = ({
+    replyId,
+    original,
+    originalReview,
+    revised,
     revisedReview,
     selectedVersion,
-    onSelectVersion 
+    onSelectVersion
   }: {
     replyId: string;
     original: string;
@@ -472,7 +473,7 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
             <div>
               <span className="font-medium text-gray-700">Confidence Score:</span>{' '}
               <span className="text-gray-900">
-                {conversation.latest_metadata.confidence_score 
+                {conversation.latest_metadata.confidence_score
                   ? `${(conversation.latest_metadata.confidence_score * 100).toFixed(0)}%`
                   : 'N/A'}
               </span>
@@ -670,7 +671,11 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
             <h3 className="text-lg leading-6 font-medium text-gray-900">Proposals</h3>
           </div>
           <div className="border-t border-gray-200">
-            <ProposalViewer conversationId={conversationId} />
+            <ProposalViewer
+              conversationId={conversationId}
+              selectedVersion={selectedProposalVersion}
+              onSelectProposal={setSelectedProposalVersion}
+            />
           </div>
         </div>
       )}
