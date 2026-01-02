@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import html2canvas from 'html2canvas';
 import { Document, Page, pdfjs } from 'react-pdf';
-import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import { PdfAnnotation } from '../types';
 
@@ -17,10 +16,7 @@ interface PDFAnnotatorProps {
   onSubmitVision: (payload: { pages: { pageIndex: number; imageBase64: string }[]; annotations: PdfAnnotation[]; prompt: string }) => Promise<void> | void;
 }
 
-const toolColors: Record<string, string> = {
-  highlight: '#FFEB3B',
-  note: '#4CAF50',
-};
+const HIGHLIGHT_COLOR = '#FFEB3B';
 
 const applyAlpha = (color: string, alpha: number): string => {
   if (!color.startsWith('#')) return color;
@@ -49,9 +45,9 @@ const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmit
   const [annotations, setAnnotations] = useState<PdfAnnotation[]>([]);
   const [prompt, setPrompt] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [activeTool, setActiveTool] = useState<'highlight' | 'note'>('highlight');
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [startPt, setStartPt] = useState<{ x: number; y: number } | null>(null);
+  const [currentRect, setCurrentRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const pageContainerRef = useRef<HTMLDivElement | null>(null);
   const pageNumberRef = useRef<number>(pageNumber);
   const lastRenderedPageRef = useRef<number | null>(null);
@@ -180,9 +176,9 @@ const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmit
           y: ny,
           width: nwidth,
           height: nheight,
-          type: activeTool,
-          color: toolColors[activeTool],
-          opacity: activeTool === 'highlight' ? 0.55 : 0.8,
+          type: 'highlight',
+          color: HIGHLIGHT_COLOR,
+          opacity: 0.55,
           selectedText,
           surroundingText,
           zone,
@@ -193,10 +189,19 @@ const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmit
 
     setIsDrawing(false);
     setStartPt(null);
+    setCurrentRect(null);
   };
 
-  const handleMouseMove = (_e: React.MouseEvent) => {
-    // Optional: implement visual preview
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDrawing || !startPt || !pageContainerRef.current) return;
+    const rect = pageContainerRef.current.getBoundingClientRect();
+    const endX = e.clientX - rect.left;
+    const endY = e.clientY - rect.top;
+    const left = Math.min(startPt.x, endX);
+    const top = Math.min(startPt.y, endY);
+    const width = Math.abs(endX - startPt.x);
+    const height = Math.abs(endY - startPt.y);
+    setCurrentRect({ x: left, y: top, width, height });
   };
 
   const pageAnnotations = useMemo(() => {
@@ -364,11 +369,7 @@ const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmit
       <div className="bg-white w-full max-w-6xl h-[90vh] rounded-lg shadow-lg flex overflow-hidden">
         <div className="flex-1 flex flex-col border-r">
           <div className="p-3 flex items-center gap-2 border-b">
-            <span className="text-sm font-medium">PDF Editor (pending)</span>
-            <div className="ml-auto flex items-center gap-2">
-              <button onClick={() => setActiveTool('highlight')} className={`px-2 py-1 text-sm rounded ${activeTool === 'highlight' ? 'bg-yellow-200' : 'bg-gray-100'}`}>Highlight</button>
-              <button onClick={() => setActiveTool('note')} className={`px-2 py-1 text-sm rounded ${activeTool === 'note' ? 'bg-green-200' : 'bg-gray-100'}`}>Note</button>
-            </div>
+            <span className="text-sm font-medium">PDF Editor</span>
           </div>
           <div className="flex items-center justify-between p-2 text-sm">
             <div className="flex items-center gap-2">
@@ -379,10 +380,33 @@ const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmit
             <button onClick={() => setAnnotations([])} className="px-2 py-1 border rounded">Clear</button>
           </div>
           <div className="flex-1 overflow-auto flex items-center justify-center bg-gray-50">
-            <div ref={pageContainerRef} onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} onMouseMove={handleMouseMove} className="relative" style={{ cursor: isDrawing ? 'crosshair' : 'default' }}>
+            <div
+              ref={pageContainerRef}
+              onMouseDown={handleMouseDown}
+              onMouseUp={handleMouseUp}
+              onMouseMove={handleMouseMove}
+              onMouseLeave={() => { if (isDrawing) { setIsDrawing(false); setStartPt(null); setCurrentRect(null); } }}
+              className="relative select-none"
+              style={{ cursor: 'crosshair', userSelect: 'none' }}
+            >
               <Document file={fileUrl} onLoadSuccess={onDocumentLoadSuccess} loading={<div className="p-4 text-gray-500">Loading PDF…</div>}>
-                <Page pageNumber={pageNumber} renderAnnotationLayer renderTextLayer width={720} onRenderSuccess={handlePageRenderSuccess} />
+                <Page pageNumber={pageNumber} renderAnnotationLayer={false} renderTextLayer={false} width={720} onRenderSuccess={handlePageRenderSuccess} />
               </Document>
+              {/* Selection preview while dragging */}
+              {currentRect && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: `${currentRect.x}px`,
+                    top: `${currentRect.y}px`,
+                    width: `${currentRect.width}px`,
+                    height: `${currentRect.height}px`,
+                    backgroundColor: 'rgba(255, 235, 59, 0.4)',
+                    border: '2px dashed rgba(245, 158, 11, 0.9)',
+                    pointerEvents: 'none',
+                  }}
+                />
+              )}
               {pageContainerRef.current && pageAnnotations.map((a) => {
                 const rect = pageContainerRef.current!.getBoundingClientRect();
                 const badgeSize = 18;
@@ -391,7 +415,6 @@ const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmit
                 const highlightTop = a.y * rect.height;
                 const highlightWidth = a.width * rect.width;
                 const highlightHeight = a.height * rect.height;
-                const isHighlight = a.type === 'highlight';
                 const fillOpacity = Math.max(a.opacity ?? 0.6, 0.45);
                 const style: React.CSSProperties = {
                   position: 'absolute',
@@ -399,14 +422,10 @@ const PDFAnnotator: React.FC<PDFAnnotatorProps> = ({ fileUrl, onCancel, onSubmit
                   top: `${highlightTop}px`,
                   width: `${highlightWidth}px`,
                   height: `${highlightHeight}px`,
-                  backgroundColor: isHighlight
-                    ? applyAlpha(a.color || toolColors.highlight, fillOpacity)
-                    : 'transparent',
-                  opacity: isHighlight ? 1 : a.opacity ?? 1,
-                  border: isHighlight
-                    ? '2px solid rgba(245, 158, 11, 0.9)'
-                    : `2px solid ${a.color || toolColors.note}`,
-                  boxShadow: isHighlight ? '0 0 0 1px rgba(0, 0, 0, 0.08)' : 'none',
+                  backgroundColor: applyAlpha(a.color || HIGHLIGHT_COLOR, fillOpacity),
+                  opacity: 1,
+                  border: '2px solid rgba(245, 158, 11, 0.9)',
+                  boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.08)',
                   pointerEvents: 'none',
                 };
                 const candidates = [
