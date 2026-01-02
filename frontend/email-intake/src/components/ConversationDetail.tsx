@@ -546,7 +546,11 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
 
               {editingReply?.reply_id === reply.reply_id ? (
                 <ReplyEditor
-                  initialContent={reply.llm_response}
+                  initialContent={
+                    selectedVersion[reply.reply_id] === 'revised' && revisions[reply.reply_id]?.revised_response
+                      ? revisions[reply.reply_id].revised_response
+                      : reply.llm_response
+                  }
                   onSave={(content) => handleAmend(reply, content)}
                   onCancel={() => setEditingReply(null)}
                 />
