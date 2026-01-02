@@ -1364,6 +1364,7 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
 
         intent_text = ""
         updated_requirements = current_requirements
+        user_prompt = (body.get("prompt") or "").strip()
 
         logger.info(
             "[VISION_DEBUG][REQ_BEFORE] trace_id=%s %s",
@@ -1386,7 +1387,7 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
                 pages,
                 annotations,
                 base_instructions,
-                body.get("prompt"),
+                user_prompt,
                 debug_dir=debug_dir,
                 debug_tag="intent",
                 debug_trace_id=debug_trace_id,
@@ -1400,8 +1401,20 @@ def annotate_vision(conversation_id: str, version: str, body: Optional[Dict[str,
 
         # Apply instructions to requirements via LLM-based editor
         extractor = RequirementExtractor()
+        combined_intent = intent_text
+        if user_prompt and user_prompt.lower() not in (intent_text or "").lower():
+            combined_intent = (
+                f"{intent_text}\n\nAdditional user instruction (apply this too):\n{user_prompt}"
+            )
+        if user_prompt:
+            logger.info(
+                "[VISION] Applying user prompt to requirements update: included=%s",
+                user_prompt.lower() in (intent_text or "").lower(),
+            )
         try:
-            updated_requirements = extractor.apply_edit_instructions(current_requirements, intent_text)
+            updated_requirements = extractor.apply_edit_instructions(
+                current_requirements, combined_intent
+            )
         except RequirementEditError as edit_err:
             raise RequirementUpdateError(str(edit_err)) from edit_err
 
