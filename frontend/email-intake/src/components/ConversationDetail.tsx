@@ -53,6 +53,26 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
     }
   };
 
+  // Silent refresh for polling (no loading state)
+  const silentRefresh = async () => {
+    try {
+      const [convData, repliesData] = await Promise.all([
+        api.getConversation(conversationId),
+        api.getPendingReplies(conversationId),
+      ]);
+      setConversation(convData);
+      setPendingReplies(repliesData.pending_replies);
+    } catch (err) {
+      console.error('Silent refresh failed:', err);
+    }
+  };
+
+  // Poll for updates every 10 seconds
+  useEffect(() => {
+    const interval = setInterval(silentRefresh, 10000);
+    return () => clearInterval(interval);
+  }, [conversationId]);
+
   const handleApprove = async (reply: PendingReply, version: 'original' | 'revised' = 'original') => {
     try {
       if (version === 'revised') {

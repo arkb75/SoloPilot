@@ -33,6 +33,21 @@ const ConversationList: React.FC<ConversationListProps> = ({ onSelectConversatio
     }
   };
 
+  // Poll for updates every 10 seconds
+  useEffect(() => {
+    const silentRefresh = async () => {
+      try {
+        const data = await api.listConversations(20);
+        setConversations(data.conversations);
+        setNextToken(data.nextToken);
+      } catch (err) {
+        console.error('Silent refresh failed:', err);
+      }
+    };
+    const interval = setInterval(silentRefresh, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   const toggleMode = async (e: React.MouseEvent, conversation: Conversation) => {
     e.stopPropagation();
     try {
@@ -70,22 +85,22 @@ const ConversationList: React.FC<ConversationListProps> = ({ onSelectConversatio
 
   const handleDelete = async () => {
     if (selectedIds.size === 0) return;
-    
-    const confirmMessage = selectedIds.size === 1 
-      ? 'Are you sure you want to delete this conversation?' 
+
+    const confirmMessage = selectedIds.size === 1
+      ? 'Are you sure you want to delete this conversation?'
       : `Are you sure you want to delete ${selectedIds.size} conversations?`;
-    
+
     if (!confirm(confirmMessage)) return;
-    
+
     setIsDeleting(true);
     try {
       // Delete conversations one by one
-      const deletePromises = Array.from(selectedIds).map(id => 
+      const deletePromises = Array.from(selectedIds).map(id =>
         api.deleteConversation(id)
       );
-      
+
       await Promise.all(deletePromises);
-      
+
       // Remove deleted conversations from the list
       setConversations(prev => prev.filter(c => !selectedIds.has(c.conversation_id)));
       setSelectedIds(new Set());
@@ -180,50 +195,49 @@ const ConversationList: React.FC<ConversationListProps> = ({ onSelectConversatio
                     onClick={(e) => e.stopPropagation()}
                     className="mr-3 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                   />
-                  <div 
+                  <div
                     className="flex-1 cursor-pointer"
                     onClick={() => onSelectConversation(conversation)}
                   >
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {conversation.subject || 'No subject'}
-                    </p>
-                    <div className="ml-2 flex flex-shrink-0">
-                      <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${getPhaseColor(conversation.phase)}`}>
-                        {conversation.phase.replace('_', ' ')}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between">
-                    <div className="flex items-center text-sm text-gray-500">
-                      <p>{conversation.client_name || conversation.client_email}</p>
-                      {conversation.project_name && (
-                        <>
-                          <span className="mx-2">•</span>
-                          <p className="text-gray-700">{conversation.project_name}</p>
-                        </>
-                      )}
-                      <span className="mx-2">•</span>
-                      <p>{format(new Date(conversation.updated_at), 'MMM d, h:mm a')}</p>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      {conversation.pending_replies > 0 && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                          {conversation.pending_replies} pending
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {conversation.subject || 'No subject'}
+                      </p>
+                      <div className="ml-2 flex flex-shrink-0">
+                        <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${getPhaseColor(conversation.phase)}`}>
+                          {conversation.phase.replace('_', ' ')}
                         </span>
-                      )}
-                      <button
-                        onClick={(e) => toggleMode(e, conversation)}
-                        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                          conversation.reply_mode === 'manual'
+                      </div>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between">
+                      <div className="flex items-center text-sm text-gray-500">
+                        <p>{conversation.client_name || conversation.client_email}</p>
+                        {conversation.project_name && (
+                          <>
+                            <span className="mx-2">•</span>
+                            <p className="text-gray-700">{conversation.project_name}</p>
+                          </>
+                        )}
+                        <span className="mx-2">•</span>
+                        <p>{format(new Date(conversation.updated_at), 'MMM d, h:mm a')}</p>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {conversation.pending_replies > 0 && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                            {conversation.pending_replies} pending
+                          </span>
+                        )}
+                        <button
+                          onClick={(e) => toggleMode(e, conversation)}
+                          className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${conversation.reply_mode === 'manual'
                             ? 'bg-yellow-100 text-yellow-800'
                             : 'bg-green-100 text-green-800'
-                        }`}
-                      >
-                        {conversation.reply_mode}
-                      </button>
+                            }`}
+                        >
+                          {conversation.reply_mode}
+                        </button>
+                      </div>
                     </div>
-                  </div>
                   </div>
                 </div>
               </div>
