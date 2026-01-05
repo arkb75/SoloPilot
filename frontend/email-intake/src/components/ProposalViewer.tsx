@@ -25,6 +25,7 @@ const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId, selecte
   const [editingVersion, setEditingVersion] = useState<number | null>(null);
   const [editorUrl, setEditorUrl] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
   const submitInFlightRef = useRef(false);
   const toastTimerRef = useRef<number | null>(null);
 
@@ -119,6 +120,21 @@ const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId, selecte
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const handleGenerate = async () => {
+    try {
+      setIsGenerating(true);
+      showToast('Generating proposal...', 'info');
+      const result = await api.generateProposal(conversationId);
+      showToast(result.message || 'Proposal generated!', 'success');
+      await loadProposals();
+    } catch (err: any) {
+      console.error('Failed to generate proposal:', err);
+      showToast(err?.response?.data?.error || 'Failed to generate proposal', 'error');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-4 text-center text-gray-500">
@@ -137,15 +153,41 @@ const ProposalViewer: React.FC<ProposalViewerProps> = ({ conversationId, selecte
 
   if (proposals.length === 0) {
     return (
-      <div className="p-4 text-center text-gray-500">
-        No proposals generated yet
+      <div className="p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold">Proposal History</h3>
+          <button
+            onClick={handleGenerate}
+            disabled={isGenerating}
+            className="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {isGenerating ? 'Generating...' : '+ Generate Proposal'}
+          </button>
+        </div>
+        <div className="text-center text-gray-500">No proposals generated yet</div>
+        {toast && (
+          <div className="fixed bottom-4 right-4 z-50">
+            <div className={`px-4 py-3 rounded shadow-lg text-sm text-white ${toast.tone === 'success' ? 'bg-green-600' : toast.tone === 'error' ? 'bg-red-600' : 'bg-blue-600'}`}>
+              {toast.message}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
   return (
     <div className="p-4">
-      <h3 className="text-lg font-semibold mb-4">Proposal History</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold">Proposal History</h3>
+        <button
+          onClick={handleGenerate}
+          disabled={isGenerating}
+          className="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {isGenerating ? 'Generating...' : '+ Generate Proposal'}
+        </button>
+      </div>
       <div className="space-y-3">
         {proposals.map((proposal) => (
           <div

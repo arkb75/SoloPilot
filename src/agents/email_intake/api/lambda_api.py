@@ -116,6 +116,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 return get_attachment_url(path_params.get("id"))
             if res == "/conversations/{id}/proposals" and http_method == "GET":
                 return list_proposals(path_params.get("id"))
+            if res == "/conversations/{id}/proposals/generate" and http_method == "POST":
+                return generate_proposal(path_params.get("id"))
             if res == "/conversations/{id}/proposals/{version}" and http_method == "GET":
                 conv_id = path_params.get("id")
                 version = path_params.get("version") or ""
@@ -436,16 +438,23 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         # Initialize storage_info for all emails (will be populated for PDFs)
         storage_info = None
 
-        # Check if we should send a PDF proposal
-        if email_meta.get("should_send_pdf") and email_meta.get("phase") in [
-            "proposal",
-            "proposal_draft",
-            "proposal_feedback",
-        ]:
+        # Check if we should send a PDF proposal:
+        # 1. User explicitly selected a proposal_version from the UI, OR
+        # 2. should_send_pdf is True AND phase is appropriate
+        user_selected_version = body.get("proposal_version")
+        should_attach_pdf = user_selected_version or (
+            email_meta.get("should_send_pdf") and email_meta.get("phase") in [
+                "proposal",
+                "proposal_draft",
+                "proposal_feedback",
+            ]
+        )
+        
+        if should_attach_pdf:
             # Check for proposal_version from request body first (user selected),
             # then fall back to pre-generated version stored on the reply
             pregen_version = (
-                body.get("proposal_version")  # User selected from UI
+                user_selected_version  # User selected from UI
                 or (reply_data or {}).get("proposal_version")
                 or (reply_data or {}).get("metadata", {}).get("proposal_version")
             )
@@ -1215,6 +1224,70 @@ def list_proposals(conversation_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error listing proposals: {str(e)}")
         return {"statusCode": 500, "body": json.dumps({"error": "Failed to list proposals"})}
+
+
+def generate_proposal(conversation_id: str) -> Dict[str, Any]:
+    """Manually generate a new proposal PDF for a conversation.
+
+    Args:
+        conversation_id: Conversation ID
+
+    Returns:
+        API response with generated proposal info
+    """
+    try:
+        table = dynamodb.Table(TABLE_NAME)
+
+        # Get conversation
+        response = table.get_item(Key={"conversation_id": conversation_id})
+
+        if "Item" not in response:
+            return {"statusCode": 404, "body": json.dumps({"error": "Conversation not found"})}
+
+        conversation = response["Item"]
+
+        # Import PDF generator
+        try:
+            from pdf_generator import ProposalPDFGenerator
+        except ImportError:
+            from src.agents.email_intake.pdf_generator import ProposalPDFGenerator
+
+        pdf_lambda_arn = os.environ.get("PDF_LAMBDA_ARN", "")
+        if not pdf_lambda_arn:
+            return {
+                "statusCode": 500,
+                "body": json.dumps({"error": "PDF_LAMBDA_ARN not configured"}),
+            }
+
+        pdf_generator = ProposalPDFGenerator(pdf_lambda_arn)
+        pdf_bytes, pdf_error, storage_info = pdf_generator.generate_and_store_proposal_pdf(
+            conversation
+        )
+
+        if not pdf_bytes:
+            return {
+                "statusCode": 500,
+                "body": json.dumps({
+                    "error": "Failed to generate PDF",
+                    "details": pdf_error
+                }),
+            }
+
+        version = storage_info.get("version") if storage_info else None
+
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "conversation_id": conversation_id,
+                "version": version,
+                "success": True,
+                "message": f"Proposal v{version} generated successfully"
+            }),
+        }
+
+    except Exception as e:
+        logger.error(f"Error generating proposal: {str(e)}", exc_info=True)
+        return {"statusCode": 500, "body": json.dumps({"error": "Failed to generate proposal"})}
 
 
 def get_proposal_url(conversation_id: str, version: str) -> Dict[str, Any]:

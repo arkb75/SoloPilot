@@ -186,6 +186,16 @@ export const api = {
     return response.data;
   },
 
+  generateProposal: async (conversationId: string) => {
+    const response = await client.post<{
+      conversation_id: string;
+      version: number;
+      success: boolean;
+      message: string;
+    }>(`/conversations/${conversationId}/proposals/generate`);
+    return response.data;
+  },
+
   getProposalUrl: async (conversationId: string, version: number) => {
     const response = await client.get<{
       conversation_id: string;
