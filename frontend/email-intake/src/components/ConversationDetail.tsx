@@ -17,7 +17,7 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
   const [pendingReplies, setPendingReplies] = useState<PendingReply[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showPrompt, setShowPrompt] = useState<string | null>(null);
+
   const [editingReply, setEditingReply] = useState<PendingReply | null>(null);
   const [replyReviews, setReplyReviews] = useState<Record<string, ReviewResult>>({});
   const [loadingReviews, setLoadingReviews] = useState<Set<string>>(new Set());
@@ -133,14 +133,7 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
     }
   };
 
-  const showLLMPrompt = async (replyId: string) => {
-    try {
-      const data = await api.getReplyPrompt(replyId);
-      setShowPrompt(data.prompt);
-    } catch (err) {
-      console.error('Failed to get prompt:', err);
-    }
-  };
+
 
   const loadReplyReview = useCallback(async (replyId: string) => {
     // Check if already loading this specific review
@@ -410,12 +403,6 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
                     </span>
                   )}
                 </div>
-                <button
-                  onClick={() => showLLMPrompt(reply.reply_id)}
-                  className="text-sm text-indigo-600 hover:text-indigo-500"
-                >
-                  View Prompt
-                </button>
               </div>
 
               {editingReply?.reply_id === reply.reply_id ? (
@@ -578,27 +565,7 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
         </div>
       )}
 
-      {/* LLM Prompt Modal */}
-      {showPrompt && (
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[80vh] overflow-hidden">
-            <div className="px-4 py-3 border-b">
-              <h3 className="text-lg font-medium">LLM Prompt</h3>
-            </div>
-            <div className="p-4 overflow-y-auto max-h-[calc(80vh-8rem)]">
-              <pre className="whitespace-pre-wrap text-sm">{showPrompt}</pre>
-            </div>
-            <div className="px-4 py-3 border-t text-right">
-              <button
-                onClick={() => setShowPrompt(null)}
-                className="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 };
