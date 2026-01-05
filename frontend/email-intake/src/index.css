@@ -1,3 +1,15 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Fix Quill editor overflow - prevents editor content from overlapping buttons */
+.quill {
+    display: flex;
+    flex-direction: column;
+}
+
+.quill .ql-container {
+    flex: 1;
+    overflow: auto;
+    min-height: 0;
+}
