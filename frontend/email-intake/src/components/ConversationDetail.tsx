@@ -537,6 +537,15 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
                       </p>
                     </div>
                     <p className="text-sm text-gray-500">To: {email.to.join(', ')}</p>
+                    {email.attachments && email.attachments.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {email.attachments.map((attachment, idx) => (
+                          <span key={idx} className="inline-flex items-center px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded">
+                            📎 {attachment}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <div
                       className="text-sm text-gray-900 mt-2"
                       dangerouslySetInnerHTML={{ __html: toSafeHtml(email.body || '') }}

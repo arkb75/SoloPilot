@@ -673,6 +673,12 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         # ------------------------------------------------------------------
         try:
             state_mgr = ConversationStateManager(table_name=TABLE_NAME)
+            
+            # Build attachments list with proposal version if PDF was sent
+            attachments_list = []
+            if storage_info and storage_info.get("version") is not None:
+                attachments_list.append(f"Proposal v{storage_info.get('version')}")
+            
             state_mgr.add_outbound_reply(
                 conversation_id,
                 {
@@ -683,10 +689,12 @@ def approve_reply(reply_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
                     "body": email_meta["body"],
                     "timestamp": now,
                     "direction": "outbound",
+                    "attachments": attachments_list,
                     "metadata": {
                         "approved_by": body.get("reviewed_by", "admin"),
                         "pending_reply_id": reply_id,
                         "email_type": email_meta.get("phase", "reply"),
+                        "proposal_version": storage_info.get("version") if storage_info else None,
                     },
                 },
             )
