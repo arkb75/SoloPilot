@@ -691,10 +691,6 @@ class ConversationStateManager:
         valid_phases = [
             "understanding",  # Clarifying requirements
             "proposal",  # Proposal creation + feedback loop
-            "documentation",  # Creating detailed plan
-            "awaiting_approval",  # Waiting for approval
-            "approved",  # Client approved
-            "archived",  # Archived
         ]
 
         if phase not in valid_phases:
