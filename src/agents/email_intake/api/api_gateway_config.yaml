@@ -307,6 +307,162 @@ paths:
         httpMethod: POST
         type: aws_proxy
 
+  # Wireframe endpoints
+  /conversations/{id}/wireframes:
+    get:
+      summary: List wireframe versions for a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: string
+      responses:
+        200:
+          description: List of wireframe versions
+        404:
+          description: Conversation not found
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
+        passthroughBehavior: when_no_match
+        httpMethod: POST
+        type: aws_proxy
+
+  /conversations/{id}/wireframes/generate:
+    post:
+      summary: Generate new wireframes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: string
+      responses:
+        200:
+          description: Wireframes generated
+        500:
+          description: Generation failed
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
+        passthroughBehavior: when_no_match
+        httpMethod: POST
+        type: aws_proxy
+
+  /conversations/{id}/wireframes/generation/{jobId}:
+    get:
+      summary: Get wireframe generation job status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: string
+        - name: jobId
+          in: path
+          required: true
+          type: string
+      responses:
+        200:
+          description: Job status
+        404:
+          description: Job not found
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
+        passthroughBehavior: when_no_match
+        httpMethod: POST
+        type: aws_proxy
+
+  /conversations/{id}/wireframes/{version}:
+    get:
+      summary: Get wireframe preview URL
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: string
+        - name: version
+          in: path
+          required: true
+          type: string
+      responses:
+        200:
+          description: Wireframe preview URL
+        404:
+          description: Wireframe not found
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
+        passthroughBehavior: when_no_match
+        httpMethod: POST
+        type: aws_proxy
+
+  /conversations/{id}/wireframes/{version}/screens/{screenId}:
+    put:
+      summary: Update wireframe screen content
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: string
+        - name: version
+          in: path
+          required: true
+          type: string
+        - name: screenId
+          in: path
+          required: true
+          type: string
+        - name: body
+          in: body
+          required: true
+          schema:
+            type: object
+            properties:
+              html:
+                type: string
+            required:
+              - html
+      responses:
+        200:
+          description: Screen updated
+        404:
+          description: Screen not found
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
+        passthroughBehavior: when_no_match
+        httpMethod: POST
+        type: aws_proxy
+
+  /conversations/{id}/wireframes/{version}/export/{format}:
+    get:
+      summary: Export wireframes in specified format
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: string
+        - name: version
+          in: path
+          required: true
+          type: string
+        - name: format
+          in: path
+          required: true
+          type: string
+          enum: ["react", "html"]
+      responses:
+        200:
+          description: Exported wireframes
+        404:
+          description: Wireframe not found
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
+        passthroughBehavior: when_no_match
+        httpMethod: POST
+        type: aws_proxy
+
 definitions:
   ConversationSummary:
     type: object

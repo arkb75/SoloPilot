@@ -691,6 +691,7 @@ class ConversationStateManager:
         valid_phases = [
             "understanding",  # Clarifying requirements
             "proposal",  # Proposal creation + feedback loop
+            "design",  # Wireframe generation + iteration
         ]
 
         if phase not in valid_phases:

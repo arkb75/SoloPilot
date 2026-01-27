@@ -5,6 +5,7 @@ import api from '../api/client';
 import ReplyEditor from './ReplyEditor';
 import { toSafeHtml } from '../utils/emailBody';
 import ProposalViewer from './ProposalViewer';
+import WireframeViewer from './WireframeViewer';
 import { RevisionComparison, ReviewDisplay } from './RevisionComparison';
 
 interface ConversationDetailProps {
@@ -571,6 +572,15 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
               onSelectProposal={setSelectedProposalVersion}
             />
           </div>
+        </div>
+      )}
+
+      {/* Wireframes Section - Visible for proposal and design phases */}
+      {(conversation.phase === 'proposal' || conversation.phase === 'design') && (
+        <div className="mb-6">
+          <WireframeViewer
+            conversationId={conversationId}
+          />
         </div>
       )}
 

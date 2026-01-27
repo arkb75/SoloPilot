@@ -188,6 +188,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Returns:
         Response dict with status code and message
     """
+    # Check if this is an async wireframe generation invocation
+    if event.get("action") == "generate_wireframes_async":
+        return _handle_async_wireframe_generation(event)
+
     try:
         # Extract S3 info from event
         record = event["Records"][0]
@@ -949,3 +953,128 @@ def _track_outbound_reply(
         logger.info(f"Tracked outbound {email_type} email for conversation {conversation_id}")
     except Exception as e:
         logger.warning(f"Failed to track outbound email: {str(e)}")
+
+
+def _handle_async_wireframe_generation(event: Dict[str, Any]) -> Dict[str, Any]:
+    """Handle async wireframe generation invocation.
+
+    This is called when the API Lambda invokes this Lambda asynchronously
+    to perform the actual wireframe generation.
+
+    Args:
+        event: Event with conversation_id and job_id
+
+    Returns:
+        Response dict with status
+    """
+    conversation_id = event.get("conversation_id")
+    job_id = event.get("job_id")
+
+    if not conversation_id or not job_id:
+        logger.error("Missing conversation_id or job_id in async wireframe event")
+        return {"statusCode": 400, "body": "Missing required parameters"}
+
+    logger.info(f"Starting async wireframe generation for {conversation_id}, job {job_id}")
+
+    try:
+        # Import job store and update status to in_progress
+        from src.storage.wireframe_job_store import WireframeJobStore, WireframeJob
+
+        job_store = WireframeJobStore()
+        job_store.update_status(job_id, WireframeJob.STATUS_IN_PROGRESS)
+
+        # Get conversation
+        state_manager = ConversationStateManager(table_name=DYNAMO_TABLE)
+        dynamodb_resource = boto3.resource("dynamodb")
+        table = dynamodb_resource.Table(DYNAMO_TABLE)
+        response = table.get_item(Key={"conversation_id": conversation_id})
+
+        if "Item" not in response:
+            job_store.update_status(
+                job_id, WireframeJob.STATUS_FAILED, error="Conversation not found"
+            )
+            return {"statusCode": 404, "body": "Conversation not found"}
+
+        conversation = response["Item"]
+
+        # Import wireframe generator
+        try:
+            from wireframe_generator import WireframeGenerator
+        except ImportError:
+            from src.agents.email_intake.wireframe_generator import WireframeGenerator
+
+        from src.storage import S3WireframeStore
+
+        # Generate wireframes
+        generator = WireframeGenerator()
+        screens, error = generator.generate_wireframes(conversation)
+
+        if error:
+            job_store.update_status(
+                job_id, WireframeJob.STATUS_FAILED, error=f"Generation failed: {error}"
+            )
+            return {"statusCode": 500, "body": f"Generation failed: {error}"}
+
+        # Generate combined preview
+        index_html = generator.generate_combined_preview(screens)
+
+        # Store in S3
+        s3_bucket = os.environ.get("DOCUMENT_BUCKET") or os.environ.get(
+            "ATTACHMENTS_BUCKET", "solopilot-attachments"
+        )
+        wireframe_store = S3WireframeStore(s3_bucket, table_name="wireframe_versions")
+
+        wireframe_version, store_error = wireframe_store.store_wireframes(
+            conversation_id=conversation_id,
+            screens=screens,
+            index_html=index_html,
+            metadata={
+                "project_type": conversation.get("requirements", {}).get("project_type"),
+                "project_title": conversation.get("requirements", {}).get("title"),
+            },
+        )
+
+        if store_error:
+            job_store.update_status(
+                job_id, WireframeJob.STATUS_FAILED, error=f"Storage failed: {store_error}"
+            )
+            return {"statusCode": 500, "body": f"Storage failed: {store_error}"}
+
+        # Update conversation phase to design if not already
+        current_phase = conversation.get("phase", "understanding")
+        if current_phase == "proposal":
+            state_manager.update_phase(
+                conversation_id, "design", metadata={"triggered_by": "wireframe_generation"}
+            )
+
+        # Update job status to completed with version
+        job_store.update_status(job_id, WireframeJob.STATUS_COMPLETED, version=wireframe_version.version)
+
+        logger.info(
+            f"Async wireframe generation completed for {conversation_id}, "
+            f"version {wireframe_version.version}, {len(screens)} screens"
+        )
+
+        return {
+            "statusCode": 200,
+            "body": json.dumps(
+                {
+                    "conversation_id": conversation_id,
+                    "job_id": job_id,
+                    "version": wireframe_version.version,
+                    "screen_count": len(screens),
+                    "success": True,
+                }
+            ),
+        }
+
+    except Exception as e:
+        logger.error(f"Error in async wireframe generation: {str(e)}", exc_info=True)
+        try:
+            from src.storage.wireframe_job_store import WireframeJobStore, WireframeJob
+
+            job_store = WireframeJobStore()
+            job_store.update_status(job_id, WireframeJob.STATUS_FAILED, error=str(e))
+        except Exception:
+            pass
+        return {"statusCode": 500, "body": f"Error: {str(e)}"}

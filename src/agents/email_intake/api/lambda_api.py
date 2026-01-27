@@ -70,6 +70,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         path = event.get("path", "")
         path_params = event.get("pathParameters", {})
         query_params = event.get("queryStringParameters", {}) or {}
+
+        # Handle CORS preflight OPTIONS requests
+        if http_method == "OPTIONS":
+            return {
+                "statusCode": 200,
+                "headers": {
+                    "Access-Control-Allow-Origin": CORS_ORIGIN,
+                    "Access-Control-Allow-Headers": "Content-Type,X-Api-Key,x-api-key,Authorization",
+                    "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+                    "Access-Control-Max-Age": "86400",
+                },
+                "body": "",
+            }
+
         body = json.loads(event.get("body", "{}")) if event.get("body") else {}
 
         # If pathParameters is empty but we have a path, try to extract IDs manually
@@ -126,6 +140,29 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 conv_id = path_params.get("id")
                 version = path_params.get("version") or ""
                 return annotate_vision(conv_id, version, body)
+            # Wireframe routes
+            if res == "/conversations/{id}/wireframes" and http_method == "GET":
+                return list_wireframes(path_params.get("id"))
+            if res == "/conversations/{id}/wireframes/generate" and http_method == "POST":
+                return generate_wireframes(path_params.get("id"))
+            if res == "/conversations/{id}/wireframes/generation/{jobId}" and http_method == "GET":
+                conv_id = path_params.get("id")
+                job_id = path_params.get("jobId") or ""
+                return get_wireframe_generation_status(conv_id, job_id)
+            if res == "/conversations/{id}/wireframes/{version}" and http_method == "GET":
+                conv_id = path_params.get("id")
+                version = path_params.get("version") or ""
+                return get_wireframe_url(conv_id, version)
+            if res == "/conversations/{id}/wireframes/{version}/screens/{screenId}" and http_method == "PUT":
+                conv_id = path_params.get("id")
+                version = path_params.get("version") or ""
+                screen_id = path_params.get("screenId") or ""
+                return update_wireframe_screen(conv_id, version, screen_id, body)
+            if res == "/conversations/{id}/wireframes/{version}/export/{format}" and http_method == "GET":
+                conv_id = path_params.get("id")
+                version = path_params.get("version") or ""
+                export_format = path_params.get("format") or "react"
+                return export_wireframes(conv_id, version, export_format)
             return {"statusCode": 404, "body": json.dumps({"error": "Not found"})}
 
         if resource:
@@ -179,6 +216,65 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         response = {"statusCode": 400, "body": json.dumps({"error": "Invalid path format"})}
                 else:
                     response = {"statusCode": 404, "body": json.dumps({"error": "Not found"})}
+            # Fallback for wireframe routes
+            elif normalized_path.endswith("/wireframes") and http_method == "GET":
+                parts = [s for s in normalized_path.split("/") if s]
+                if "conversations" in parts:
+                    idx = parts.index("conversations")
+                    conversation_id = parts[idx + 1] if idx + 1 < len(parts) else None
+                    if conversation_id:
+                        response = list_wireframes(conversation_id)
+                    else:
+                        response = {"statusCode": 400, "body": json.dumps({"error": "Invalid path format"})}
+                else:
+                    response = {"statusCode": 404, "body": json.dumps({"error": "Not found"})}
+            elif normalized_path.endswith("/wireframes/generate") and http_method == "POST":
+                parts = [s for s in normalized_path.split("/") if s]
+                if "conversations" in parts:
+                    idx = parts.index("conversations")
+                    conversation_id = parts[idx + 1] if idx + 1 < len(parts) else None
+                    if conversation_id:
+                        response = generate_wireframes(conversation_id)
+                    else:
+                        response = {"statusCode": 400, "body": json.dumps({"error": "Invalid path format"})}
+                else:
+                    response = {"statusCode": 404, "body": json.dumps({"error": "Not found"})}
+            elif "/wireframes/" in normalized_path and http_method == "GET":
+                parts = [s for s in normalized_path.split("/") if s]
+                if "conversations" in parts and "wireframes" in parts:
+                    ci = parts.index("conversations")
+                    wi = parts.index("wireframes")
+                    conversation_id = parts[ci + 1] if ci + 1 < len(parts) else None
+                    version = parts[wi + 1] if wi + 1 < len(parts) else None
+                    # Check if it's an export request
+                    if "export" in parts:
+                        ei = parts.index("export")
+                        export_format = parts[ei + 1] if ei + 1 < len(parts) else "react"
+                        if conversation_id and version:
+                            response = export_wireframes(conversation_id, version, export_format)
+                        else:
+                            response = {"statusCode": 400, "body": json.dumps({"error": "Invalid path format"})}
+                    elif conversation_id and version:
+                        response = get_wireframe_url(conversation_id, version)
+                    else:
+                        response = {"statusCode": 400, "body": json.dumps({"error": "Invalid path format"})}
+                else:
+                    response = {"statusCode": 404, "body": json.dumps({"error": "Not found"})}
+            elif "/wireframes/" in normalized_path and "/screens/" in normalized_path and http_method == "PUT":
+                parts = [s for s in normalized_path.split("/") if s]
+                if "conversations" in parts and "wireframes" in parts and "screens" in parts:
+                    ci = parts.index("conversations")
+                    wi = parts.index("wireframes")
+                    si = parts.index("screens")
+                    conversation_id = parts[ci + 1] if ci + 1 < len(parts) else None
+                    version = parts[wi + 1] if wi + 1 < len(parts) else None
+                    screen_id = parts[si + 1] if si + 1 < len(parts) else None
+                    if conversation_id and version and screen_id:
+                        response = update_wireframe_screen(conversation_id, version, screen_id, body)
+                    else:
+                        response = {"statusCode": 400, "body": json.dumps({"error": "Invalid path format"})}
+                else:
+                    response = {"statusCode": 404, "body": json.dumps({"error": "Not found"})}
             else:
                 response = {"statusCode": 404, "body": json.dumps({"error": "Not found"})}
 
@@ -186,8 +282,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if "statusCode" in response:
             response["headers"] = {
                 "Access-Control-Allow-Origin": CORS_ORIGIN,
-                "Access-Control-Allow-Headers": "Content-Type,X-Api-Key",
-                "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type,X-Api-Key,x-api-key,Authorization",
+                "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
             }
 
         return response
@@ -198,8 +294,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "statusCode": 500,
             "headers": {
                 "Access-Control-Allow-Origin": CORS_ORIGIN,
-                "Access-Control-Allow-Headers": "Content-Type,X-Api-Key",
-                "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type,X-Api-Key,x-api-key,Authorization",
+                "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
             },
             "body": json.dumps({"error": "Internal server error"}),
         }
@@ -1787,3 +1883,350 @@ def delete_conversation(conversation_id: str) -> Dict[str, Any]:
             "statusCode": 500,
             "body": json.dumps({"error": "Failed to delete conversation"}),
         }
+
+
+# =============================================================================
+# Wireframe Endpoints
+# =============================================================================
+
+def list_wireframes(conversation_id: str) -> Dict[str, Any]:
+    """List all wireframe versions for a conversation.
+
+    Args:
+        conversation_id: Conversation ID
+
+    Returns:
+        API response with list of wireframes
+    """
+    try:
+        from src.storage import S3WireframeStore
+
+        s3_bucket = os.environ.get("DOCUMENT_BUCKET") or os.environ.get(
+            "ATTACHMENTS_BUCKET", "solopilot-attachments"
+        )
+        wireframe_store = S3WireframeStore(s3_bucket, table_name="wireframe_versions")
+
+        versions = wireframe_store.version_index.list_versions(conversation_id)
+
+        return {
+            "statusCode": 200,
+            "body": json.dumps(
+                {
+                    "conversation_id": conversation_id,
+                    "wireframes": [
+                        {
+                            "version": v.version,
+                            "created_at": v.created_at,
+                            "screen_count": v.screen_count,
+                        }
+                        for v in versions
+                    ],
+                    "count": len(versions),
+                },
+                default=str,
+            ),
+        }
+
+    except Exception as e:
+        logger.error(f"Error listing wireframes: {str(e)}", exc_info=True)
+        return {"statusCode": 500, "body": json.dumps({"error": "Failed to list wireframes"})}
+
+
+def generate_wireframes(conversation_id: str) -> Dict[str, Any]:
+    """Start async wireframe generation for a conversation.
+
+    This immediately returns 202 Accepted with a job_id.
+    The actual generation runs in a background Lambda invocation.
+    Frontend should poll the status endpoint.
+
+    Args:
+        conversation_id: Conversation ID
+
+    Returns:
+        API response with job_id for status polling
+    """
+    try:
+        table = dynamodb.Table(TABLE_NAME)
+
+        # Get conversation to validate it exists
+        response = table.get_item(Key={"conversation_id": conversation_id})
+
+        if "Item" not in response:
+            return {"statusCode": 404, "body": json.dumps({"error": "Conversation not found"})}
+
+        # Import wireframe job store
+        from src.storage.wireframe_job_store import WireframeJobStore, WireframeJob
+
+        job_store = WireframeJobStore()
+
+        # Check for existing active job
+        active_job = job_store.get_active_job(conversation_id)
+        if active_job:
+            return {
+                "statusCode": 202,
+                "body": json.dumps(
+                    {
+                        "job_id": active_job.job_id,
+                        "conversation_id": conversation_id,
+                        "status": active_job.status,
+                        "message": "Wireframe generation already in progress",
+                    }
+                ),
+            }
+
+        # Create new job
+        job = job_store.create_job(conversation_id)
+
+        # Invoke background Lambda for actual generation
+        lambda_client = boto3.client("lambda")
+        function_name = os.environ.get(
+            "WIREFRAME_GENERATOR_LAMBDA", "solopilot-email-intake"
+        )
+
+        try:
+            lambda_client.invoke(
+                FunctionName=function_name,
+                InvocationType="Event",  # Async invocation
+                Payload=json.dumps(
+                    {
+                        "action": "generate_wireframes_async",
+                        "conversation_id": conversation_id,
+                        "job_id": job.job_id,
+                    }
+                ),
+            )
+            logger.info(f"Triggered async wireframe generation for {conversation_id}, job {job.job_id}")
+        except Exception as invoke_error:
+            logger.error(f"Error invoking background Lambda: {str(invoke_error)}")
+            job_store.update_status(
+                job.job_id,
+                WireframeJob.STATUS_FAILED,
+                error=f"Failed to start background generation: {str(invoke_error)}",
+            )
+            return {
+                "statusCode": 500,
+                "body": json.dumps({"error": "Failed to start wireframe generation"}),
+            }
+
+        return {
+            "statusCode": 202,
+            "body": json.dumps(
+                {
+                    "job_id": job.job_id,
+                    "conversation_id": conversation_id,
+                    "status": "pending",
+                    "message": "Wireframe generation started",
+                }
+            ),
+        }
+
+    except Exception as e:
+        logger.error(f"Error starting wireframe generation: {str(e)}", exc_info=True)
+        return {"statusCode": 500, "body": json.dumps({"error": "Failed to start wireframe generation"})}
+
+
+def get_wireframe_generation_status(conversation_id: str, job_id: str) -> Dict[str, Any]:
+    """Get status of a wireframe generation job.
+
+    Args:
+        conversation_id: Conversation ID
+        job_id: Job ID from generate_wireframes
+
+    Returns:
+        API response with job status
+    """
+    try:
+        from src.storage.wireframe_job_store import WireframeJobStore
+
+        job_store = WireframeJobStore()
+        job = job_store.get_job(job_id)
+
+        if not job:
+            return {"statusCode": 404, "body": json.dumps({"error": "Job not found"})}
+
+        if job.conversation_id != conversation_id:
+            return {"statusCode": 404, "body": json.dumps({"error": "Job not found"})}
+
+        return {
+            "statusCode": 200,
+            "body": json.dumps(job.to_dict(), default=str),
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting wireframe job status: {str(e)}", exc_info=True)
+        return {"statusCode": 500, "body": json.dumps({"error": "Failed to get job status"})}
+
+
+def get_wireframe_url(conversation_id: str, version: str) -> Dict[str, Any]:
+    """Get presigned URL for a wireframe version.
+
+    Args:
+        conversation_id: Conversation ID
+        version: Version number as string
+
+    Returns:
+        API response with presigned URL
+    """
+    try:
+        from src.storage import S3WireframeStore
+
+        s3_bucket = os.environ.get("DOCUMENT_BUCKET") or os.environ.get(
+            "ATTACHMENTS_BUCKET", "solopilot-attachments"
+        )
+        wireframe_store = S3WireframeStore(s3_bucket, table_name="wireframe_versions")
+
+        version_num = int(version)
+        url = wireframe_store.get_wireframe_url(conversation_id, version_num)
+
+        if not url:
+            return {"statusCode": 404, "body": json.dumps({"error": "Wireframe not found"})}
+
+        # Also get metadata for screen info
+        metadata = wireframe_store.get_metadata(conversation_id, version_num)
+
+        return {
+            "statusCode": 200,
+            "body": json.dumps(
+                {
+                    "conversation_id": conversation_id,
+                    "version": version_num,
+                    "url": url,
+                    "screens": metadata.get("screens", []) if metadata else [],
+                },
+                default=str,
+            ),
+        }
+
+    except ValueError:
+        return {"statusCode": 400, "body": json.dumps({"error": "Invalid version number"})}
+    except Exception as e:
+        logger.error(f"Error getting wireframe URL: {str(e)}", exc_info=True)
+        return {"statusCode": 500, "body": json.dumps({"error": "Failed to get wireframe URL"})}
+
+
+def update_wireframe_screen(
+    conversation_id: str, version: str, screen_id: str, body: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Update HTML for a specific wireframe screen.
+
+    Args:
+        conversation_id: Conversation ID
+        version: Version number as string
+        screen_id: Screen ID
+        body: Request body with 'html' field
+
+    Returns:
+        API response
+    """
+    try:
+        new_html = body.get("html")
+        if not new_html:
+            return {"statusCode": 400, "body": json.dumps({"error": "html field is required"})}
+
+        from src.storage import S3WireframeStore
+
+        s3_bucket = os.environ.get("DOCUMENT_BUCKET") or os.environ.get(
+            "ATTACHMENTS_BUCKET", "solopilot-attachments"
+        )
+        wireframe_store = S3WireframeStore(s3_bucket, table_name="wireframe_versions")
+
+        version_num = int(version)
+        success = wireframe_store.update_screen(conversation_id, version_num, screen_id, new_html)
+
+        if not success:
+            return {"statusCode": 404, "body": json.dumps({"error": "Screen not found"})}
+
+        return {
+            "statusCode": 200,
+            "body": json.dumps(
+                {
+                    "conversation_id": conversation_id,
+                    "version": version_num,
+                    "screen_id": screen_id,
+                    "updated": True,
+                }
+            ),
+        }
+
+    except ValueError:
+        return {"statusCode": 400, "body": json.dumps({"error": "Invalid version number"})}
+    except Exception as e:
+        logger.error(f"Error updating wireframe screen: {str(e)}", exc_info=True)
+        return {"statusCode": 500, "body": json.dumps({"error": "Failed to update screen"})}
+
+
+def export_wireframes(
+    conversation_id: str, version: str, export_format: str
+) -> Dict[str, Any]:
+    """Export wireframes in specified format.
+
+    Args:
+        conversation_id: Conversation ID
+        version: Version number as string
+        export_format: Export format ('react', 'vue', 'html')
+
+    Returns:
+        API response with exported code
+    """
+    try:
+        from src.storage import S3WireframeStore
+
+        s3_bucket = os.environ.get("DOCUMENT_BUCKET") or os.environ.get(
+            "ATTACHMENTS_BUCKET", "solopilot-attachments"
+        )
+        wireframe_store = S3WireframeStore(s3_bucket, table_name="wireframe_versions")
+
+        version_num = int(version)
+
+        if export_format == "react":
+            components = wireframe_store.export_as_react(conversation_id, version_num)
+            if not components:
+                return {"statusCode": 404, "body": json.dumps({"error": "Wireframe not found"})}
+
+            return {
+                "statusCode": 200,
+                "body": json.dumps(
+                    {
+                        "conversation_id": conversation_id,
+                        "version": version_num,
+                        "format": "react",
+                        "components": components,
+                    }
+                ),
+            }
+
+        elif export_format == "html":
+            # Get all screen HTML
+            metadata = wireframe_store.get_metadata(conversation_id, version_num)
+            if not metadata:
+                return {"statusCode": 404, "body": json.dumps({"error": "Wireframe not found"})}
+
+            screens = {}
+            for screen in metadata.get("screens", []):
+                html = wireframe_store.get_screen_html(conversation_id, version_num, screen["id"])
+                if html:
+                    screens[screen["id"]] = html
+
+            return {
+                "statusCode": 200,
+                "body": json.dumps(
+                    {
+                        "conversation_id": conversation_id,
+                        "version": version_num,
+                        "format": "html",
+                        "screens": screens,
+                    }
+                ),
+            }
+
+        else:
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": f"Unsupported format: {export_format}"}),
+            }
+
+    except ValueError:
+        return {"statusCode": 400, "body": json.dumps({"error": "Invalid version number"})}
+    except Exception as e:
+        logger.error(f"Error exporting wireframes: {str(e)}", exc_info=True)
+        return {"statusCode": 500, "body": json.dumps({"error": "Failed to export wireframes"})}

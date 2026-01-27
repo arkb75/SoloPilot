@@ -44,6 +44,7 @@ export type ConversationPhase =
   | 'proposal'
   | 'proposal_draft'
   | 'proposal_feedback'
+  | 'design'
   | 'documentation'
   | 'awaiting_approval'
   | 'approved'

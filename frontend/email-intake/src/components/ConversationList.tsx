@@ -118,6 +118,7 @@ const ConversationList: React.FC<ConversationListProps> = ({ onSelectConversatio
       proposal: 'bg-purple-100 text-purple-800',
       proposal_draft: 'bg-purple-100 text-purple-800',
       proposal_feedback: 'bg-yellow-100 text-yellow-800',
+      design: 'bg-teal-100 text-teal-800',
       documentation: 'bg-indigo-100 text-indigo-800',
       awaiting_approval: 'bg-orange-100 text-orange-800',
       approved: 'bg-green-100 text-green-800',

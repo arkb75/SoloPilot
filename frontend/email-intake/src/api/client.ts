@@ -234,6 +234,74 @@ export const api = {
     }>(`/conversations/${conversationId}/proposals/${baseVersion}/annotate-vision`, payload);
     return response.data;
   },
+
+  // Wireframe endpoints
+  listWireframes: async (conversationId: string) => {
+    const response = await client.get<{
+      conversation_id: string;
+      wireframes: Array<{
+        version: number;
+        created_at: string;
+        screen_count: number;
+      }>;
+      count: number;
+    }>(`/conversations/${conversationId}/wireframes`);
+    return response.data;
+  },
+
+  generateWireframes: async (conversationId: string) => {
+    const response = await client.post<{
+      job_id: string;
+      conversation_id: string;
+      status: string;
+      message: string;
+    }>(`/conversations/${conversationId}/wireframes/generate`);
+    return response.data;
+  },
+
+  getGenerationStatus: async (conversationId: string, jobId: string) => {
+    const response = await client.get<{
+      job_id: string;
+      conversation_id: string;
+      status: 'pending' | 'in_progress' | 'completed' | 'failed';
+      created_at: string;
+      completed_at: string | null;
+      version: number | null;
+      error: string | null;
+    }>(`/conversations/${conversationId}/wireframes/generation/${jobId}`);
+    return response.data;
+  },
+
+  getWireframeUrl: async (conversationId: string, version: number) => {
+    const response = await client.get<{
+      conversation_id: string;
+      version: number;
+      url: string;
+      screens: Array<{ id: string; name: string; description?: string }>;
+    }>(`/conversations/${conversationId}/wireframes/${version}`);
+    return response.data;
+  },
+
+  updateWireframeScreen: async (conversationId: string, version: number, screenId: string, html: string) => {
+    const response = await client.put<{
+      conversation_id: string;
+      version: number;
+      screen_id: string;
+      updated: boolean;
+    }>(`/conversations/${conversationId}/wireframes/${version}/screens/${screenId}`, { html });
+    return response.data;
+  },
+
+  exportWireframes: async (conversationId: string, version: number, format: 'react' | 'html') => {
+    const response = await client.get<{
+      conversation_id: string;
+      version: number;
+      format: string;
+      components?: Record<string, string>;
+      screens?: Record<string, string>;
+    }>(`/conversations/${conversationId}/wireframes/${version}/export/${format}`);
+    return response.data;
+  },
 };
 
 export default api;
