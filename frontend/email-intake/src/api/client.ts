@@ -277,7 +277,7 @@ export const api = {
       conversation_id: string;
       version: number;
       url: string;
-      screens: Array<{ id: string; name: string; description?: string }>;
+      screens: Array<{ id: string; name: string; description?: string; url?: string }>;
     }>(`/conversations/${conversationId}/wireframes/${version}`);
     return response.data;
   },

@@ -18,6 +18,7 @@ interface Screen {
     id: string;
     name: string;
     description?: string;
+    url?: string;
 }
 
 export default function WireframeViewer({
@@ -62,10 +63,14 @@ export default function WireframeViewer({
     const loadWireframePreview = async (version: number) => {
         try {
             const response = await api.getWireframeUrl(conversationId, version);
-            setPreviewUrl(response.url);
             setScreens(response.screens || []);
             if (response.screens?.length > 0) {
-                setSelectedScreen(response.screens[0].id);
+                const firstScreen = response.screens[0];
+                setSelectedScreen(firstScreen.id);
+                // Use the individual screen URL, not the index.html URL
+                setPreviewUrl(firstScreen.url || response.url);
+            } else {
+                setPreviewUrl(response.url);
             }
         } catch (err) {
             console.error('Failed to load wireframe preview:', err);
@@ -295,7 +300,12 @@ export default function WireframeViewer({
                         {screens.map((screen) => (
                             <button
                                 key={screen.id}
-                                onClick={() => setSelectedScreen(screen.id)}
+                                onClick={() => {
+                                    setSelectedScreen(screen.id);
+                                    if (screen.url) {
+                                        setPreviewUrl(screen.url);
+                                    }
+                                }}
                                 className={`w-full text-left px-3 py-2 text-sm truncate ${selectedScreen === screen.id
                                     ? 'bg-blue-50 text-blue-700 border-l-2 border-blue-500'
                                     : 'text-gray-700 hover:bg-gray-100'

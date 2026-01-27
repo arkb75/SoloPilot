@@ -2065,7 +2065,7 @@ def get_wireframe_url(conversation_id: str, version: str) -> Dict[str, Any]:
         version: Version number as string
 
     Returns:
-        API response with presigned URL
+        API response with presigned URL and screen URLs
     """
     try:
         from src.storage import S3WireframeStore
@@ -2083,6 +2083,20 @@ def get_wireframe_url(conversation_id: str, version: str) -> Dict[str, Any]:
 
         # Also get metadata for screen info
         metadata = wireframe_store.get_metadata(conversation_id, version_num)
+        screens = metadata.get("screens", []) if metadata else []
+
+        # Generate presigned URL for each screen
+        screens_with_urls = []
+        for screen in screens:
+            screen_url = wireframe_store.get_wireframe_url(
+                conversation_id, version_num, screen_id=screen.get("id")
+            )
+            screens_with_urls.append({
+                "id": screen.get("id"),
+                "name": screen.get("name"),
+                "description": screen.get("description", ""),
+                "url": screen_url,
+            })
 
         return {
             "statusCode": 200,
@@ -2091,7 +2105,7 @@ def get_wireframe_url(conversation_id: str, version: str) -> Dict[str, Any]:
                     "conversation_id": conversation_id,
                     "version": version_num,
                     "url": url,
-                    "screens": metadata.get("screens", []) if metadata else [],
+                    "screens": screens_with_urls,
                 },
                 default=str,
             ),
