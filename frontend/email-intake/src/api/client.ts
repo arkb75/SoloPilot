@@ -235,6 +235,30 @@ export const api = {
     return response.data;
   },
 
+  annotateWireframeVision: async (
+    conversationId: string,
+    baseVersion: number,
+    screenId: string,
+    payload: {
+      screenshots: Array<{ screenId: string; imageBase64: string }>;
+      annotations?: any[];
+      prompt?: string;
+    }
+  ) => {
+    const response = await client.post<{
+      success?: boolean;
+      job_id?: string;
+      status?: string;
+      message?: string;
+      conversation_id: string;
+      base_version?: number;
+      new_version?: number;
+      edited_screen?: string;
+      error?: string;
+    }>(`/conversations/${conversationId}/wireframes/${baseVersion}/screens/${screenId}/annotate-vision`, payload);
+    return response.data;
+  },
+
   // Wireframe endpoints
   listWireframes: async (conversationId: string) => {
     const response = await client.get<{

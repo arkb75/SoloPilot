@@ -158,6 +158,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 version = path_params.get("version") or ""
                 screen_id = path_params.get("screenId") or ""
                 return update_wireframe_screen(conv_id, version, screen_id, body)
+            if res == "/conversations/{id}/wireframes/{version}/screens/{screenId}/annotate-vision" and http_method == "POST":
+                conv_id = path_params.get("id")
+                version = path_params.get("version") or ""
+                screen_id = path_params.get("screenId") or ""
+                return annotate_wireframe_vision(conv_id, version, screen_id, body)
             if res == "/conversations/{id}/wireframes/{version}/export/{format}" and http_method == "GET":
                 conv_id = path_params.get("id")
                 version = path_params.get("version") or ""
@@ -2168,6 +2173,123 @@ def update_wireframe_screen(
         logger.error(f"Error updating wireframe screen: {str(e)}", exc_info=True)
         return {"statusCode": 500, "body": json.dumps({"error": "Failed to update screen"})}
 
+
+def annotate_wireframe_vision(
+    conversation_id: str, version: str, screen_id: str, body: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Apply vision-guided edits asynchronously.
+
+    Args:
+        conversation_id: Conversation ID
+        version: Base version number as string
+        screen_id: Screen ID to edit
+        body: Request body with screenshots, annotations, and prompt
+
+    Returns:
+        API response with job_id
+    """
+    try:
+        body = body or {}
+        screenshots = body.get("screenshots", [])
+        
+        if not screenshots:
+            return {"statusCode": 400, "body": json.dumps({"error": "screenshots array is required"})}
+
+        # Validate base version
+        try:
+            int(version)
+        except ValueError:
+            return {"statusCode": 400, "body": json.dumps({"error": "Invalid base version"})}
+
+        # Create job tracking
+        from src.storage.wireframe_job_store import WireframeJobStore, WireframeJob
+        job_store = WireframeJobStore()
+        
+        # Check for active job? Optional, but let's allow overlapping edits for now 
+        # (though better not to to avoid conflicting base versions).
+        # But for now, just create new job.
+        
+        job = job_store.create_job(conversation_id)
+
+        # Invoke background Lambda
+        lambda_client = boto3.client("lambda")
+        function_name = os.environ.get(
+            "WIREFRAME_GENERATOR_LAMBDA", "solopilot-email-intake"
+        )
+
+        # Lambda async invocation has 256KB payload limit
+        # Store large payloads in S3 and pass the reference
+        payload_data = {
+            "action": "annotate_vision_async",
+            "conversation_id": conversation_id,
+            "job_id": job.job_id,
+            "base_version": version,
+            "screen_id": screen_id,
+        }
+
+        payload_json = json.dumps(body)
+        if len(payload_json) > 200000:  # ~200KB threshold (leave room for other fields)
+            # Store payload in S3
+            payload_s3_key = f"vision-payloads/{conversation_id}/{job.job_id}/payload.json"
+            try:
+                s3.put_object(
+                    Bucket=S3_BUCKET,
+                    Key=payload_s3_key,
+                    Body=payload_json.encode("utf-8"),
+                    ContentType="application/json"
+                )
+                payload_data["payload_s3_key"] = payload_s3_key
+                payload_data["payload_s3_bucket"] = S3_BUCKET
+                logger.info(f"Stored large payload ({len(payload_json)} bytes) in S3: {payload_s3_key}")
+            except Exception as s3_error:
+                logger.error(f"Error storing payload in S3: {str(s3_error)}")
+                job_store.update_status(
+                    job.job_id,
+                    WireframeJob.STATUS_FAILED,
+                    error=f"Failed to store payload in S3: {str(s3_error)}",
+                )
+                return {
+                    "statusCode": 500,
+                    "body": json.dumps({"error": "Failed to store annotation payload"}),
+                }
+        else:
+            # Small payload, include inline
+            payload_data["payload"] = body
+
+        try:
+            lambda_client.invoke(
+                FunctionName=function_name,
+                InvocationType="Event",  # Async invocation
+                Payload=json.dumps(payload_data),
+            )
+            logger.info(f"Triggered async vision annotation for {conversation_id}, job {job.job_id}")
+        except Exception as invoke_error:
+            logger.error(f"Error invoking background Lambda: {str(invoke_error)}")
+            job_store.update_status(
+                job.job_id,
+                WireframeJob.STATUS_FAILED,
+                error=f"Failed to start background annotation: {str(invoke_error)}",
+            )
+            return {
+                "statusCode": 500,
+                "body": json.dumps({"error": "Failed to start annotation job"}),
+            }
+
+        return {
+            "statusCode": 202,
+            "body": json.dumps(
+                {
+                    "job_id": job.job_id,
+                    "conversation_id": conversation_id,
+                    "status": "pending",
+                    "message": "Vision edit processing started",
+                }
+            ),
+        }
+
+    except Exception as e:
+        logger.error(f"Error starting annotation job: {str(e)}", exc_info=True)
+        return {"statusCode": 500, "body": json.dumps({"error": "Failed to start annotation job"})}
 
 def export_wireframes(
     conversation_id: str, version: str, export_format: str

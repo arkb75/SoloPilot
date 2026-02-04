@@ -246,32 +246,53 @@ const ConversationDetail: React.FC<ConversationDetailProps> = ({ conversationId,
       // Load review
       if (reply.review) {
         // Use cached review from reply data
-        setReplyReviews(prev => ({
-          ...prev,
-          [reply.reply_id]: reply.review!
-        }));
-      } else if (!replyReviews[reply.reply_id] && !loadingReviews.has(reply.reply_id)) {
+        setReplyReviews(prev => {
+          // Only update if not already set
+          if (prev[reply.reply_id]) return prev;
+          return {
+            ...prev,
+            [reply.reply_id]: reply.review!
+          };
+        });
+      } else {
         // Load review from API only if not already loaded or loading
-        loadReplyReview(reply.reply_id);
+        // Use functional update to check current state without adding to dependencies
+        setReplyReviews(prev => {
+          if (prev[reply.reply_id]) return prev; // Already loaded
+          // Schedule load review API call
+          setLoadingReviews(loading => {
+            if (loading.has(reply.reply_id)) return loading; // Already loading
+            // Call loadReplyReview outside of state setter
+            setTimeout(() => loadReplyReview(reply.reply_id), 0);
+            return loading;
+          });
+          return prev;
+        });
       }
 
       // Load revision if available
       if (reply.revision) {
-        setRevisions(prev => ({
-          ...prev,
-          [reply.reply_id]: reply.revision!
-        }));
+        setRevisions(prev => {
+          if (prev[reply.reply_id]) return prev; // Already set
+          return {
+            ...prev,
+            [reply.reply_id]: reply.revision!
+          };
+        });
 
         // Auto-select revised version if it's successful and user hasn't selected yet
-        if (reply.revision.revision_successful && !selectedVersion[reply.reply_id]) {
-          setSelectedVersion(prev => ({
-            ...prev,
-            [reply.reply_id]: 'revised'
-          }));
+        if (reply.revision.revision_successful) {
+          setSelectedVersion(prev => {
+            if (prev[reply.reply_id]) return prev; // Already selected
+            return {
+              ...prev,
+              [reply.reply_id]: 'revised'
+            };
+          });
         }
       }
     });
-  }, [pendingReplies, loadReplyReview, replyReviews, loadingReviews, selectedVersion]);
+  }, [pendingReplies, loadReplyReview]);
 
   if (loading) {
     return (

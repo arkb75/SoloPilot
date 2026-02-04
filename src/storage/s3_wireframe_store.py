@@ -241,6 +241,159 @@ class S3WireframeStore:
             logger.error(f"Error getting metadata: {str(e)}")
             return None
 
+    def allocate_version(self, conversation_id: str) -> Optional[int]:
+        """Allocate the next version number.
+
+        Args:
+            conversation_id: Conversation ID
+
+        Returns:
+            The allocated version number or None on error
+        """
+        try:
+            return self.version_index.allocate_next_version(conversation_id)
+        except Exception as e:
+            logger.error(f"Error allocating version: {str(e)}")
+            return None
+
+    def get_all_screens(
+        self, conversation_id: str, version: int
+    ) -> Optional[Dict[str, str]]:
+        """Get all screen HTML content for a wireframe version.
+
+        Args:
+            conversation_id: Conversation ID
+            version: Version number
+
+        Returns:
+            Dict of {screen_id: html_content} or None
+        """
+        try:
+            metadata = self.get_metadata(conversation_id, version)
+            if not metadata:
+                return None
+
+            screens = metadata.get("screens", [])
+            result = {}
+
+            for screen in screens:
+                screen_id = screen.get("id")
+                if screen_id:
+                    html = self.get_screen_html(conversation_id, version, screen_id)
+                    if html:
+                        result[screen_id] = html
+
+            return result if result else None
+
+        except Exception as e:
+            logger.error(f"Error getting all screens: {str(e)}")
+            return None
+
+    def store_wireframe(
+        self,
+        conversation_id: str,
+        version: int,
+        screens: Dict[str, str],
+        screens_metadata: List[Dict[str, Any]],
+    ) -> bool:
+        """Store a wireframe version with pre-allocated version number.
+
+        Args:
+            conversation_id: Conversation ID
+            version: Pre-allocated version number
+            screens: Dict of {screen_id: html_content}
+            screens_metadata: List of screen metadata dicts
+
+        Returns:
+            True if successful
+        """
+        try:
+            s3_key_prefix = f"wireframes/{conversation_id}/v{version:04d}"
+
+            # Build index.html from screens
+            screen_links = []
+            for screen_id, html in screens.items():
+                # Find screen name from metadata
+                screen_name = screen_id
+                for meta in screens_metadata:
+                    if meta.get("id") == screen_id:
+                        screen_name = meta.get("name", screen_id)
+                        break
+                screen_links.append(
+                    f'<a href="screens/{screen_id}.html" class="block p-4 bg-white rounded-lg shadow hover:shadow-md transition-shadow">'
+                    f'<h3 class="font-semibold text-gray-800">{screen_name}</h3></a>'
+                )
+
+            index_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wireframe Preview</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold text-gray-800 mb-2">Wireframe Preview</h1>
+        <p class="text-gray-600 mb-8">Click a screen to view the full wireframe</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {''.join(screen_links)}
+        </div>
+    </div>
+</body>
+</html>"""
+
+            # Store index.html
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=f"{s3_key_prefix}/index.html",
+                Body=index_html,
+                ContentType="text/html",
+            )
+
+            # Store each screen
+            for screen_id, html in screens.items():
+                screen_key = f"{s3_key_prefix}/screens/{screen_id}.html"
+                self.s3_client.put_object(
+                    Bucket=self.bucket_name,
+                    Key=screen_key,
+                    Body=html,
+                    ContentType="text/html",
+                )
+
+            # Store metadata
+            full_metadata = {
+                "version": version,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "screen_count": len(screens),
+                "screens": screens_metadata,
+            }
+
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=f"{s3_key_prefix}/metadata.json",
+                Body=json.dumps(full_metadata, default=str),
+                ContentType="application/json",
+            )
+
+            # Record version in DynamoDB
+            self.version_index.record_version(
+                conversation_id=conversation_id,
+                version=version,
+                s3_key=s3_key_prefix,
+                screen_count=len(screens),
+                metadata={
+                    "screen_names": [m.get("name", m.get("id", "")) for m in screens_metadata],
+                },
+            )
+
+            logger.info(f"Stored wireframe v{version} for {conversation_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error storing wireframe: {str(e)}")
+            return False
+
     def export_as_react(
         self, conversation_id: str, version: int
     ) -> Optional[Dict[str, str]]:

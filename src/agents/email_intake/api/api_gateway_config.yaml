@@ -434,6 +434,52 @@ paths:
         httpMethod: POST
         type: aws_proxy
 
+  /conversations/{id}/wireframes/{version}/screens/{screenId}/annotate-vision:
+    post:
+      summary: Apply vision-guided edits to a wireframe screen
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: string
+        - name: version
+          in: path
+          required: true
+          type: string
+        - name: screenId
+          in: path
+          required: true
+          type: string
+        - name: body
+          in: body
+          required: true
+          schema:
+            type: object
+            properties:
+              screenshots:
+                type: array
+                items:
+                  type: object
+              annotations:
+                type: array
+                items:
+                  type: object
+              prompt:
+                type: string
+      responses:
+        202:
+          description: Vision edit job started
+        200:
+          description: Edit completed synchronously
+        404:
+          description: Screen not found
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EmailAgentApiLambda.Arn}/invocations"
+        passthroughBehavior: when_no_match
+        httpMethod: POST
+        type: aws_proxy
+
   /conversations/{id}/wireframes/{version}/export/{format}:
     get:
       summary: Export wireframes in specified format

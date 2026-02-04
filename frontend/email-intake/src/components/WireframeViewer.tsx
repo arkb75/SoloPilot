@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import api from '../api/client';
+import WireframeEditor from './WireframeEditor';
 
 interface WireframeViewerProps {
     conversationId: string;
@@ -37,6 +38,9 @@ export default function WireframeViewer({
     const [exporting, setExporting] = useState(false);
     const [toastMessage, setToastMessage] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
 
+    // Editor State
+    const [editingScreen, setEditingScreen] = useState<{ id: string; name: string; url: string } | null>(null);
+
     const showToast = (message: string, tone: 'info' | 'success' | 'error' = 'info') => {
         setToastMessage({ message, tone });
         setTimeout(() => setToastMessage(null), 3000);
@@ -50,7 +54,12 @@ export default function WireframeViewer({
 
             if (response.wireframes?.length > 0) {
                 const latestVersion = response.wireframes[0].version;
-                setCurrentVersion(selectedVersion || latestVersion);
+                if (!currentVersion) {
+                    setCurrentVersion(selectedVersion || latestVersion);
+                    onSelectWireframe?.(selectedVersion || latestVersion);
+                } else if (selectedVersion && selectedVersion !== currentVersion) {
+                    setCurrentVersion(selectedVersion);
+                }
             }
         } catch (err) {
             console.error('Failed to load wireframes:', err);
@@ -65,10 +74,18 @@ export default function WireframeViewer({
             const response = await api.getWireframeUrl(conversationId, version);
             setScreens(response.screens || []);
             if (response.screens?.length > 0) {
-                const firstScreen = response.screens[0];
-                setSelectedScreen(firstScreen.id);
+                // If we have a selected screen, try to keep it if it exists in new version? 
+                // For now, simpler to just reset to first or keep if id matches.
+                // Let's just default to first for now or keep current if valid.
+                let targetScreen = response.screens[0];
+                if (selectedScreen) {
+                    const found = response.screens.find((s: Screen) => s.id === selectedScreen);
+                    if (found) targetScreen = found;
+                }
+
+                setSelectedScreen(targetScreen.id);
                 // Use the individual screen URL, not the index.html URL
-                setPreviewUrl(firstScreen.url || response.url);
+                setPreviewUrl(targetScreen.url || response.url);
             } else {
                 setPreviewUrl(response.url);
             }
@@ -110,6 +127,7 @@ export default function WireframeViewer({
                         await loadWireframes();
                         if (statusResponse.version) {
                             setCurrentVersion(statusResponse.version);
+                            onSelectWireframe?.(statusResponse.version);
                         }
                         setGenerating(false);
                         return;
@@ -196,6 +214,87 @@ export default function WireframeViewer({
         }
     };
 
+    const handleVisionSubmit = async (payload: { screenshots: any[]; annotations: any[]; prompt: string }) => {
+        if (!currentVersion || !editingScreen) return;
+
+        try {
+            showToast('Submitting edits...', 'info');
+            const result = await api.annotateWireframeVision(
+                conversationId,
+                currentVersion,
+                editingScreen.id,
+                payload
+            );
+
+            // Handle Async Job (202 Accepted pattern)
+            if (result.job_id) {
+                const jobId = result.job_id;
+                setEditingScreen(null); // Close editor to show progress
+                showToast('Vision edit processing... (this may take 5-10 minutes)', 'info');
+                setGenerating(true);
+
+                // Poll for completion
+                const pollInterval = 5000;
+                const maxAttempts = 200; // ~16 mins max
+                let attempts = 0;
+
+                const pollStatus = async () => {
+                    attempts++;
+                    try {
+                        const status = await api.getGenerationStatus(conversationId, jobId);
+
+                        if (status.status === 'completed') {
+                            showToast(`Edits applied! Created version ${status.version}`, 'success');
+                            await loadWireframes();
+                            if (status.version) {
+                                setCurrentVersion(status.version);
+                                onSelectWireframe?.(status.version);
+                            }
+                            setGenerating(false);
+                            return;
+                        }
+
+                        if (status.status === 'failed') {
+                            throw new Error(status.error || 'Edit generation failed');
+                        }
+
+                        if (attempts >= maxAttempts) {
+                            throw new Error('Edit processing timed out');
+                        }
+
+                        setTimeout(pollStatus, pollInterval);
+                    } catch (pollError: any) {
+                        console.error('Polling error:', pollError);
+                        if (attempts < maxAttempts) {
+                            setTimeout(pollStatus, pollInterval);
+                        } else {
+                            showToast(pollError.message || 'Edit processing failed', 'error');
+                            setGenerating(false);
+                        }
+                    }
+                };
+
+                pollStatus();
+                return;
+            }
+
+            // Handle Synchronous Success (Fallback)
+            if (result.success && result.new_version) {
+                const newVersion = result.new_version;
+                showToast(`Edits applied! Created version ${newVersion}`, 'success');
+                setEditingScreen(null);
+
+                await loadWireframes();
+                setCurrentVersion(newVersion);
+                onSelectWireframe?.(newVersion);
+            }
+        } catch (err: any) {
+            console.error('Failed to submit vision edits:', err);
+            showToast(err.response?.data?.error || 'Failed to submit edits', 'error');
+            setGenerating(false);
+        }
+    };
+
     useEffect(() => {
         loadWireframes();
     }, [conversationId]);
@@ -203,7 +302,9 @@ export default function WireframeViewer({
     useEffect(() => {
         if (currentVersion) {
             loadWireframePreview(currentVersion);
-            onSelectWireframe?.(currentVersion);
+            // Note: Don't call onSelectWireframe here as it causes infinite loops.
+            // The callback is called explicitly in handleGenerate, handleVisionSubmit, 
+            // and the dropdown onChange handler where user explicitly changes version.
         }
     }, [currentVersion]);
 
@@ -215,8 +316,22 @@ export default function WireframeViewer({
         );
     }
 
+    // Render Editor Mode
+    if (editingScreen) {
+        return (
+            <WireframeEditor
+                screenUrl={editingScreen.url}
+                screenId={editingScreen.id}
+                screenName={editingScreen.name}
+                onCancel={() => setEditingScreen(null)}
+                onSubmitStart={() => { }}
+                onSubmitVision={handleVisionSubmit}
+            />
+        );
+    }
+
     return (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden" style={{ minHeight: '600px' }}>
             {/* Header */}
             <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -293,9 +408,9 @@ export default function WireframeViewer({
                     </button>
                 </div>
             ) : (
-                <div className="flex">
+                <div className="flex h-full" style={{ minHeight: '600px' }}>
                     {/* Sidebar - Screen List */}
-                    <div className="w-48 border-r border-gray-200 bg-gray-50">
+                    <div className="w-48 border-r border-gray-200 bg-gray-50 overflow-y-auto">
                         <div className="p-2 text-xs font-medium text-gray-500 uppercase">Screens</div>
                         {screens.map((screen) => (
                             <button
@@ -317,15 +432,34 @@ export default function WireframeViewer({
                     </div>
 
                     {/* Preview */}
-                    <div className="flex-1 bg-gray-100">
+                    <div className="flex-1 bg-gray-100 flex flex-col relative">
+                        {/* Preview Header - for Edit Button */}
+                        {selectedScreen && previewUrl && (
+                            <div className="absolute top-4 right-4 z-10">
+                                <button
+                                    onClick={() => {
+                                        // Find screen obj
+                                        const s = screens.find(sc => sc.id === selectedScreen);
+                                        if (s && s.url) {
+                                            setEditingScreen({ id: s.id, name: s.name, url: s.url });
+                                        }
+                                    }}
+                                    className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-md shadow hover:bg-indigo-700 flex items-center gap-2"
+                                >
+                                    <span>✏️ Edit Vision</span>
+                                </button>
+                            </div>
+                        )}
+
                         {previewUrl ? (
                             <iframe
                                 src={previewUrl}
-                                className="w-full h-[600px] border-0"
+                                className="w-full h-full border-0"
                                 title="Wireframe Preview"
+                                style={{ minHeight: '600px' }}
                             />
                         ) : (
-                            <div className="flex items-center justify-content-center h-[600px] text-gray-400">
+                            <div className="flex items-center justify-center h-full text-gray-400">
                                 Select a screen to preview
                             </div>
                         )}

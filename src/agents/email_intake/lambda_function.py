@@ -191,6 +191,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # Check if this is an async wireframe generation invocation
     if event.get("action") == "generate_wireframes_async":
         return _handle_async_wireframe_generation(event)
+    
+    # Check if this is an async annotation invocation
+    if event.get("action") == "annotate_vision_async":
+        return _handle_async_annotate_vision(event)
 
     try:
         # Extract S3 info from event
@@ -424,7 +428,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # If we plan to send a proposal, pre-generate and store it now so it appears in UI
             if should_send_pdf:
                 try:
-                    from pdf_generator import ProposalPDFGenerator  # Lazy import to avoid cold start cost
+                    from src.agents.email_intake.pdf_generator import ProposalPDFGenerator  # Lazy import to avoid cold start cost
 
                     pdf_lambda_arn = os.environ.get("PDF_LAMBDA_ARN", "")
                     if not pdf_lambda_arn:
@@ -1073,6 +1077,154 @@ def _handle_async_wireframe_generation(event: Dict[str, Any]) -> Dict[str, Any]:
         try:
             from src.storage.wireframe_job_store import WireframeJobStore, WireframeJob
 
+            job_store = WireframeJobStore()
+            job_store.update_status(job_id, WireframeJob.STATUS_FAILED, error=str(e))
+        except Exception:
+            pass
+        return {"statusCode": 500, "body": f"Error: {str(e)}"}
+
+
+def _handle_async_annotate_vision(event: Dict[str, Any]) -> Dict[str, Any]:
+    """Handle async vision annotation invocation.
+
+    Args:
+        event: Event with conversation_id, job_id, and annotation payload
+
+    Returns:
+        Response dict with status
+    """
+    conversation_id = event.get("conversation_id")
+    job_id = event.get("job_id")
+    base_version = event.get("base_version")
+    screen_id = event.get("screen_id")
+    
+    # Load payload from S3 if reference provided (large payloads)
+    # Otherwise use inline payload
+    payload_s3_key = event.get("payload_s3_key")
+    payload_s3_bucket = event.get("payload_s3_bucket")
+    
+    if payload_s3_key and payload_s3_bucket:
+        try:
+            logger.info(f"Loading payload from S3: s3://{payload_s3_bucket}/{payload_s3_key}")
+            response = s3_client.get_object(Bucket=payload_s3_bucket, Key=payload_s3_key)
+            payload_json = response["Body"].read().decode("utf-8")
+            payload = json.loads(payload_json)
+            logger.info(f"Loaded payload from S3: {len(payload_json)} bytes")
+        except Exception as s3_error:
+            logger.error(f"Failed to load payload from S3: {str(s3_error)}")
+            return {"statusCode": 500, "body": f"Failed to load payload from S3: {str(s3_error)}"}
+    else:
+        payload = event.get("payload", {})
+
+    if not all([conversation_id, job_id, base_version, screen_id]):
+        logger.error("Missing required parameters in async annotation event")
+        return {"statusCode": 400, "body": "Missing required parameters"}
+
+    logger.info(f"Starting async vision annotation for {conversation_id}, job {job_id}")
+
+    try:
+        from src.storage.wireframe_job_store import WireframeJobStore, WireframeJob
+        job_store = WireframeJobStore()
+        job_store.update_status(job_id, WireframeJob.STATUS_IN_PROGRESS)
+
+        # Import dependencies
+        from src.storage import S3WireframeStore
+        from src.agents.email_intake.wireframe_patcher import WireframePatcher, WireframePatchError
+        
+        # Initialize store
+        s3_bucket = os.environ.get("DOCUMENT_BUCKET") or os.environ.get(
+            "ATTACHMENTS_BUCKET", "solopilot-attachments"
+        )
+        wireframe_store = S3WireframeStore(s3_bucket, table_name="wireframe_versions")
+
+        # Get current screen HTML
+        original_html = wireframe_store.get_screen_html(conversation_id, int(base_version), screen_id)
+        if not original_html:
+            error_msg = "Screen not found"
+            job_store.update_status(job_id, WireframeJob.STATUS_FAILED, error=error_msg)
+            return {"statusCode": 404, "body": error_msg}
+
+        # Get screen metadata including name
+        metadata = wireframe_store.get_metadata(conversation_id, int(base_version))
+        screen_name = screen_id
+        if metadata:
+            for screen in metadata.get("screens", []):
+                if screen.get("id") == screen_id:
+                    screen_name = screen.get("name", screen_id)
+                    break
+        
+        # Apply vision-guided edits
+        patcher = WireframePatcher()
+        debug_bucket = os.environ.get("EMAIL_BUCKET", "solopilot-emails")
+        
+        try:
+            modified_html = patcher.patch_screen(
+                original_html=original_html,
+                screenshots=payload.get("screenshots", []),
+                annotations=payload.get("annotations", []),
+                user_prompt=payload.get("prompt", ""),
+                screen_name=screen_name,
+                debug_dir="/tmp/vision_debug",
+                job_id=job_id,
+                debug_bucket=debug_bucket,
+                debug_prefix="wireframe_vision_debug"
+            )
+        except WireframePatchError as e:
+            error_msg = f"Edit failed: {str(e)}"
+            logger.error(f"Wireframe patch error: {e}")
+            job_store.update_status(job_id, WireframeJob.STATUS_FAILED, error=error_msg)
+            return {"statusCode": 500, "body": error_msg}
+
+        # Create new version
+        all_screens = wireframe_store.get_all_screens(conversation_id, int(base_version))
+        if not all_screens:
+            error_msg = "Failed to load screens"
+            job_store.update_status(job_id, WireframeJob.STATUS_FAILED, error=error_msg)
+            return {"statusCode": 500, "body": error_msg}
+            
+        all_screens[screen_id] = modified_html
+        
+        new_version = wireframe_store.allocate_version(conversation_id)
+        if not new_version:
+            error_msg = "Failed to allocate new version"
+            job_store.update_status(job_id, WireframeJob.STATUS_FAILED, error=error_msg)
+            return {"statusCode": 500, "body": error_msg}
+            
+        screens_metadata = metadata.get("screens", []) if metadata else []
+        success = wireframe_store.store_wireframe(
+            conversation_id=conversation_id,
+            version=new_version,
+            screens=all_screens,
+            screens_metadata=screens_metadata,
+        )
+
+        if not success:
+            error_msg = "Failed to store new version"
+            job_store.update_status(job_id, WireframeJob.STATUS_FAILED, error=error_msg)
+            return {"statusCode": 500, "body": error_msg}
+
+        # Update job to completed
+        result_payload = {
+            "conversation_id": conversation_id,
+            "base_version": int(base_version),
+            "new_version": new_version,
+            "edited_screen": screen_id,
+            "success": True
+        }
+        
+        job_store.update_status(
+            job_id, 
+            WireframeJob.STATUS_COMPLETED, 
+            version=new_version
+        )
+        
+        logger.info(f"Async vision annotation completed: v{new_version}")
+        return {"statusCode": 200, "body": json.dumps(result_payload)}
+
+    except Exception as e:
+        logger.error(f"Error in async vision annotation: {str(e)}", exc_info=True)
+        try:
+            from src.storage.wireframe_job_store import WireframeJobStore, WireframeJob
             job_store = WireframeJobStore()
             job_store.update_status(job_id, WireframeJob.STATUS_FAILED, error=str(e))
         except Exception:
