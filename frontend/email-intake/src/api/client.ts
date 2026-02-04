@@ -326,6 +326,17 @@ export const api = {
     }>(`/conversations/${conversationId}/wireframes/${version}/export/${format}`);
     return response.data;
   },
+
+  shareWireframe: async (conversationId: string, version: number, expiryDays: number = 7) => {
+    const response = await client.post<{
+      share_url: string;
+      share_id: string;
+      expires_in_days: number;
+      created_at: string;
+      screens_count: number;
+    }>(`/conversations/${conversationId}/wireframes/${version}/share`, { expiry_days: expiryDays });
+    return response.data;
+  },
 };
 
 export default api;

@@ -168,6 +168,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 version = path_params.get("version") or ""
                 export_format = path_params.get("format") or "react"
                 return export_wireframes(conv_id, version, export_format)
+            if res == "/conversations/{id}/wireframes/{version}/share" and http_method == "POST":
+                conv_id = path_params.get("id")
+                version = path_params.get("version") or ""
+                expiry_days = body.get("expiry_days", 7) if body else 7
+                return share_wireframe(conv_id, version, expiry_days)
             return {"statusCode": 404, "body": json.dumps({"error": "Not found"})}
 
         if resource:
@@ -2366,3 +2371,267 @@ def export_wireframes(
     except Exception as e:
         logger.error(f"Error exporting wireframes: {str(e)}", exc_info=True)
         return {"statusCode": 500, "body": json.dumps({"error": "Failed to export wireframes"})}
+
+
+def share_wireframe(
+    conversation_id: str, version: str, expiry_days: int = 7
+) -> Dict[str, Any]:
+    """Generate a shareable presigned URL for wireframe viewing.
+
+    Args:
+        conversation_id: Conversation ID
+        version: Version number as string
+        expiry_days: Number of days until the link expires (default 7)
+
+    Returns:
+        API response with shareable URL
+    """
+    import uuid
+    from datetime import datetime, timezone
+
+    try:
+        from src.storage import S3WireframeStore
+
+        s3_bucket = os.environ.get("DOCUMENT_BUCKET") or os.environ.get(
+            "ATTACHMENTS_BUCKET", "solopilot-attachments"
+        )
+        wireframe_store = S3WireframeStore(s3_bucket, table_name="wireframe_versions")
+
+        version_num = int(version)
+
+        # Get wireframe metadata and screens
+        metadata = wireframe_store.get_metadata(conversation_id, version_num)
+        if not metadata:
+            return {"statusCode": 404, "body": json.dumps({"error": "Wireframe not found"})}
+
+        screens_data = []
+        for screen in metadata.get("screens", []):
+            html = wireframe_store.get_screen_html(conversation_id, version_num, screen["id"])
+            if html:
+                screens_data.append({
+                    "id": screen["id"],
+                    "name": screen.get("name", screen["id"]),
+                    "html": html
+                })
+
+        if not screens_data:
+            return {"statusCode": 404, "body": json.dumps({"error": "No screens found"})}
+
+        # Generate standalone HTML preview
+        share_html = _generate_share_html(screens_data, metadata, conversation_id, version_num)
+
+        # Upload to S3
+        share_id = str(uuid.uuid4())[:8]
+        share_key = f"shared-wireframes/{conversation_id}/{share_id}.html"
+
+        s3.put_object(
+            Bucket=S3_BUCKET,
+            Key=share_key,
+            Body=share_html.encode("utf-8"),
+            ContentType="text/html",
+        )
+
+        # Generate presigned URL
+        expiry_seconds = expiry_days * 24 * 60 * 60
+        presigned_url = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": S3_BUCKET, "Key": share_key},
+            ExpiresIn=expiry_seconds,
+        )
+
+        expiry_date = datetime.now(timezone.utc).isoformat()
+
+        logger.info(f"Generated share link for {conversation_id} v{version_num}: {share_key}")
+
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "share_url": presigned_url,
+                "share_id": share_id,
+                "expires_in_days": expiry_days,
+                "created_at": expiry_date,
+                "screens_count": len(screens_data),
+            }),
+        }
+
+    except ValueError:
+        return {"statusCode": 400, "body": json.dumps({"error": "Invalid version number"})}
+    except Exception as e:
+        logger.error(f"Error sharing wireframe: {str(e)}", exc_info=True)
+        return {"statusCode": 500, "body": json.dumps({"error": "Failed to generate share link"})}
+
+
+def _generate_share_html(
+    screens: List[Dict[str, Any]],
+    metadata: Dict[str, Any],
+    conversation_id: str,
+    version: int,
+) -> str:
+    """Generate a standalone HTML preview with all screens.
+
+    Returns self-contained HTML with embedded navigation.
+    """
+    project_name = metadata.get("project_name", "Wireframe Preview")
+    
+    screen_buttons = ""
+    screen_content = ""
+    
+    for i, screen in enumerate(screens):
+        active_class = "active" if i == 0 else ""
+        display_style = "block" if i == 0 else "none"
+        
+        screen_buttons += f'''
+            <button class="tab-btn {active_class}" onclick="showScreen('{screen['id']}')">{screen['name']}</button>
+        '''
+        
+        # Wrap screen HTML in container
+        screen_content += f'''
+            <div id="screen-{screen['id']}" class="screen-content" style="display: {display_style};">
+                <iframe srcdoc="{_escape_html_for_attr(screen['html'])}" class="wireframe-iframe"></iframe>
+            </div>
+        '''
+
+    html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{project_name} - Wireframe Preview</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        body {{
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }}
+        .container {{
+            max-width: 1400px;
+            margin: 0 auto;
+        }}
+        .header {{
+            background: white;
+            border-radius: 12px;
+            padding: 20px 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+        .header h1 {{
+            font-size: 24px;
+            font-weight: 600;
+            color: #1f2937;
+        }}
+        .header .meta {{
+            font-size: 14px;
+            color: #6b7280;
+        }}
+        .tabs {{
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }}
+        .tab-btn {{
+            background: rgba(255,255,255,0.9);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: #374151;
+        }}
+        .tab-btn:hover {{
+            background: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }}
+        .tab-btn.active {{
+            background: #4f46e5;
+            color: white;
+        }}
+        .preview-container {{
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }}
+        .wireframe-iframe {{
+            width: 100%;
+            height: calc(100vh - 200px);
+            border: none;
+        }}
+        .footer {{
+            text-align: center;
+            padding: 20px;
+            color: rgba(255,255,255,0.8);
+            font-size: 12px;
+        }}
+        .footer a {{
+            color: white;
+            text-decoration: none;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>{project_name}</h1>
+                <div class="meta">Version {version} • {len(screens)} screen(s)</div>
+            </div>
+        </div>
+        
+        <div class="tabs">
+            {screen_buttons}
+        </div>
+        
+        <div class="preview-container">
+            {screen_content}
+        </div>
+        
+        <div class="footer">
+            Powered by SoloPilot
+        </div>
+    </div>
+    
+    <script>
+        function showScreen(screenId) {{
+            // Hide all screens
+            document.querySelectorAll('.screen-content').forEach(el => {{
+                el.style.display = 'none';
+            }});
+            // Show selected screen
+            document.getElementById('screen-' + screenId).style.display = 'block';
+            // Update active tab
+            document.querySelectorAll('.tab-btn').forEach(btn => {{
+                btn.classList.remove('active');
+            }});
+            event.target.classList.add('active');
+        }}
+    </script>
+</body>
+</html>'''
+    
+    return html
+
+
+def _escape_html_for_attr(html: str) -> str:
+    """Escape HTML for use in srcdoc attribute."""
+    return (
+        html
+        .replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+

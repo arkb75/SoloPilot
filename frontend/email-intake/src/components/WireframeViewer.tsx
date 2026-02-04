@@ -38,6 +38,11 @@ export default function WireframeViewer({
     const [exporting, setExporting] = useState(false);
     const [toastMessage, setToastMessage] = useState<{ message: string; tone: 'info' | 'success' | 'error' } | null>(null);
 
+    // Share State
+    const [sharing, setSharing] = useState(false);
+    const [shareUrl, setShareUrl] = useState<string | null>(null);
+    const [shareModalOpen, setShareModalOpen] = useState(false);
+
     // Editor State
     const [editingScreen, setEditingScreen] = useState<{ id: string; name: string; url: string } | null>(null);
 
@@ -214,6 +219,34 @@ export default function WireframeViewer({
         }
     };
 
+    const handleShare = async () => {
+        if (!currentVersion) return;
+
+        try {
+            setSharing(true);
+            const response = await api.shareWireframe(conversationId, currentVersion);
+            setShareUrl(response.share_url);
+            setShareModalOpen(true);
+            showToast('Share link generated!', 'success');
+        } catch (err) {
+            console.error('Failed to generate share link:', err);
+            showToast('Failed to generate share link', 'error');
+        } finally {
+            setSharing(false);
+        }
+    };
+
+    const copyToClipboard = async () => {
+        if (!shareUrl) return;
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            showToast('Link copied to clipboard!', 'success');
+        } catch (err) {
+            console.error('Failed to copy:', err);
+            showToast('Failed to copy link', 'error');
+        }
+    };
+
     const handleVisionSubmit = async (payload: { screenshots: any[]; annotations: any[]; prompt: string }) => {
         if (!currentVersion || !editingScreen) return;
 
@@ -377,6 +410,15 @@ export default function WireframeViewer({
                             </div>
                         </div>
                     )}
+                    {currentVersion && (
+                        <button
+                            onClick={handleShare}
+                            disabled={sharing}
+                            className="px-3 py-1.5 text-sm bg-purple-500 text-white rounded hover:bg-purple-600 disabled:opacity-50"
+                        >
+                            {sharing ? 'Sharing...' : '🔗 Share'}
+                        </button>
+                    )}
                     <button
                         onClick={handleGenerate}
                         disabled={generating}
@@ -478,6 +520,62 @@ export default function WireframeViewer({
                         }`}
                 >
                     {toastMessage.message}
+                </div>
+            )}
+
+            {/* Share Modal */}
+            {shareModalOpen && shareUrl && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 p-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-gray-900">Share Wireframes</h3>
+                            <button
+                                onClick={() => setShareModalOpen(false)}
+                                className="text-gray-400 hover:text-gray-600"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <p className="text-sm text-gray-600 mb-4">
+                            Share this link with your client. They can view the wireframes without logging in.
+                        </p>
+
+                        <div className="flex items-center gap-2 mb-4">
+                            <input
+                                type="text"
+                                readOnly
+                                value={shareUrl}
+                                className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm bg-gray-50 text-gray-700"
+                            />
+                            <button
+                                onClick={copyToClipboard}
+                                className="px-4 py-2 bg-purple-500 text-white text-sm rounded hover:bg-purple-600"
+                            >
+                                📋 Copy
+                            </button>
+                        </div>
+
+                        <div className="text-xs text-gray-500 flex items-center gap-2">
+                            <span>⏰</span>
+                            <span>This link expires in 7 days</span>
+                        </div>
+
+                        <div className="mt-6 flex justify-end gap-3">
+                            <button
+                                onClick={() => window.open(shareUrl, '_blank')}
+                                className="px-4 py-2 text-sm text-purple-600 hover:text-purple-800"
+                            >
+                                Open Preview →
+                            </button>
+                            <button
+                                onClick={() => setShareModalOpen(false)}
+                                className="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded hover:bg-gray-200"
+                            >
+                                Done
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
