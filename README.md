@@ -1,202 +1,108 @@
-# SoloPilot — Client-to-Codebase Bridge
+# SoloPilot
 
-SoloPilot automates the client intake workflow — from email threads to approved proposals to structured plans ready for AI powered IDEs like Antigravity, Cursor, and VS Code.
+An AI-assisted client intake workspace that turns email conversations into reviewed replies, versioned proposals, and editable wireframes.
 
-## Vision
+SoloPilot combines a Python/AWS backend with a React console so a developer can extract requirements, inspect model-generated drafts, and approve what reaches a client. The repository also contains an earlier analyser/planner/developer-agent pipeline and repository context tooling.
 
-Bridge the gap between client conversations and code:
-- **Intake**: Manage email threads, extract requirements, draft responses with human review
-- **Proposals**: Generate, annotate, and version PDF proposals with full revision history
-- **Plan**: Transform approved proposals into structured PRDs and project plans
-- **Export**: Output plans in formats optimized for AI coding assistants
+**Built with:** Python · TypeScript · React · Vite · AWS Lambda · SES · S3 · DynamoDB · AWS Bedrock · LangChain · pytest
 
-SoloPilot handles the messy client → requirements → proposal → plan workflow so you can jump straight into building.
+## Current capabilities
 
-## Key Capabilities
+- **Email intake:** track conversation threads and state, extract project requirements and metadata, and prepare draft responses.
+- **Human review:** approve, reject, or amend replies; inspect evaluator feedback and request revisions.
+- **Proposals:** generate and preview PDFs, retain versions in S3, and feed annotations into vision-assisted requirement updates.
+- **Wireframes:** generate HTML/CSS screens from requirements, edit screens, apply vision-guided changes, and create time-limited share links.
+- **Provider and context tooling:** shared model adapters and call logging, plus token-budgeted repository context for the developer-agent pipeline.
 
-- **Email Intake Console**: Conversational manager that groups threads, extracts requirements, and prepares draft responses
-- **AI Response Generation**: Draft email replies with evaluator-revisor loop for quality scoring
-- **Metadata Extraction**: AI-powered extraction of project type, budget, timeline, client name, and key requirements
-- **Proposal PDFs with Versioning**: Render proposals via React-PDF; each revision stored as versioned S3 object for audit and rollback
-- **PDF Annotation**: Annotate proposals directly with vision analysis feedback
-- **PRD/Plan Generation**: Create detailed project plans with milestones, tasks, and acceptance criteria from approved proposals
-- **IDE Export**: Export plans in formats optimized for Antigravity, Cursor, and VS Code agents
-- **Provider-Agnostic LLM Layer**: Swap models (Bedrock, OpenAI) via unified interface
-- **Ops on AWS**: S3 (versioned proposals and artifacts), Lambda, DynamoDB, CloudWatch
+This is a development prototype. End-to-end plan generation from approved proposals and IDE-specific plan exports remain roadmap work.
 
-## Current Status (December 2025)
+## Explore the implementation
 
-### Completed
-- Email intake console and conversational manager
-- AI-powered metadata and requirement extraction
-- Proposal PDF rendering, annotation, and S3 versioned storage
-- Vision analysis for PDF feedback
-- Evaluator-and-revisor loop for email copy
-- Human-in-the-loop review UI with approve/reject/edit workflow
-- Provider abstraction and centralized LLM logging
-- Client simulation testing utility
-
-### In Progress
-- PRD/Plan generation from approved proposals
-- IDE export formats (Antigravity, Cursor, VS Code)
-
-### Next (Planned)
-- Template library for different project types
-- Multi-format export (Markdown, JSON, YAML)
-- Lightweight client portal for approvals
-- Multi-channel intake (beyond email)
+| Area | Start here |
+| --- | --- |
+| Email processing and conversation state | [Lambda handler](src/agents/email_intake/lambda_function.py) · [state manager](src/agents/email_intake/conversation_state.py) |
+| Draft generation and review | [Responder](src/agents/email_intake/conversational_responder.py) · [reviewer](src/agents/email_intake/reviewer.py) · [reviser](src/agents/email_intake/response_reviser.py) |
+| Console and backend API | [Conversation view](frontend/email-intake/src/components/ConversationDetail.tsx) · [API handler](src/agents/email_intake/api/lambda_api.py) |
+| Wireframe generation and editing | [Generator](src/agents/email_intake/wireframe_generator.py) · [editor](frontend/email-intake/src/components/WireframeEditor.tsx) |
+| Model adapters and observability | [Provider layer](src/providers/) · [call logging tests](tests/test_log_call_decorator.py) |
+| Threading and context regressions | [Threading tests](tests/agents/email_intake/test_conversation_threading.py) · [token budget tests](tests/test_token_budget.py) |
 
 ## Architecture
 
 ```mermaid
-flowchart TD
-  subgraph "Intake"
-    A[Inbound Email] -->|SES| B[Intake Lambda]
-    B --> C[S3 : raw messages + attachments]
-    B --> D[DynamoDB : conversation state]
-    D --> E[Conversational Manager]
-    E --> F[AI Response Draft]
-    F --> G[Human Review UI]
-  end
-
-  subgraph "Proposals"
-    G -->|Approve| H[Requirement Extractor]
-    H --> I[PDF Generator]
-    I --> J[S3 versioned : proposals]
-    J --> K[PDF Annotator + Vision Analysis]
-    K --> L[Revision Loop]
-    L -->|Client Approves| M[Approved Proposal]
-  end
-
-  subgraph "Plan"
-    M --> N[PRD Generator]
-    N --> O[Plan Builder]
-    O --> P[Human Review]
-  end
-
-  subgraph "Export"
-    P -->|Approve| Q[IDE Export Engine]
-    Q --> R[Antigravity / Cursor / VS Code]
-    Q --> S[Markdown / JSON / YAML]
-  end
+flowchart LR
+    Email[Inbound email] --> SES[AWS SES]
+    SES --> Intake[Intake Lambda]
+    Intake --> State[DynamoDB conversation state]
+    Intake --> Files[S3 messages and attachments]
+    State --> Models[Requirements and reply generation]
+    Models --> Console[React review console]
+    Console --> Approval[Human approval]
+    Approval --> Reply[SES reply]
+    Console --> Docs[Versioned proposals and wireframes]
+    Docs --> Files
 ```
 
-## Project Structure
+## Local development
 
-```text
-SoloPilot/
-├── src/
-│   ├── agents/
-│   │   ├── email_intake/          # Email console + conversational manager
-│   │   │   ├── conversational_responder.py
-│   │   │   ├── metadata_extractor.py
-│   │   │   ├── requirement_extractor.py
-│   │   │   ├── pdf_generator.py
-│   │   │   ├── vision_analyzer.py
-│   │   │   ├── reviewer.py
-│   │   │   └── response_reviser.py
-│   │   ├── planning/              # PRD and plan generation
-│   │   └── export/                # IDE export formats
-│   ├── providers/                 # Model/provider abstraction
-│   └── utils/                     # Helpers
-├── frontend/
-│   └── email-intake/              # React dashboard
-│       └── src/components/
-│           ├── ConversationDetail.tsx
-│           ├── ConversationList.tsx
-│           ├── ProposalViewer.tsx
-│           ├── PDFAnnotator.tsx
-│           └── ReplyEditor.tsx
-├── infrastructure/                # Terraform + Lambda
-├── tests/
-└── docs/
-```
-
-## Module Overview
-
-| Module             | Status   | Purpose                                           |
-|--------------------|----------|---------------------------------------------------|
-| email_intake       | ✅ Active | Triage threads, draft responses, manage state     |
-| metadata_extractor | ✅ Active | Extract client info, project type, budget, etc.   |
-| requirement_extractor | ✅ Active | Synthesize requirements from conversations     |
-| pdf_generator      | ✅ Active | Render proposal PDFs with versioning              |
-| vision_analyzer    | ✅ Active | AI-powered PDF annotation feedback                |
-| reviewer           | ✅ Active | Score and evaluate draft responses                |
-| response_reviser   | ✅ Active | Generate improved response alternatives           |
-| planning           | 🚧 WIP   | Generate PRDs and structured project plans        |
-| export             | 🚧 WIP   | Export to IDE-ready formats                       |
-
-## Tech Stack
-- **Core**: Python, TypeScript, AWS, LangChain
-- **LLMs**: AWS Bedrock (Claude), OpenAI
-- **Frontend**: React, Vite, TailwindCSS
-- **Storage**: S3 (versioned), DynamoDB
-- **Quality**: GitHub Actions, ruff, mypy, ESLint
-
-## Quick Start
-
-### Prerequisites
+Prerequisites: Python 3.9+, Poetry, Node.js 18+, and configured AWS resources for the integrated email workflow.
 
 ```bash
-aws configure                # AWS credentials
-python --version             # 3.9+
-node --version               # 18+
-```
-
-### Local Development
-
-```bash
-git clone <repo-url> && cd SoloPilot
+git clone https://github.com/arkb75/SoloPilot.git
+cd SoloPilot
 poetry install
-poetry run pre-commit install
+cp .env.example .env
+```
+
+Configure the local environment for the services you intend to run. The email workflow needs SES, S3, DynamoDB, Lambda/API Gateway, and access to the configured model provider. See the [email intake setup](src/agents/email_intake/README.md), [API documentation](src/agents/email_intake/api/README.md), and [deployment guide](docs/DEPLOYMENT.md).
+
+Start the review console:
+
+```bash
+cd frontend/email-intake
+npm install
+npm run dev
+```
+
+Set the console's `VITE_API_URL` and `VITE_API_KEY` for your configured backend. Frontend development alone does not provision the AWS services.
+
+## Validation
+
+```bash
+# Focused mocked behavior tests
+poetry run pytest tests/agents/email_intake/test_conversation_threading.py
+poetry run pytest tests/test_log_call_decorator.py
+
+# Repository test suite; some tests need configured providers or services
 poetry run pytest
 
-# Frontend
+# Frontend type checking and production build
 cd frontend/email-intake
-yarn install
-yarn dev
+npm run build
 ```
 
-## Email Intake Setup
+See [test documentation](tests/README.md) for the existing test organization. Test files and scripts include both mocked checks and live integrations; configure service access deliberately when running the broader suite.
 
-```bash
-# 1) Verify domain in SES
-# 2) Create S3 bucket with versioning enabled
-# 3) Deploy the intake Lambda
-cd src/agents/email_intake && ./deploy.sh
+## Repository map
 
-# Environment variables
-export EMAIL_BUCKET=<S3 bucket>
-export DYNAMO_TABLE=conversations
-export SENDER_EMAIL=<verified SES sender>
-export AI_PROVIDER=bedrock
-```
+- [`src/agents/email_intake/`](src/agents/email_intake/) — email intake, proposals, wireframes, review, and API handlers.
+- [`frontend/email-intake/`](frontend/email-intake/) — React review console.
+- [`src/providers/`](src/providers/) — model adapters and shared logging.
+- [`src/agents/dev/`](src/agents/dev/) — developer agent and repository context engine.
+- [`doc-service/`](doc-service/) — document-generation service and infrastructure.
+- [`infrastructure/`](infrastructure/) — deployment infrastructure.
+- [`tests/`](tests/) — unit tests, regression cases, and integration scripts.
 
-## IDE Export Formats
+## Further documentation
 
-SoloPilot generates plans optimized for AI coding assistants:
-
-| Format | IDE Target | Description |
-|--------|------------|-------------|
-| `.antigravity/` | Antigravity | Task files with context and instructions |
-| `.cursor/` | Cursor | Rules and project context |
-| `AGENTS.md` | VS Code Copilot | Agent instructions and project overview |
-| `plan.json` | Universal | Structured plan data for custom integrations |
+- [Documentation index](docs/README.md)
+- [Developer agent](docs/DEV_AGENT.md) and [progressive context](docs/PROGRESSIVE_CONTEXT.md)
+- [Document-generation service](doc-service/lambda/README.md) and [its infrastructure](doc-service/terraform/README.md)
 
 ## Roadmap
 
-### Phase 1: Intake & Proposals ✅
-- Email intake console with conversation management
-- AI-powered metadata and requirement extraction
-- Proposal PDF generation with versioning and annotations
-- Human review workflow with evaluator-revisor loop
-
-### Phase 2: Plan & Export 🚧
-- PRD generation from approved proposals
-- IDE export (Antigravity, Cursor, VS Code)
-- Template library for common project types
-
-### Phase 3: Expand
-- Multi-channel intake (Slack, forms)
-- Client portal for approvals
-- Team collaboration features
+- Connect approved proposals to a complete PRD/project-plan workflow.
+- Add documented, validated IDE-specific plan exports and Markdown/JSON/YAML outputs.
+- Expand proposal templates and add a client approval portal.
+- Support intake beyond email, including forms and Slack.
+- Add team collaboration features.
